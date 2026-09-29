@@ -1,0 +1,15 @@
+# Dependencies & build output
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+
+# Logs
+*.log
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
