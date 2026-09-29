@@ -7,9 +7,9 @@ import { StudioState, SemanticZone, ZONE_CONFIG, RectSelection } from '../types'
 import { TRANSPARENT_INDEX, WHITE_PALETTE_INDEX } from '../data/palette';
 import { getToolCursors } from '../utils/cursorUtils';
 
-export const ZOOM_STEPS = [4, 6, 8, 12, 16, 24, 32] as const;
+const ZOOM_STEPS = [4, 6, 8, 12, 16, 24, 32] as const;
 
-export interface CanvasEditorCallbacks {
+interface CanvasEditorCallbacks {
   onStrokeStart: () => void;
   onPixelDraw: (x: number, y: number, paletteIndex: number) => void;
   onMaskDraw: (x: number, y: number, zone: SemanticZone) => void;
@@ -1693,10 +1693,6 @@ export class CanvasEditor {
     return this.container.querySelector('.canvas-editor-area') || this.container.querySelector('#canvas-viewport');
   }
 
-  public getOffscreenCanvas(): HTMLCanvasElement {
-    return this.offscreenPixelCanvas;
-  }
-
   public stepZoom(direction: number): void {
     if (!this.currentState) return;
     const currentZoom = this.currentState.zoomLevel;
@@ -2193,11 +2189,7 @@ export class CanvasEditor {
       const isBg = stat.index === activeBg;
       const isWhite = stat.index === WHITE_PALETTE_INDEX;
       const idxLabel = stat.isTransparent ? '#透' : `#${stat.index.toString().padStart(2, '0')}`;
-      const pctFormatted = stat.percentage >= 10
-        ? stat.percentage.toFixed(1)
-        : stat.percentage >= 1
-          ? stat.percentage.toFixed(1)
-          : stat.percentage.toFixed(2);
+      const pctFormatted = stat.percentage.toFixed(stat.percentage >= 1 ? 1 : 2);
 
       const tooltip = stat.isTransparent
         ? `透明色: ${stat.count} 点 (${pctFormatted}%)\n左键选取为前景色，右键选取为背景色`
@@ -2238,13 +2230,6 @@ export class CanvasEditor {
     if (this.currentState && this.currentState.activeMode === 'pixel' && this.currentState.isLoaded) {
       this.redraw();
     }
-  }
-
-  /**
-   * 获取当前高亮的目标色槽索引
-   */
-  public getHighlightedColor(): number | null {
-    return this.highlightedPaletteIndex;
   }
 
   /**
@@ -2444,12 +2429,5 @@ export class CanvasEditor {
       this.ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
     }
     this.ctx.restore();
-  }
-
-  public destroy(): void {
-    if (this.marchingAntsTimer !== null) {
-      clearInterval(this.marchingAntsTimer);
-      this.marchingAntsTimer = null;
-    }
   }
 }

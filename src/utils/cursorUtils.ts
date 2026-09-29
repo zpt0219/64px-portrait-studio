@@ -3,7 +3,7 @@
  * 为画笔、橡皮擦、油漆桶、吸管等工具生成与工具栏图标一致的自定义小图标光标
  */
 
-export interface ToolCursorMap {
+interface ToolCursorMap {
   pen: string;
   eraser: string;
   bucket: string;

@@ -22,15 +22,15 @@ export const PALETTE_36: string[] = [
 ];
 
 export const RAMPS_INFO: Record<string, RampInfo> = {
-  "01_black_黑": { name: "黑色", icon: "🖤", hexes: ["#000000", "#080821", "#081039", "#212142", "#8473A5"], theme: "#212142" },
-  "02_brown_棕": { name: "棕色", icon: "🤎", hexes: ["#080821", "#3A2016", "#7B4239", "#DE6B42", "#C68C31"], theme: "#7B4239" },
-  "03_blonde_金": { name: "金色", icon: "💛", hexes: ["#6B0818", "#7B4239", "#C68C31", "#FFDE6B", "#FFFFFF"], theme: "#FFDE6B" },
-  "04_pink_粉": { name: "粉色", icon: "💗", hexes: ["#6B106B", "#B5106B", "#C6218C", "#FFA5B5", "#FFFFFF"], theme: "#FFA5B5" },
-  "05_blue_蓝": { name: "蓝色", icon: "💙", hexes: ["#180852", "#08219C", "#0063CE", "#0884D6", "#DEEFEF"], theme: "#0884D6" },
-  "06_silver_银白": { name: "银白", icon: "🤍", hexes: ["#080821", "#212142", "#8473A5", "#DEEFEF", "#FFFFFF"], theme: "#DEEFEF" },
-  "07_green_绿": { name: "绿色", icon: "💚", hexes: ["#081039", "#21636B", "#3FA836", "#18CEA5", "#DEEFEF"], theme: "#3FA836" },
-  "08_purple_紫": { name: "紫色", icon: "💜", hexes: ["#180852", "#421084", "#6329BD", "#8473A5", "#FFFFFF"], theme: "#6329BD" },
-  "09_red_红": { name: "红色", icon: "❤️", hexes: ["#080821", "#6B0818", "#8C1031", "#CE4242", "#DE6B42"], theme: "#CE4242" }
+  "01_black_黑": { name: "黑色", icon: "🖤", hexes: ["#000000", "#080821", "#081039", "#212142", "#8473A5"] },
+  "02_brown_棕": { name: "棕色", icon: "🤎", hexes: ["#080821", "#3A2016", "#7B4239", "#DE6B42", "#C68C31"] },
+  "03_blonde_金": { name: "金色", icon: "💛", hexes: ["#6B0818", "#7B4239", "#C68C31", "#FFDE6B", "#FFFFFF"] },
+  "04_pink_粉": { name: "粉色", icon: "💗", hexes: ["#6B106B", "#B5106B", "#C6218C", "#FFA5B5", "#FFFFFF"] },
+  "05_blue_蓝": { name: "蓝色", icon: "💙", hexes: ["#180852", "#08219C", "#0063CE", "#0884D6", "#DEEFEF"] },
+  "06_silver_银白": { name: "银白", icon: "🤍", hexes: ["#080821", "#212142", "#8473A5", "#DEEFEF", "#FFFFFF"] },
+  "07_green_绿": { name: "绿色", icon: "💚", hexes: ["#081039", "#21636B", "#3FA836", "#18CEA5", "#DEEFEF"] },
+  "08_purple_紫": { name: "紫色", icon: "💜", hexes: ["#180852", "#421084", "#6329BD", "#8473A5", "#FFFFFF"] },
+  "09_red_红": { name: "红色", icon: "❤️", hexes: ["#080821", "#6B0818", "#8C1031", "#CE4242", "#DE6B42"] }
 };
 
 export const TIER_NAMES: string[] = ["绝墨轮廓", "基底暗部", "过渡中色", "发丝主色", "极光高光"];
@@ -39,7 +39,7 @@ export const WHITE_PALETTE_INDEX = 1; // #FFFFFF 纯白色 (眼白 / 高光 / �
 export const TRANSPARENT_INDEX = 255; // 原生透明色 (Aseprite 空白像素 / 橡皮擦删除值)
 
 /** 36 色按色相环自然流序分类划分与规范 (连续 0~35 单调递增序号，黑白双色与透明独立排在首行) */
-export interface PaletteFamily {
+interface PaletteFamily {
   id: string;
   name: string;
   icon: string;
@@ -103,7 +103,7 @@ export const PALETTE_FAMILIES: PaletteFamily[] = [
   }
 ];
 
-export interface MatchColorPreset {
+interface MatchColorPreset {
   id: string;
   name: string;
   icon: string;

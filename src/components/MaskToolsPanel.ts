@@ -13,7 +13,7 @@
 import { StudioState, ZONE_CONFIG } from '../types';
 import { TRANSPARENT_INDEX, MATCH_COLOR_PRESETS } from '../data/palette';
 
-export interface MaskToolsPanelCallbacks {
+interface MaskToolsPanelCallbacks {
   onSelectMaskTool: (tool: 'pen' | 'eraser' | 'bucket' | 'box_select') => void;
   onSelectBrushSize: (size: 1 | 2 | 3 | 4) => void;
   onSetMatchPreset: (presetKey: string) => void;

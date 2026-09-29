@@ -7,7 +7,7 @@ import { StudioState } from '../types';
 import { PALETTE_FAMILIES, WHITE_PALETTE_INDEX, TRANSPARENT_INDEX, RAMPS_INFO, TIER_NAMES } from '../data/palette';
 import { findNearestColor } from '../core/colorUtils';
 
-export interface PalettePanelCallbacks {
+interface PalettePanelCallbacks {
   onSelectPaletteColor: (index: number) => void;
   onSelectBgColor: (index: number) => void;
   onSwapFgBg: () => void;

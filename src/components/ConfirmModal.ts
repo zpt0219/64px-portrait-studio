@@ -3,26 +3,24 @@
  * 通用优雅的模态确认对话框组件，用于模式切换、导出拦截等确认场景
  */
 
-export interface ConfirmModalButton {
+interface ConfirmModalButton {
   label: string;
   className?: string; // e.g. 'btn-primary', 'btn-secondary', 'btn-outline', 'btn-ghost'
   onClick: () => void;
 }
 
-export interface ConfirmModalOptions {
+interface ConfirmModalOptions {
   icon?: string;
   title: string;
   message: string;
   subMessage?: string;
   buttons: ConfirmModalButton[];
-  onClose?: () => void;
 }
 
 export class ConfirmModal {
   private container: HTMLElement;
   private overlayEl: HTMLElement | null = null;
   private isOpen = false;
-  private activeOnClose: (() => void) | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -62,13 +60,11 @@ export class ConfirmModal {
 
     this.overlayEl.querySelector('#confirm-modal-close')?.addEventListener('click', () => {
       this.close();
-      this.activeOnClose?.();
     });
 
     this.overlayEl.addEventListener('click', (e) => {
       if (e.target === this.overlayEl) {
         this.close();
-        this.activeOnClose?.();
       }
     });
 
@@ -78,7 +74,6 @@ export class ConfirmModal {
         e.preventDefault();
         e.stopPropagation();
         this.close();
-        this.activeOnClose?.();
       }
     });
   }
@@ -87,7 +82,6 @@ export class ConfirmModal {
     if (!this.overlayEl) return;
 
     this.isOpen = true;
-    this.activeOnClose = options.onClose || null;
 
     const iconEl = this.overlayEl.querySelector('#confirm-modal-icon') as HTMLElement;
     const titleEl = this.overlayEl.querySelector('#confirm-modal-title') as HTMLElement;
@@ -129,6 +123,5 @@ export class ConfirmModal {
     if (!this.overlayEl) return;
     this.isOpen = false;
     this.overlayEl.style.display = 'none';
-    this.activeOnClose = null;
   }
 }

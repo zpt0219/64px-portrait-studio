@@ -1,7 +1,7 @@
 /**
- * ImageGem Project ZIP Exporter
- * 将项目完整成果打包为标准 ZIP 归档文件：
- * 1. imagegem_project_64x64.png (内嵌 tEXt 状态元数据，可直接复原)
+ * 工程导出与导入：极简 PNG 与完整工程 ZIP
+ * ZIP 内容：
+ * 1. imagegem_project_64x64.png (8-bit 索引色极简 PNG，无元数据)
  * 2. imagegem_project.json (原始工程 JSON)
  * 3. README.txt (包含色板信息、图层说明、复原指南)
  * 4. renders/ (1x 64px, 4x 256px, 8x 512px 纯净渲染图，保留原生透明度)
@@ -12,7 +12,7 @@
 import JSZip from 'jszip';
 import { StudioState, SemanticZone, ImageGemProjectData } from '../types';
 import { stateToProjectData } from './storage';
-import { validateProjectData } from './pngMetadata';
+import { validateProjectData } from './projectData';
 import { encodeMinimalIndexedPng } from './minimalPng';
 import { TRANSPARENT_INDEX } from '../data/palette';
 import { hexToRgb } from './colorUtils';
@@ -20,7 +20,7 @@ import { hexToRgb } from './colorUtils';
 /**
  * 触发浏览器文件下载
  */
-export function downloadBlob(blob: Blob, filename: string): void {
+function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -46,7 +46,7 @@ function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
 /**
  * 绘制指定缩放倍率的 36 色像素画布
  */
-export function createPixelCanvas(state: StudioState, scale: number = 1): HTMLCanvasElement {
+function createPixelCanvas(state: StudioState, scale: number = 1): HTMLCanvasElement {
   const canvas64 = document.createElement('canvas');
   canvas64.width = 64;
   canvas64.height = 64;
@@ -92,7 +92,7 @@ export function createPixelCanvas(state: StudioState, scale: number = 1): HTMLCa
 /**
  * 绘制 5 色互斥综合语义遮罩画布 (黑/青/绿/紫/黄)
  */
-export function createCompositeMaskCanvas(state: StudioState, scale: number = 1): HTMLCanvasElement {
+function createCompositeMaskCanvas(state: StudioState, scale: number = 1): HTMLCanvasElement {
   const canvas64 = document.createElement('canvas');
   canvas64.width = 64;
   canvas64.height = 64;
@@ -139,7 +139,7 @@ export function createCompositeMaskCanvas(state: StudioState, scale: number = 1)
  * 绘制单个分区的单通道黑白二值遮罩 (白=选定分区, 黑=其他区域)
  * 便于导入游戏引擎、Photoshop 图层蒙版或作为 AI 控制网 (ControlNet / LoRA) 训练数据
  */
-export function createBinaryMaskCanvas(state: StudioState, targetZone: SemanticZone, scale: number = 1): HTMLCanvasElement {
+function createBinaryMaskCanvas(state: StudioState, targetZone: SemanticZone, scale: number = 1): HTMLCanvasElement {
   const canvas64 = document.createElement('canvas');
   canvas64.width = 64;
   canvas64.height = 64;
@@ -176,7 +176,7 @@ export function createBinaryMaskCanvas(state: StudioState, targetZone: SemanticZ
 /**
  * 绘制色板色卡预览图 (6 列 x 6 行 36 色色卡栅格)
  */
-export function createPaletteSwatchCanvas(state: StudioState): HTMLCanvasElement {
+function createPaletteSwatchCanvas(state: StudioState): HTMLCanvasElement {
   const chipSize = 32;
   const gap = 4;
   const padding = 12;
@@ -225,7 +225,7 @@ export function createPaletteSwatchCanvas(state: StudioState): HTMLCanvasElement
 /**
  * 生成 Aseprite / GIMP 标准格式的色板文件 (.gpl)
  */
-export function generateGplPalette(state: StudioState): string {
+function generateGplPalette(state: StudioState): string {
   const lines: string[] = [
     'GIMP Palette',
     'Name: 64px Portrait Studio 36 Color Palette',
@@ -247,7 +247,7 @@ export function generateGplPalette(state: StudioState): string {
 /**
  * 生成 README.txt 导出说明文件
  */
-export function generateReadme(state: StudioState): string {
+function generateReadme(state: StudioState): string {
   const hairPreset = state.currentHairPreset || '未选择 / 自定义发色';
   const nowStr = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
 
@@ -322,13 +322,8 @@ export async function exportProjectPng(state: StudioState): Promise<void> {
 /**
  * 打包并导出完整工程 ZIP (包含全部渲染图、遮罩、色板与工程数据)
  */
-export async function exportProjectZip(
-  state: StudioState,
-  onProgress?: (step: string) => void
-): Promise<void> {
+export async function exportProjectZip(state: StudioState): Promise<void> {
   if (!state.isLoaded) return;
-
-  onProgress?.('正在生成各分辨率渲染图与工程数据...');
 
   const zip = new JSZip();
   const projectData = stateToProjectData(state);
@@ -343,7 +338,6 @@ export async function exportProjectZip(
   zip.file('README.txt', generateReadme(state));
 
   // 2. 渲染图 (1x, 4x, 8x)
-  onProgress?.('正在导出 1x/4x/8x 像素头像...');
   const canvas256 = createPixelCanvas(state, 4);
   const canvas512 = createPixelCanvas(state, 8);
 
@@ -357,7 +351,6 @@ export async function exportProjectZip(
   zip.file('renders/avatar_512x512_8x.png', blob512);
 
   // 3. 语义遮罩 (综合遮罩 + 5 个独立分区二值遮罩)
-  onProgress?.('正在生成 5 分区语义遮罩与图层二值图...');
   const maskComposite64 = createCompositeMaskCanvas(state, 1);
   const maskComposite512 = createCompositeMaskCanvas(state, 8);
 
@@ -385,7 +378,6 @@ export async function exportProjectZip(
   zip.file('masks/layers/mask_background_64x64.png', blobBg);
 
   // 4. 色板资源
-  onProgress?.('正在打包 36 色色板与 Aseprite GPL 配置...');
   const palJson = state.palette.map((hex, i) => ({
     index: i,
     hex,
@@ -399,7 +391,6 @@ export async function exportProjectZip(
   zip.file('palette/palette_swatches.png', swatchBlob);
 
   // 5. 压缩并下载
-  onProgress?.('正在压缩 ZIP 归档文件...');
   const zipBlob = await zip.generateAsync({
     type: 'blob',
     compression: 'DEFLATE',
@@ -411,13 +402,12 @@ export async function exportProjectZip(
 
 /**
  * 从 ZIP 归档文件中解包提取 ImageGem 工程数据
- * @param fileOrBuffer 用户选择或拖入的 ZIP 文件或二进制 ArrayBuffer
  * @returns 经过合法性严格校验的 ImageGemProjectData
  */
-export async function importProjectZip(fileOrBuffer: File | ArrayBuffer): Promise<ImageGemProjectData> {
+export async function importProjectZip(file: File): Promise<ImageGemProjectData> {
   let zip: JSZip;
   try {
-    zip = await JSZip.loadAsync(fileOrBuffer);
+    zip = await JSZip.loadAsync(file);
   } catch (err) {
     throw new Error('无法读取 ZIP 文件，可能已损坏或非合法 ZIP 归档');
   }

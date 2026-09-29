@@ -7,9 +7,8 @@
 import { StudioState, RectSelection } from '../types';
 import { TRANSPARENT_INDEX, PALETTE_FAMILIES } from '../data/palette';
 
-export interface ReplaceColorModalCallbacks {
+interface ReplaceColorModalCallbacks {
   onConfirm: (fromIdx: number, toIdx: number, scope: 'selection' | 'all') => void;
-  onClose: () => void;
 }
 
 export class ReplaceColorModal {
@@ -276,7 +275,6 @@ export class ReplaceColorModal {
     if (this.overlayEl) {
       this.overlayEl.style.display = 'none';
     }
-    this.callbacks.onClose();
   }
 
   public getIsOpen(): boolean {

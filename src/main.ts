@@ -85,7 +85,7 @@ class ImageGemApp {
       lockedMaskZones: [],
       activeMaskTool: 'pen',
       maskMatchPresetKey: 'current_hair',
-      maskMatchColors: [14, 15, 16, 17, 18],
+      maskMatchColors: [],
       maskBrushSize: 1,
       maskOpacity: 0.5,
       showGrid: true,
@@ -220,7 +220,6 @@ class ImageGemApp {
       onSetAllZonesVisibility: (visible) => this.setAllZonesVisibility(visible),
       onToggleLockZone: (zone) => this.toggleLockZone(zone),
       onMaskOpacityChange: (op) => this.setMaskOpacity(op),
-      onToggleMaskVisibility: (show) => this.setMaskVisibility(show),
       onApplyHairPreset: (key) => this.applyHairPreset(key),
       onOpenHairModal: () => this.openHairRecolorModal(),
       onRecomputeSemanticMask: () => this.recomputeSemanticMask(),
@@ -229,7 +228,6 @@ class ImageGemApp {
 
     this.replaceColorModal = new ReplaceColorModal(document.body, {
       onConfirm: (fromIdx, toIdx, scope) => this.handleReplaceColor(fromIdx, toIdx, scope),
-      onClose: () => {},
     });
 
     this.confirmModal = new ConfirmModal(document.body);
@@ -242,12 +240,6 @@ class ImageGemApp {
       this.canvasEditor.setHasStorageSnapshot(true);
       this.showToast('检测到上次未完成的编辑进度，可点击中心卡片快速恢复', 'info');
     }
-  }
-
-  public discardStorageSnapshot(): void {
-    clearProjectStorage();
-    this.canvasEditor.setHasStorageSnapshot(false);
-    this.showToast('已放弃未完成进度并新建');
   }
 
   /**
@@ -1123,12 +1115,6 @@ class ImageGemApp {
 
   private setMaskOpacity(opacity: number): void {
     this.state.maskOpacity = opacity;
-    this.canvasEditor.update(this.state);
-    this.maskPanel.update(this.state);
-  }
-
-  private setMaskVisibility(show: boolean): void {
-    this.state.showMaskOverlay = show;
     this.canvasEditor.update(this.state);
     this.maskPanel.update(this.state);
   }

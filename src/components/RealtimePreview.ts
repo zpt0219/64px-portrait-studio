@@ -4,9 +4,9 @@
  * 支持 1×~4× 连续倍率滑杆、深色/浅色/GBA LCD/透明棋盘背景模拟、可拖拽悬浮窗与极简折叠胶囊
  */
 
-export type PreviewBgMode = 'lcd' | 'checker';
+type PreviewBgMode = 'lcd' | 'checker';
 
-export interface RealtimePreviewCallbacks {
+interface RealtimePreviewCallbacks {
   onVisibilityChange?: (visible: boolean) => void;
 }
 
@@ -26,7 +26,6 @@ export class RealtimePreview {
 
   // 状态
   private scale: number = 2; // 1, 2, 3, 4
-  private bgMode: PreviewBgMode = 'lcd';
   private isVisible: boolean = true;
   private isMinimized: boolean = false;
   private isLoaded: boolean = false;
@@ -239,20 +238,11 @@ export class RealtimePreview {
     this.redrawCanvas();
   }
 
-  public setBgMode(mode: PreviewBgMode): void {
-    this.bgMode = mode;
+  private setBgMode(mode: PreviewBgMode): void {
     if (!this.stageWrapper) return;
 
-    this.stageWrapper.classList.remove('pip-bg-dark', 'pip-bg-light', 'pip-bg-lcd', 'pip-bg-checker');
+    this.stageWrapper.classList.remove('pip-bg-lcd', 'pip-bg-checker');
     this.stageWrapper.classList.add(`pip-bg-${mode}`);
-  }
-
-  public getBgMode(): PreviewBgMode {
-    return this.bgMode;
-  }
-
-  public getScale(): number {
-    return this.scale;
   }
 
   public toggleMinimize(): void {

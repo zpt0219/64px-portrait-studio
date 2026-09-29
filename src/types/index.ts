@@ -1,5 +1,5 @@
 /**
- * ImageGem Studio v2.0 类型定义
+ * 全局类型与 5 分区元数据
  */
 
 /** 5 分区语义遮罩值 */
@@ -12,11 +12,10 @@ export const enum SemanticZone {
 }
 
 /** 5 分区配置信息与规范配色 */
-export interface ZoneMeta {
+interface ZoneMeta {
   zone: SemanticZone;
   name: string;
   color: string;       // 导出及高亮配色 (HEX)
-  displayRgba: string; // 编辑器半透明覆盖色
   hotkey: string;
 }
 
@@ -25,40 +24,35 @@ export const ZONE_CONFIG: Record<SemanticZone, ZoneMeta> = {
     zone: SemanticZone.Background,
     name: '背景 (Background)',
     color: '#64748B',
-    displayRgba: 'rgba(15, 23, 42, 0.7)',
     hotkey: '0',
   },
   [SemanticZone.Hair]: {
     zone: SemanticZone.Hair,
     name: '头发 (Hair)',
     color: '#00E5FF',
-    displayRgba: 'rgba(0, 229, 255, 0.65)',
     hotkey: '1',
   },
   [SemanticZone.Skin]: {
     zone: SemanticZone.Skin,
     name: '皮肤 (Skin)',
     color: '#22C55E',
-    displayRgba: 'rgba(34, 197, 94, 0.65)',
     hotkey: '2',
   },
   [SemanticZone.Eyes]: {
     zone: SemanticZone.Eyes,
     name: '眼睛 (Eyes)',
     color: '#A855F7',
-    displayRgba: 'rgba(168, 85, 247, 0.75)',
     hotkey: '3',
   },
   [SemanticZone.Clothes]: {
     zone: SemanticZone.Clothes,
     name: '衣服 (Clothes)',
     color: '#FFD600',
-    displayRgba: 'rgba(255, 214, 0, 0.65)',
     hotkey: '4',
   },
 };
 
-/** 工程 PNG 内嵌 / LocalStorage 存储的统一数据结构 */
+/** 工程 ZIP / LocalStorage 存储的统一数据结构 */
 export interface ImageGemProjectData {
   v: number;                    // Schema 版本号 (1)
   palette: string[];            // 36 色 Hex 数组
@@ -117,23 +111,4 @@ export interface RampInfo {
   name: string;
   icon: string;
   hexes: string[];
-  theme: string;
-}
-
-export type ToneStrategy = 'preserve' | 'contrast' | 'flat';
-export type OutlineStrategy = 'repair' | 'strong' | 'keep';
-export type RepairMode = 'replace' | 'restore' | 'include' | 'protect';
-
-/** 旧版 issueDetector 兼容接口 */
-export interface IssueDetectorState {
-  hairMask: Uint8Array;
-  basePixels: string[];
-  pixelTiers: Int8Array;
-  currentRamp: string[];
-  sourceRamp: string[];
-  protectSkin: boolean;
-  protectAccessories: boolean;
-  forceOutline: boolean;
-  outlineStrategy: OutlineStrategy;
-  toneStrategy: ToneStrategy;
 }

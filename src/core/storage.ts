@@ -5,7 +5,7 @@
  */
 
 import { ImageGemProjectData, StudioState } from '../types';
-import { uint8ArrayToBase64, base64ToUint8Array, validateProjectData } from './pngMetadata';
+import { uint8ArrayToBase64, base64ToUint8Array, validateProjectData } from './projectData';
 
 const STORAGE_KEY = 'imagegem_project_autosave_v2';
 
@@ -45,7 +45,7 @@ export function projectDataToStatePatch(data: ImageGemProjectData): {
 /**
  * 立即保存当前进度至 LocalStorage
  */
-export function saveProjectImmediate(state: StudioState): void {
+function saveProjectImmediate(state: StudioState): void {
   if (!state.isLoaded) return;
   try {
     const data = stateToProjectData(state);

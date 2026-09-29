@@ -6,13 +6,12 @@
 import { StudioState, SemanticZone, ZONE_CONFIG } from '../types';
 import { RAMPS_INFO } from '../data/palette';
 
-export interface MaskPanelCallbacks {
+interface MaskPanelCallbacks {
   onSelectZone: (zone: SemanticZone, solo?: boolean) => void;
   onToggleZoneVisibility: (zone: SemanticZone, visible: boolean) => void;
   onSetAllZonesVisibility: (visible: boolean) => void;
   onToggleLockZone: (zone: SemanticZone) => void;
   onMaskOpacityChange: (opacity: number) => void;
-  onToggleMaskVisibility?: (show: boolean) => void;
   onApplyHairPreset: (presetKey: string) => void;
   onOpenHairModal?: () => void;
   onRecomputeSemanticMask: () => void;

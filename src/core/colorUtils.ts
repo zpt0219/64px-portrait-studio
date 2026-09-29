@@ -10,15 +10,7 @@ export function hexToRgb(hex: string): [number, number, number] {
   return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
 }
 
-export function rgbToHex(r: number, g: number, b: number): string {
-  const toHex = (n: number) => {
-    const clamped = Math.max(0, Math.min(255, Math.round(n)));
-    return clamped.toString(16).padStart(2, "0").toUpperCase();
-  };
-  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
-}
-
-export function srgbToLinear(c: number): number {
+function srgbToLinear(c: number): number {
   const v = c / 255;
   return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
 }

@@ -6,7 +6,7 @@
 
 import { StudioState } from '../types';
 
-export interface HeaderCallbacks {
+interface HeaderCallbacks {
   onFileSelect: (file: File) => void;
   onQuickSave: () => void;
   onExportZip: () => void;
