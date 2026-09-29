@@ -1273,9 +1273,6 @@ class PortraitStudioApp {
     const changed = edit();
     if (changed) {
       this.recordUndo(snapshot);
-      if (this.hasUnappliedHairRecolor()) {
-        this.recomputeHairRecolorPreview();
-      }
       this.triggerAutoSave();
     }
     this.syncAllViews();
