@@ -3,8 +3,9 @@
  * 专注 5 分区遮罩画刷选择与像素统计、遮罩覆盖层透明度与显隐控制、9 大经典二次元发色预设置换
  */
 
-import { StudioState, SemanticZone, ZONE_CONFIG } from '../types';
+import { StudioState, SemanticZone, ZONE_CONFIG, ALL_ZONES } from '../types';
 import { RAMPS_INFO } from '../data/palette';
+import { PIXEL_COUNT } from '../core/pixelGrid';
 
 interface MaskPanelCallbacks {
   onSelectZone: (zone: SemanticZone, solo?: boolean) => void;
@@ -178,7 +179,7 @@ export class MaskPanel {
       [SemanticZone.Clothes]: 0,
     };
 
-    for (let i = 0; i < 4096; i++) {
+    for (let i = 0; i < PIXEL_COUNT; i++) {
       const z = state.semanticMask[i];
       if (zoneCounts[z] !== undefined) {
         zoneCounts[z]++;
@@ -189,18 +190,10 @@ export class MaskPanel {
     const zoneList = this.container.querySelector('#zone-list');
     if (zoneList) {
       zoneList.innerHTML = '';
-      const zones = [
-        SemanticZone.Hair,
-        SemanticZone.Skin,
-        SemanticZone.Eyes,
-        SemanticZone.Clothes,
-        SemanticZone.Background,
-      ];
-
       const visibleSet = new Set(state.visibleMaskZones ?? [SemanticZone.Hair]);
       const lockedSet = new Set(state.lockedMaskZones || []);
 
-      zones.forEach((zone) => {
+      ALL_ZONES.forEach((zone) => {
         const meta = ZONE_CONFIG[zone];
         const count = zoneCounts[zone] || 0;
         const isActive = isMaskActive && state.activeZone === zone;

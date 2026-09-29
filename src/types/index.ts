@@ -14,8 +14,9 @@ export const enum SemanticZone {
 /** 5 分区配置信息与规范配色 */
 interface ZoneMeta {
   zone: SemanticZone;
-  name: string;
-  color: string;       // 导出及高亮配色 (HEX)
+  name: string;        // 中英文全称，如「头发 (Hair)」
+  shortName: string;   // 中文简称，如「头发」
+  color: string;       // 界面、覆盖层与导出遮罩配色 (HEX)
   hotkey: string;
 }
 
@@ -23,34 +24,48 @@ export const ZONE_CONFIG: Record<SemanticZone, ZoneMeta> = {
   [SemanticZone.Background]: {
     zone: SemanticZone.Background,
     name: '背景 (Background)',
+    shortName: '背景',
     color: '#64748B',
     hotkey: '0',
   },
   [SemanticZone.Hair]: {
     zone: SemanticZone.Hair,
     name: '头发 (Hair)',
+    shortName: '头发',
     color: '#00E5FF',
     hotkey: '1',
   },
   [SemanticZone.Skin]: {
     zone: SemanticZone.Skin,
     name: '皮肤 (Skin)',
+    shortName: '皮肤',
     color: '#22C55E',
     hotkey: '2',
   },
   [SemanticZone.Eyes]: {
     zone: SemanticZone.Eyes,
     name: '眼睛 (Eyes)',
+    shortName: '眼睛',
     color: '#A855F7',
     hotkey: '3',
   },
   [SemanticZone.Clothes]: {
     zone: SemanticZone.Clothes,
     name: '衣服 (Clothes)',
+    shortName: '衣服',
     color: '#FFD600',
     hotkey: '4',
   },
 };
+
+/** 分区面板与「全部显示」使用的顺序 */
+export const ALL_ZONES: SemanticZone[] = [
+  SemanticZone.Hair,
+  SemanticZone.Skin,
+  SemanticZone.Eyes,
+  SemanticZone.Clothes,
+  SemanticZone.Background,
+];
 
 /** 工程 ZIP / LocalStorage 存储的统一数据结构 */
 export interface ImageGemProjectData {

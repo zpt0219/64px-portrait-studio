@@ -6,8 +6,14 @@
 import { StudioState, SemanticZone, ZONE_CONFIG, RectSelection } from '../types';
 import { TRANSPARENT_INDEX, WHITE_PALETTE_INDEX } from '../data/palette';
 import { getToolCursors } from '../utils/cursorUtils';
+import { hexToRgb } from '../core/colorUtils';
+import { floodFill, PIXEL_COUNT } from '../core/pixelGrid';
+import { drawIndexedPixels, zoneRgbTable } from '../core/pixelRender';
 
 const ZOOM_STEPS = [4, 6, 8, 12, 16, 24, 32] as const;
+
+/** 遮罩覆盖层配色 (背景用深蓝灰，与深色界面区分) */
+const ZONE_OVERLAY_RGB = zoneRgbTable([15, 23, 42]);
 
 interface CanvasEditorCallbacks {
   onStrokeStart: () => void;
@@ -1105,49 +1111,21 @@ export class CanvasEditor {
       return false;
     }
 
-    const queue = new Int32Array(4096);
-    const visited = new Uint8Array(4096);
-    let head = 0;
-    let tail = 0;
-
-    queue[tail++] = startOffset;
-    visited[startOffset] = 1;
-    let modified = false;
-
-    // 邻域方向：前 4 个为上下左右，后 4 个为对角线
-    const dx = [0, 0, -1, 1, -1, 1, -1, 1];
-    const dy = [-1, 1, 0, 0, -1, -1, 1, 1];
-    const numDirs = connectivity === 8 ? 8 : 4;
-
     const lockedSet = new Set(this.currentState.lockedMaskZones || []);
+    const sel = this.currentSelection;
+    const region = floodFill(
+      [startOffset],
+      (o) => pixelIndices[o] === srcColor && (!sel || this.isPixelInSelection(o & 63, o >> 6, sel)),
+      connectivity === 8
+    );
 
-    while (head < tail) {
-      const offset = queue[head++];
-      const cx = offset & 63;
-      const cy = offset >> 6;
-
-      if (pixelIndices[offset] !== targetPaletteIdx) {
-        pixelIndices[offset] = targetPaletteIdx;
-        if (targetPaletteIdx === TRANSPARENT_INDEX && !lockedSet.has(this.currentState.semanticMask[offset])) {
-          this.currentState.semanticMask[offset] = SemanticZone.Background;
-        }
-        modified = true;
-      }
-
-      for (let i = 0; i < numDirs; i++) {
-        const nx = cx + dx[i];
-        const ny = cy + dy[i];
-
-        if (nx < 0 || nx >= 64 || ny < 0 || ny >= 64) continue;
-        if (this.currentSelection && !this.isPixelInSelection(nx, ny, this.currentSelection)) continue;
-
-        const nOffset = (ny << 6) + nx;
-        if (!visited[nOffset] && pixelIndices[nOffset] === srcColor) {
-          visited[nOffset] = 1;
-          queue[tail++] = nOffset;
-        }
+    for (const offset of region) {
+      pixelIndices[offset] = targetPaletteIdx;
+      if (targetPaletteIdx === TRANSPARENT_INDEX && !lockedSet.has(this.currentState.semanticMask[offset])) {
+        this.currentState.semanticMask[offset] = SemanticZone.Background;
       }
     }
+    const modified = region.length > 0;
 
     if (modified) {
       this.redraw();
@@ -1175,43 +1153,15 @@ export class CanvasEditor {
     if (targetZone !== SemanticZone.Background && this.currentState.lockedMaskZones?.includes(targetZone)) return false;
     if (this.currentSelection && !this.isPixelInSelection(startX, startY, this.currentSelection)) return false;
 
-    const queue = new Int32Array(4096);
-    const visited = new Uint8Array(4096);
-    let head = 0;
-    let tail = 0;
+    const sel = this.currentSelection;
+    const region = floodFill(
+      [startOffset],
+      (o) => semanticMask[o] === srcZone && (!sel || this.isPixelInSelection(o & 63, o >> 6, sel)),
+      connectivity === 8
+    );
 
-    queue[tail++] = startOffset;
-    visited[startOffset] = 1;
-    let modified = false;
-
-    const dx = [0, 0, -1, 1, -1, 1, -1, 1];
-    const dy = [-1, 1, 0, 0, -1, -1, 1, 1];
-    const numDirs = connectivity === 8 ? 8 : 4;
-
-    while (head < tail) {
-      const offset = queue[head++];
-      const cx = offset & 63;
-      const cy = offset >> 6;
-
-      if (semanticMask[offset] !== targetZone) {
-        semanticMask[offset] = targetZone;
-        modified = true;
-      }
-
-      for (let i = 0; i < numDirs; i++) {
-        const nx = cx + dx[i];
-        const ny = cy + dy[i];
-
-        if (nx < 0 || nx >= 64 || ny < 0 || ny >= 64) continue;
-        if (this.currentSelection && !this.isPixelInSelection(nx, ny, this.currentSelection)) continue;
-
-        const nOffset = (ny << 6) + nx;
-        if (!visited[nOffset] && semanticMask[nOffset] === srcZone) {
-          visited[nOffset] = 1;
-          queue[tail++] = nOffset;
-        }
-      }
-    }
+    for (const offset of region) semanticMask[offset] = targetZone;
+    const modified = region.length > 0;
 
     if (modified) {
       this.redraw();
@@ -1429,35 +1379,9 @@ export class CanvasEditor {
 
     this.ctx.imageSmoothingEnabled = false;
 
-    // 1. 绘制底层像素画到离屏 64x64
-    const imgData = this.offscreenPixelCtx.createImageData(64, 64);
-    const data = imgData.data;
-
-    const paletteRgb = this.currentState.palette.map((hex) => {
-      const clean = hex.replace('#', '');
-      const num = parseInt(clean, 16);
-      return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
-    });
-
+    // 1. 绘制底层像素画到离屏 64x64 (发色预览时优先绘制预览像素)
     const pixelsToRender = this.previewPixelIndices ?? this.currentState.pixelIndices;
-    for (let i = 0; i < 4096; i++) {
-      const palIdx = pixelsToRender[i];
-      const dIdx = i * 4;
-      if (palIdx === TRANSPARENT_INDEX) {
-        data[dIdx] = 0;
-        data[dIdx + 1] = 0;
-        data[dIdx + 2] = 0;
-        data[dIdx + 3] = 0;
-      } else {
-        const rgb = paletteRgb[palIdx] || [0, 0, 0];
-        data[dIdx] = rgb[0];
-        data[dIdx + 1] = rgb[1];
-        data[dIdx + 2] = rgb[2];
-        data[dIdx + 3] = 255;
-      }
-    }
-
-    this.offscreenPixelCtx.putImageData(imgData, 0, 0);
+    drawIndexedPixels(this.offscreenPixelCtx, pixelsToRender, this.currentState.palette);
 
     // 2. 放大绘制到展示画布
     this.ctx.clearRect(0, 0, canvasSize, canvasSize);
@@ -1471,22 +1395,13 @@ export class CanvasEditor {
         this.ctx.save();
         const maskOpacity = this.currentState.maskOpacity;
 
-        // 5 分区 RGBA 颜色字典 (高对比度视觉：青/绿/紫/黄无红相撞色谱)
-        const zoneRgbaMap: Record<number, [number, number, number]> = {
-          [SemanticZone.Background]: [15, 23, 42],
-          [SemanticZone.Hair]: [0, 229, 255],     // 高亮电光青：与各色发色、暖色肤色/暗部形成最大互补色差与明度反差
-          [SemanticZone.Skin]: [34, 197, 94],     // 荧光翠绿
-          [SemanticZone.Eyes]: [168, 85, 247],    // 电光靓紫：避免与青色头发混淆
-          [SemanticZone.Clothes]: [255, 214, 0],  // 明艳金黄
-        };
-
         for (let y = 0; y < 64; y++) {
           for (let x = 0; x < 64; x++) {
             const idx = y * 64 + x;
             const zone = this.currentState.semanticMask[idx];
             if (!visibleSet.has(zone)) continue;
 
-            const rgb = zoneRgbaMap[zone] || [0, 0, 0];
+            const rgb = ZONE_OVERLAY_RGB[zone as SemanticZone] || [0, 0, 0];
             this.ctx.fillStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${maskOpacity})`;
             this.ctx.fillRect(x * zoom, y * zoom, zoom, zoom);
           }
@@ -1541,7 +1456,7 @@ export class CanvasEditor {
             const pIdx = r * w + c;
             const palIdx = pixels[pIdx];
             if (palIdx !== TRANSPARENT_INDEX) {
-              const rgb = paletteRgb[palIdx] || [0, 0, 0];
+              const rgb = hexToRgb(this.currentState.palette[palIdx] || '#000000');
               this.ctx.fillStyle = `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
               this.ctx.fillRect(px * zoom, py * zoom, zoom, zoom);
             }
@@ -1554,13 +1469,6 @@ export class CanvasEditor {
       if (showMask) {
         const visibleSet = new Set(this.currentState.visibleMaskZones ?? [SemanticZone.Hair]);
         const maskOpacity = this.currentState.maskOpacity;
-        const zoneRgbaMap: Record<number, [number, number, number]> = {
-          [SemanticZone.Background]: [15, 23, 42],
-          [SemanticZone.Hair]: [0, 229, 255],
-          [SemanticZone.Skin]: [34, 197, 94],
-          [SemanticZone.Eyes]: [168, 85, 247],
-          [SemanticZone.Clothes]: [255, 214, 0],
-        };
         this.ctx.save();
         for (let r = 0; r < h; r++) {
           for (let c = 0; c < w; c++) {
@@ -1570,7 +1478,7 @@ export class CanvasEditor {
               const pIdx = r * w + c;
               const zone = mask[pIdx];
               if (visibleSet.has(zone)) {
-                const rgb = zoneRgbaMap[zone] || [0, 0, 0];
+                const rgb = ZONE_OVERLAY_RGB[zone as SemanticZone] || [0, 0, 0];
                 this.ctx.fillStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${maskOpacity})`;
                 this.ctx.fillRect(px * zoom, py * zoom, zoom, zoom);
               }
@@ -1787,7 +1695,7 @@ export class CanvasEditor {
         }
       }
     } else {
-      for (let i = 0; i < 4096; i++) {
+      for (let i = 0; i < PIXEL_COUNT; i++) {
         if (this.currentState.pixelIndices[i] === fromIndex) {
           this.currentState.pixelIndices[i] = toIndex;
           if (toIndex === TRANSPARENT_INDEX && !lockedSet.has(this.currentState.semanticMask[i])) {

@@ -14,8 +14,9 @@ import { StudioState, SemanticZone, ImageGemProjectData } from '../types';
 import { stateToProjectData } from './storage';
 import { validateProjectData } from './projectData';
 import { encodeMinimalIndexedPng } from './minimalPng';
-import { TRANSPARENT_INDEX } from '../data/palette';
-import { hexToRgb } from './colorUtils';
+import { Rgb, hexToRgb } from './colorUtils';
+import { drawIndexedPixels, zoneRgbTable, createScaledCanvas } from './pixelRender';
+import { IMAGE_WIDTH, IMAGE_HEIGHT, PIXEL_COUNT } from './pixelGrid';
 
 /**
  * 触发浏览器文件下载
@@ -44,133 +45,38 @@ function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
 }
 
 /**
- * 绘制指定缩放倍率的 36 色像素画布
+ * 指定缩放倍率的像素头像 (保留透明)
  */
-function createPixelCanvas(state: StudioState, scale: number = 1): HTMLCanvasElement {
-  const canvas64 = document.createElement('canvas');
-  canvas64.width = 64;
-  canvas64.height = 64;
-  const ctx64 = canvas64.getContext('2d')!;
+function createPixelCanvas(state: StudioState, scale = 1): HTMLCanvasElement {
+  return createScaledCanvas((ctx) => drawIndexedPixels(ctx, state.pixelIndices, state.palette), scale);
+}
 
-  const imgData = ctx64.createImageData(64, 64);
-  const data = imgData.data;
-
-  const paletteRgb = state.palette.map((hex) => hexToRgb(hex));
-
-  for (let i = 0; i < 4096; i++) {
-    const palIdx = state.pixelIndices[i];
-    const dIdx = i * 4;
-    if (palIdx === TRANSPARENT_INDEX) {
-      data[dIdx] = 0;
-      data[dIdx + 1] = 0;
-      data[dIdx + 2] = 0;
-      data[dIdx + 3] = 0;
-    } else {
-      const rgb = paletteRgb[palIdx] || [0, 0, 0];
-      data[dIdx] = rgb[0];
-      data[dIdx + 1] = rgb[1];
-      data[dIdx + 2] = rgb[2];
-      data[dIdx + 3] = 255;
+/**
+ * 按 SemanticZone 值逐像素填色的遮罩画布
+ */
+function createMaskCanvas(state: StudioState, colorOf: (zone: SemanticZone) => Rgb, scale = 1): HTMLCanvasElement {
+  return createScaledCanvas((ctx) => {
+    const imgData = ctx.createImageData(IMAGE_WIDTH, IMAGE_HEIGHT);
+    for (let i = 0; i < PIXEL_COUNT; i++) {
+      const rgb = colorOf(state.semanticMask[i] as SemanticZone) || [0, 0, 0];
+      imgData.data.set([rgb[0], rgb[1], rgb[2], 255], i * 4);
     }
-  }
-  ctx64.putImageData(imgData, 0, 0);
+    ctx.putImageData(imgData, 0, 0);
+  }, scale);
+}
 
-  if (scale === 1) {
-    return canvas64;
-  }
-
-  const targetSize = 64 * scale;
-  const targetCanvas = document.createElement('canvas');
-  targetCanvas.width = targetSize;
-  targetCanvas.height = targetSize;
-  const targetCtx = targetCanvas.getContext('2d')!;
-  targetCtx.imageSmoothingEnabled = false;
-  targetCtx.drawImage(canvas64, 0, 0, 64, 64, 0, 0, targetSize, targetSize);
-  return targetCanvas;
+/** 5 色互斥综合语义遮罩 (背景为纯黑) */
+function createCompositeMaskCanvas(state: StudioState, scale = 1): HTMLCanvasElement {
+  const table = zoneRgbTable([0, 0, 0]);
+  return createMaskCanvas(state, (zone) => table[zone], scale);
 }
 
 /**
- * 绘制 5 色互斥综合语义遮罩画布 (黑/青/绿/紫/黄)
+ * 单个分区的黑白二值遮罩 (白=选定分区, 黑=其他区域)
+ * 便于导入游戏引擎、Photoshop 图层蒙版或作为 AI 训练数据
  */
-function createCompositeMaskCanvas(state: StudioState, scale: number = 1): HTMLCanvasElement {
-  const canvas64 = document.createElement('canvas');
-  canvas64.width = 64;
-  canvas64.height = 64;
-  const ctx64 = canvas64.getContext('2d')!;
-
-  const imgData = ctx64.createImageData(64, 64);
-  const data = imgData.data;
-
-  // 5 分区规范配色: 黑/青/绿/紫/黄
-  const zoneHexMap: Record<number, [number, number, number]> = {
-    [SemanticZone.Background]: [0, 0, 0],         // #000000 背景 黑
-    [SemanticZone.Hair]: [0, 229, 255],           // #00E5FF 头发 青
-    [SemanticZone.Skin]: [34, 197, 94],           // #22C55E 皮肤 绿
-    [SemanticZone.Eyes]: [168, 85, 247],          // #A855F7 眼睛 紫
-    [SemanticZone.Clothes]: [255, 214, 0],        // #FFD600 衣服 黄
-  };
-
-  for (let i = 0; i < 4096; i++) {
-    const zone = state.semanticMask[i];
-    const rgb = zoneHexMap[zone] || [0, 0, 0];
-    const dIdx = i * 4;
-    data[dIdx] = rgb[0];
-    data[dIdx + 1] = rgb[1];
-    data[dIdx + 2] = rgb[2];
-    data[dIdx + 3] = 255;
-  }
-  ctx64.putImageData(imgData, 0, 0);
-
-  if (scale === 1) {
-    return canvas64;
-  }
-
-  const targetSize = 64 * scale;
-  const targetCanvas = document.createElement('canvas');
-  targetCanvas.width = targetSize;
-  targetCanvas.height = targetSize;
-  const targetCtx = targetCanvas.getContext('2d')!;
-  targetCtx.imageSmoothingEnabled = false;
-  targetCtx.drawImage(canvas64, 0, 0, 64, 64, 0, 0, targetSize, targetSize);
-  return targetCanvas;
-}
-
-/**
- * 绘制单个分区的单通道黑白二值遮罩 (白=选定分区, 黑=其他区域)
- * 便于导入游戏引擎、Photoshop 图层蒙版或作为 AI 控制网 (ControlNet / LoRA) 训练数据
- */
-function createBinaryMaskCanvas(state: StudioState, targetZone: SemanticZone, scale: number = 1): HTMLCanvasElement {
-  const canvas64 = document.createElement('canvas');
-  canvas64.width = 64;
-  canvas64.height = 64;
-  const ctx64 = canvas64.getContext('2d')!;
-
-  const imgData = ctx64.createImageData(64, 64);
-  const data = imgData.data;
-
-  for (let i = 0; i < 4096; i++) {
-    const isMatch = state.semanticMask[i] === targetZone;
-    const dIdx = i * 4;
-    const val = isMatch ? 255 : 0;
-    data[dIdx] = val;
-    data[dIdx + 1] = val;
-    data[dIdx + 2] = val;
-    data[dIdx + 3] = 255;
-  }
-  ctx64.putImageData(imgData, 0, 0);
-
-  if (scale === 1) {
-    return canvas64;
-  }
-
-  const targetSize = 64 * scale;
-  const targetCanvas = document.createElement('canvas');
-  targetCanvas.width = targetSize;
-  targetCanvas.height = targetSize;
-  const targetCtx = targetCanvas.getContext('2d')!;
-  targetCtx.imageSmoothingEnabled = false;
-  targetCtx.drawImage(canvas64, 0, 0, 64, 64, 0, 0, targetSize, targetSize);
-  return targetCanvas;
+function createBinaryMaskCanvas(state: StudioState, targetZone: SemanticZone): HTMLCanvasElement {
+  return createMaskCanvas(state, (zone) => (zone === targetZone ? [255, 255, 255] : [0, 0, 0]));
 }
 
 /**
@@ -253,7 +159,7 @@ function generateReadme(state: StudioState): string {
 
   // 统计各遮罩分区像素数
   const zoneStats: Record<number, number> = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0 };
-  for (let i = 0; i < 4096; i++) {
+  for (let i = 0; i < PIXEL_COUNT; i++) {
     const z = state.semanticMask[i];
     if (zoneStats[z] !== undefined) zoneStats[z]++;
   }

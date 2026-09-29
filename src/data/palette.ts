@@ -38,6 +38,11 @@ export const TIER_NAMES: string[] = ["绝墨轮廓", "基底暗部", "过渡中�
 export const WHITE_PALETTE_INDEX = 1; // #FFFFFF 纯白色 (眼白 / 高光 / 服饰白)
 export const TRANSPARENT_INDEX = 255; // 原生透明色 (Aseprite 空白像素 / 橡皮擦删除值)
 
+/** 色板索引的简短显示文本：透明色显示为「透」 */
+export function paletteIndexLabel(index: number): string {
+  return index === TRANSPARENT_INDEX ? '透' : String(index);
+}
+
 /** 36 色按色相环自然流序分类划分与规范 (连续 0~35 单调递增序号，黑白双色与透明独立排在首行) */
 interface PaletteFamily {
   id: string;

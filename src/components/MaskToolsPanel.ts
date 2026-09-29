@@ -11,7 +11,8 @@
  */
 
 import { StudioState, ZONE_CONFIG } from '../types';
-import { TRANSPARENT_INDEX, MATCH_COLOR_PRESETS } from '../data/palette';
+import { TRANSPARENT_INDEX, MATCH_COLOR_PRESETS, paletteIndexLabel } from '../data/palette';
+import { PIXEL_COUNT } from '../core/pixelGrid';
 
 interface MaskToolsPanelCallbacks {
   onSelectMaskTool: (tool: 'pen' | 'eraser' | 'bucket' | 'box_select') => void;
@@ -219,14 +220,14 @@ export class MaskToolsPanel {
     const zoneMeta = ZONE_CONFIG[state.activeZone];
 
     if (zoneBadge && zoneMeta) {
-      zoneBadge.textContent = `● ${zoneMeta.name.split(' ')[0]}`;
+      zoneBadge.textContent = `● ${zoneMeta.shortName}`;
       zoneBadge.style.color = zoneMeta.color;
       zoneBadge.style.borderColor = `${zoneMeta.color}66`;
       zoneBadge.style.background = `${zoneMeta.color}18`;
     }
 
     if (zoneTag && zoneMeta) {
-      zoneTag.textContent = `目标: ${zoneMeta.name.split(' ')[0]}`;
+      zoneTag.textContent = `目标: ${zoneMeta.shortName}`;
       zoneTag.style.color = zoneMeta.color;
       zoneTag.style.borderColor = `${zoneMeta.color}66`;
     }
@@ -301,16 +302,16 @@ export class MaskToolsPanel {
     const palette = this.currentState.palette;
 
     matchColors.forEach((idx) => {
-      const hex = palette[idx] || (idx === 255 ? 'transparent' : '#000000');
+      const hex = palette[idx] || (idx === TRANSPARENT_INDEX ? 'transparent' : '#000000');
       const isWhite = hex.toUpperCase() === '#FFFFFF';
-      const isTransparent = idx === 255;
+      const isTransparent = idx === TRANSPARENT_INDEX;
       const chip = document.createElement('div');
       chip.className = `match-color-chip ${isTransparent ? 'chip-transparent' : ''} ${isWhite ? 'chip-white' : ''}`;
       chip.style.backgroundColor = isTransparent ? '' : hex;
-      chip.title = `#${idx === 255 ? '透' : idx} ${hex} (点击 ✕ 移除)`;
+      chip.title = `#${paletteIndexLabel(idx)} ${hex} (点击 ✕ 移除)`;
 
       chip.innerHTML = `
-        <span class="match-chip-index">${idx === 255 ? '透' : idx}</span>
+        <span class="match-chip-index">${paletteIndexLabel(idx)}</span>
         <button class="match-chip-del-btn" data-color-idx="${idx}" title="从匹配组移除">✕</button>
       `;
 
@@ -353,18 +354,18 @@ export class MaskToolsPanel {
 
     const allIndices = [...Array.from({ length: 36 }, (_, i) => i), TRANSPARENT_INDEX];
     allIndices.forEach((idx) => {
-      const hex = this.currentState!.palette[idx] || (idx === 255 ? 'transparent' : '#000000');
+      const hex = this.currentState!.palette[idx] || (idx === TRANSPARENT_INDEX ? 'transparent' : '#000000');
       const isAlreadyIn = currentColors.has(idx);
       const isWhite = hex.toUpperCase() === '#FFFFFF';
-      const isTransparent = idx === 255;
+      const isTransparent = idx === TRANSPARENT_INDEX;
 
       const swatch = document.createElement('div');
       swatch.className = `add-swatch-item ${isAlreadyIn ? 'is-selected' : ''} ${isTransparent ? 'chip-transparent' : ''} ${isWhite ? 'chip-white' : ''}`;
       swatch.style.backgroundColor = isTransparent ? '' : hex;
-      swatch.title = `#${idx === 255 ? '透' : idx} ${hex} ${isAlreadyIn ? '(已在组中，点击移除)' : '(点击加入)'}`;
+      swatch.title = `#${paletteIndexLabel(idx)} ${hex} ${isAlreadyIn ? '(已在组中，点击移除)' : '(点击加入)'}`;
 
       swatch.innerHTML = `
-        <span class="swatch-idx">${idx === 255 ? '透' : idx}</span>
+        <span class="swatch-idx">${paletteIndexLabel(idx)}</span>
         ${isAlreadyIn ? '<span class="swatch-check">✓</span>' : ''}
       `;
 
@@ -394,7 +395,7 @@ export class MaskToolsPanel {
 
     // 统计当前 64×64 画面中实际出现的有效色板索引 (0~35，过滤 255 透明)
     const counts = new Map<number, { total: number; inActiveZone: number; locked: number }>();
-    for (let i = 0; i < 4096; i++) {
+    for (let i = 0; i < PIXEL_COUNT; i++) {
       const colorIdx = pixelIndices[i];
       if (colorIdx === TRANSPARENT_INDEX || colorIdx < 0 || colorIdx >= palette.length) {
         continue;
@@ -450,7 +451,7 @@ export class MaskToolsPanel {
             <div class="zone-pct-bar-wrap" title="${stat.inActiveZone}/${stat.total} 像素已在当前【${zoneMeta.name}】">
               <div class="zone-pct-bar-fill" style="width: ${pct}%; background-color: ${zoneMeta.color};"></div>
             </div>
-            <span class="zone-pct-label">${pct}% ${zoneMeta.name.split(' ')[0]}</span>
+            <span class="zone-pct-label">${pct}% ${zoneMeta.shortName}</span>
           </div>
 
           <div class="color-mask-card-right">

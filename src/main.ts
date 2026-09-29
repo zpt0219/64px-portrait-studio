@@ -7,14 +7,16 @@ import {
   StudioState,
   SemanticZone,
   ZONE_CONFIG,
+  ALL_ZONES,
   UndoSnapshot,
   ImageGemProjectData,
   RectSelection,
 } from './types';
-import { PALETTE_36, RAMPS_INFO, TRANSPARENT_INDEX, MATCH_COLOR_PRESETS } from './data/palette';
+import { PALETTE_36, RAMPS_INFO, TRANSPARENT_INDEX, MATCH_COLOR_PRESETS, paletteIndexLabel } from './data/palette';
 import { Rgb, hexToRgb, findNearestColor, quantizeToPalette } from './core/colorUtils';
 import { nearestTierForColor } from './core/recolorEngine';
 import { computeSemanticMask } from './core/segmentation';
+import { floodFill, borderOffsets, PIXEL_COUNT } from './core/pixelGrid';
 import {
   saveProjectDebounced,
   loadProjectFromStorage,
@@ -66,8 +68,8 @@ class ImageGemApp {
   private createInitialState(): StudioState {
     return {
       palette: [...PALETTE_36],
-      pixelIndices: new Uint8Array(4096).fill(TRANSPARENT_INDEX),
-      semanticMask: new Uint8Array(4096),
+      pixelIndices: new Uint8Array(PIXEL_COUNT).fill(TRANSPARENT_INDEX),
+      semanticMask: new Uint8Array(PIXEL_COUNT),
       currentHairPreset: null,
       activeMode: 'pixel',
       activePaletteIndex: 0,
@@ -354,8 +356,8 @@ class ImageGemApp {
       const rgba = imgData.data;
 
       const rgbPixels: Rgb[] = [];
-      const transparentFlags = new Uint8Array(4096);
-      for (let i = 0; i < 4096; i++) {
+      const transparentFlags = new Uint8Array(PIXEL_COUNT);
+      for (let i = 0; i < PIXEL_COUNT; i++) {
         const offset = i * 4;
         const a = rgba[offset + 3];
         if (a < 128) {
@@ -368,13 +370,13 @@ class ImageGemApp {
 
       // 6. OKLab 36 色逐像素最近邻量化 (不使用 dithering)
       const newIndices = quantizeToPalette(rgbPixels, this.state.palette.map(hexToRgb));
-      for (let i = 0; i < 4096; i++) {
+      for (let i = 0; i < PIXEL_COUNT; i++) {
         if (transparentFlags[i]) newIndices[i] = TRANSPARENT_INDEX;
       }
 
       // 7. 语义分割，自动生成 5 分区互斥遮罩
       const newMask = this.generateSemanticMaskFromPixels(rgbPixels);
-      for (let i = 0; i < 4096; i++) {
+      for (let i = 0; i < PIXEL_COUNT; i++) {
         if (transparentFlags[i]) {
           newMask[i] = SemanticZone.Background;
         }
@@ -437,7 +439,7 @@ class ImageGemApp {
   private detectHairPreset(indices: Uint8Array, mask: Uint8Array): string | null {
     const hairCounts: Record<string, number> = {};
     let totalHair = 0;
-    for (let i = 0; i < 4096; i++) {
+    for (let i = 0; i < PIXEL_COUNT; i++) {
       if (mask[i] === SemanticZone.Hair && indices[i] !== TRANSPARENT_INDEX) {
         const hex = this.state.palette[indices[i]];
         if (hex && hex !== '#FFFFFF') {
@@ -748,13 +750,7 @@ class ImageGemApp {
 
   private setAllZonesVisibility(visible: boolean): void {
     if (visible) {
-      this.state.visibleMaskZones = [
-        SemanticZone.Hair,
-        SemanticZone.Skin,
-        SemanticZone.Eyes,
-        SemanticZone.Clothes,
-        SemanticZone.Background,
-      ];
+      this.state.visibleMaskZones = [...ALL_ZONES];
       this.state.activeMode = 'mask';
       this.state.showMaskOverlay = true;
     } else {
@@ -885,10 +881,10 @@ class ImageGemApp {
       this.state.maskMatchPresetKey = 'custom';
       this.canvasEditor.update(this.state);
       this.maskToolsPanel.update(this.state);
-      const hex = this.state.palette[colorIdx] || (colorIdx === 255 ? 'transparent' : '#000000');
-      this.showToast(`➕ 已将颜色 #${colorIdx === 255 ? '透' : colorIdx} (${hex}) 加入框选匹配组`);
+      const hex = this.state.palette[colorIdx] || (colorIdx === TRANSPARENT_INDEX ? 'transparent' : '#000000');
+      this.showToast(`➕ 已将颜色 #${paletteIndexLabel(colorIdx)} (${hex}) 加入框选匹配组`);
     } else {
-      this.showToast(`颜色 #${colorIdx === 255 ? '透' : colorIdx} 已在匹配组中`, 'info');
+      this.showToast(`颜色 #${paletteIndexLabel(colorIdx)} 已在匹配组中`, 'info');
     }
   }
 
@@ -900,7 +896,7 @@ class ImageGemApp {
       this.state.maskMatchPresetKey = 'custom';
       this.canvasEditor.update(this.state);
       this.maskToolsPanel.update(this.state);
-      this.showToast(`✕ 已从框选匹配组移除颜色 #${colorIdx === 255 ? '透' : colorIdx}`);
+      this.showToast(`✕ 已从框选匹配组移除颜色 #${paletteIndexLabel(colorIdx)}`);
     }
   }
 
@@ -962,9 +958,9 @@ class ImageGemApp {
       this.syncAllViews();
       this.triggerAutoSave();
       if (action === 'add') {
-        this.showToast(`✨ 已将框内 ${count} 个匹配像素划入【${zoneMeta.name.split(' ')[0]}】遮罩`, 'success');
+        this.showToast(`✨ 已将框内 ${count} 个匹配像素划入【${zoneMeta.shortName}】遮罩`, 'success');
       } else {
-        this.showToast(`🧼 已将框内 ${count} 个匹配像素从【${zoneMeta.name.split(' ')[0]}】遮罩剔除`, 'info');
+        this.showToast(`🧼 已将框内 ${count} 个匹配像素从【${zoneMeta.shortName}】遮罩剔除`, 'info');
       }
     } else {
       this.showToast('框选范围内未找到符合当前匹配色组的未锁定像素', 'info');
@@ -1006,7 +1002,7 @@ class ImageGemApp {
     this.pushUndoSnapshot();
 
     let count = 0;
-    for (let i = 0; i < 4096; i++) {
+    for (let i = 0; i < PIXEL_COUNT; i++) {
       if (this.state.pixelIndices[i] === colorIdx) {
         const currentZone = this.state.semanticMask[i];
         if (lockedZones.includes(currentZone)) {
@@ -1026,7 +1022,7 @@ class ImageGemApp {
       this.syncAllViews();
       this.triggerAutoSave();
       const colorHex = this.state.palette[colorIdx] || `#${colorIdx}`;
-      this.showToast(`✨ 已将 ${count} 个 ${colorHex} 像素划入【${zoneMeta.name.split(' ')[0]}】遮罩`, 'success');
+      this.showToast(`✨ 已将 ${count} 个 ${colorHex} 像素划入【${zoneMeta.shortName}】遮罩`, 'success');
     } else {
       this.showToast('该颜色的像素均已在当前分区中，或受到图层锁定保护', 'info');
     }
@@ -1078,7 +1074,7 @@ class ImageGemApp {
     const targetRamp = rampSpec.hexes;
     const currentRamp = this.state.currentHairPreset ? RAMPS_INFO[this.state.currentHairPreset]?.hexes : null;
 
-    for (let i = 0; i < 4096; i++) {
+    for (let i = 0; i < PIXEL_COUNT; i++) {
       if (mask[i] !== SemanticZone.Hair) continue;
       const baseIdx = basePixels[i];
       if (baseIdx === TRANSPARENT_INDEX) continue;
@@ -1141,7 +1137,7 @@ class ImageGemApp {
     if (!rampSpec) return;
 
     let hairPixelCount = 0;
-    for (let i = 0; i < 4096; i++) {
+    for (let i = 0; i < PIXEL_COUNT; i++) {
       if (this.state.semanticMask[i] === SemanticZone.Hair) {
         hairPixelCount++;
       }
@@ -1247,7 +1243,7 @@ class ImageGemApp {
     // 根据当前 pixelIndices + palette 构造 RGB 数组 (透明像素以纯白作为背景基准传入分析器 BUG-09)
     const pixels: Rgb[] = [];
     const paletteRgb = this.state.palette.map((hex) => hexToRgb(hex));
-    for (let i = 0; i < 4096; i++) {
+    for (let i = 0; i < PIXEL_COUNT; i++) {
       const idx = this.state.pixelIndices[i];
       if (idx === TRANSPARENT_INDEX) {
         pixels.push([255, 255, 255]);
@@ -1259,7 +1255,7 @@ class ImageGemApp {
     const newMask = this.generateSemanticMaskFromPixels(pixels);
 
     // 核心保护：所有原生透明像素必须强制为背景 SemanticZone.Background (0) (BUG-09)
-    for (let i = 0; i < 4096; i++) {
+    for (let i = 0; i < PIXEL_COUNT; i++) {
       if (this.state.pixelIndices[i] === TRANSPARENT_INDEX) {
         newMask[i] = SemanticZone.Background;
       }
@@ -1268,7 +1264,7 @@ class ImageGemApp {
     // 如果有锁定的遮罩分区，保留被锁定的像素！
     const lockedSet = new Set(this.state.lockedMaskZones || []);
     if (lockedSet.size > 0) {
-      for (let i = 0; i < 4096; i++) {
+      for (let i = 0; i < PIXEL_COUNT; i++) {
         const oldZone = this.state.semanticMask[i];
         if (lockedSet.has(oldZone)) {
           newMask[i] = oldZone;
@@ -1280,13 +1276,7 @@ class ImageGemApp {
     this.state.activeMode = 'mask';
     this.state.showMaskOverlay = true;
     if (!this.state.visibleMaskZones || this.state.visibleMaskZones.length === 0) {
-      this.state.visibleMaskZones = [
-        SemanticZone.Hair,
-        SemanticZone.Skin,
-        SemanticZone.Eyes,
-        SemanticZone.Clothes,
-        SemanticZone.Background,
-      ];
+      this.state.visibleMaskZones = [...ALL_ZONES];
     }
 
     if (this.hasUnappliedHairRecolor()) {
@@ -1328,96 +1318,23 @@ class ImageGemApp {
       return rgb[0] >= 250 && rgb[1] >= 250 && rgb[2] >= 250;
     };
 
-    const visited = new Uint8Array(4096);
-    const queue = new Int32Array(4096);
-    let head = 0;
-    let tail = 0;
-
-    // 1. 从 64×64 的四条外边界 (y=0, y=63, x=0, x=63) 开始搜寻所有背景白色或透明像素并入队
-    for (let x = 0; x < 64; x++) {
-      const topIdx = x;
-      if (!visited[topIdx] && isBgWhiteOrTrans(topIdx)) {
-        visited[topIdx] = 1;
-        queue[tail++] = topIdx;
-      }
-      const bottomIdx = 4032 + x; // 63 * 64 + x
-      if (!visited[bottomIdx] && isBgWhiteOrTrans(bottomIdx)) {
-        visited[bottomIdx] = 1;
-        queue[tail++] = bottomIdx;
-      }
-    }
-
-    for (let y = 0; y < 64; y++) {
-      const leftIdx = y * 64;
-      if (!visited[leftIdx] && isBgWhiteOrTrans(leftIdx)) {
-        visited[leftIdx] = 1;
-        queue[tail++] = leftIdx;
-      }
-      const rightIdx = y * 64 + 63;
-      if (!visited[rightIdx] && isBgWhiteOrTrans(rightIdx)) {
-        visited[rightIdx] = 1;
-        queue[tail++] = rightIdx;
-      }
-    }
-
-    // 2. 4-连通 BFS 泛洪扩展，严格只向外围连通的白色像素扩散
-    const toClear: number[] = [];
-
-    while (head < tail) {
-      const curr = queue[head++];
-      const cx = curr & 63;
-
-      // 如果当前像素非透明（是实体白色），记录需要扣除为透明
-      if (pixelIndices[curr] !== TRANSPARENT_INDEX) {
-        toClear.push(curr);
-      }
-
-      // 上下左右 4 邻域搜索
-      if (cx > 0) {
-        const n = curr - 1;
-        if (!visited[n] && isBgWhiteOrTrans(n)) {
-          visited[n] = 1;
-          queue[tail++] = n;
-        }
-      }
-      if (cx < 63) {
-        const n = curr + 1;
-        if (!visited[n] && isBgWhiteOrTrans(n)) {
-          visited[n] = 1;
-          queue[tail++] = n;
-        }
-      }
-      if (curr >= 64) {
-        const n = curr - 64;
-        if (!visited[n] && isBgWhiteOrTrans(n)) {
-          visited[n] = 1;
-          queue[tail++] = n;
-        }
-      }
-      if (curr < 4032) {
-        const n = curr + 64;
-        if (!visited[n] && isBgWhiteOrTrans(n)) {
-          visited[n] = 1;
-          queue[tail++] = n;
-        }
-      }
-    }
+    // 从四条外边界出发 4-连通泛洪，只扣除与外围连通的实体白色像素
+    const toClear = floodFill(borderOffsets(), isBgWhiteOrTrans).filter(
+      (idx) => pixelIndices[idx] !== TRANSPARENT_INDEX
+    );
 
     if (toClear.length === 0) {
       this.showToast('ℹ️ 未检测到外围连通的白色背景像素', 'info');
       return;
     }
 
-    // 3. 提交一次性撤销快照 (支持 Ctrl+Z 撤销)
     this.pushUndoSnapshot();
 
-    // 4. 将待扣除像素在原图数据中直接设为原生透明色与背景分区
     for (const idx of toClear) {
       pixelIndices[idx] = TRANSPARENT_INDEX;
       semanticMask[idx] = SemanticZone.Background;
     }
 
-    // 5. 触发视图全量同步与自动存盘
     this.syncAllViews();
     this.triggerAutoSave();
     this.showToast(`✂️ 已扣除 ${toClear.length} 个外围背景白像素为原生透明色 (人物眼白与高光完好)`, 'success');

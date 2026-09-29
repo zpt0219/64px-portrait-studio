@@ -5,6 +5,7 @@
 
 import { ImageGemProjectData } from '../types';
 import { TRANSPARENT_INDEX } from '../data/palette';
+import { PIXEL_COUNT } from './pixelGrid';
 
 export function uint8ArrayToBase64(bytes: Uint8Array): string {
   let binary = '';
@@ -62,11 +63,11 @@ export function validateProjectData(raw: unknown): { valid: boolean; error?: str
     return { valid: false, error: 'pixels 字段 Base64 解码失败' };
   }
 
-  if (pixelsBytes.length !== 4096) {
+  if (pixelsBytes.length !== PIXEL_COUNT) {
     return { valid: false, error: `pixels 像素点数量异常：应严格为 4096 像素，当前为 ${pixelsBytes.length}` };
   }
 
-  for (let i = 0; i < 4096; i++) {
+  for (let i = 0; i < PIXEL_COUNT; i++) {
     if (pixelsBytes[i] > 35 && pixelsBytes[i] !== TRANSPARENT_INDEX) {
       return { valid: false, error: `像素索引超出 36 色板范围 (0~35 或 255 透明): 索引 ${pixelsBytes[i]} at offset ${i}` };
     }
@@ -83,11 +84,11 @@ export function validateProjectData(raw: unknown): { valid: boolean; error?: str
     return { valid: false, error: 'mask 字段 Base64 解码失败' };
   }
 
-  if (maskBytes.length !== 4096) {
+  if (maskBytes.length !== PIXEL_COUNT) {
     return { valid: false, error: `mask 语义遮罩数据量异常：应严格为 4096 字节，当前为 ${maskBytes.length}` };
   }
 
-  for (let i = 0; i < 4096; i++) {
+  for (let i = 0; i < PIXEL_COUNT; i++) {
     if (maskBytes[i] > 4) {
       return { valid: false, error: `遮罩值超出 5 分区范围 (0~4): 值 ${maskBytes[i]} at offset ${i}` };
     }
