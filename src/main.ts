@@ -12,16 +12,9 @@ import {
   RectSelection,
 } from './types';
 import { PALETTE_36, RAMPS_INFO, TRANSPARENT_INDEX, MATCH_COLOR_PRESETS } from './data/palette';
-import { hexToRgb, findNearestColor } from './core/colorUtils';
+import { Rgb, hexToRgb, findNearestColor, quantizeToPalette } from './core/colorUtils';
 import { nearestTierForColor } from './core/recolorEngine';
-import {
-  StrictGeometryGate,
-  MouthDetector,
-  analyzeSemanticRegions,
-  assignResidualRegions,
-  mapImageToPalette,
-  Rgb,
-} from './core/remapCore';
+import { computeSemanticMask } from './core/segmentation';
 import {
   saveProjectDebounced,
   loadProjectFromStorage,
@@ -374,36 +367,12 @@ class ImageGemApp {
       }
 
       // 6. OKLab 36 色逐像素最近邻量化 (不使用 dithering)
-      const fullPaletteRgb = this.state.palette.map((hex) => hexToRgb(hex));
-      const remapResult = mapImageToPalette(rgbPixels, fullPaletteRgb, {
-        mappingStrategy: 'oklab_nearest',
-      });
-
-      const newIndices = new Uint8Array(4096);
+      const newIndices = quantizeToPalette(rgbPixels, this.state.palette.map(hexToRgb));
       for (let i = 0; i < 4096; i++) {
-        if (transparentFlags[i]) {
-          newIndices[i] = TRANSPARENT_INDEX;
-          continue;
-        }
-        const mappedColor = remapResult.outputPixels[i];
-        let bestIdx = 0;
-        let bestDist = Infinity;
-        for (let p = 0; p < fullPaletteRgb.length; p++) {
-          const pal = fullPaletteRgb[p];
-          const dist =
-            Math.abs(pal[0] - mappedColor[0]) +
-            Math.abs(pal[1] - mappedColor[1]) +
-            Math.abs(pal[2] - mappedColor[2]);
-          if (dist < bestDist) {
-            bestDist = dist;
-            bestIdx = p;
-            if (dist === 0) break;
-          }
-        }
-        newIndices[i] = bestIdx;
+        if (transparentFlags[i]) newIndices[i] = TRANSPARENT_INDEX;
       }
 
-      // 7. 运行核心几何门禁与语义分割，自动生成 5 分区互斥遮罩
+      // 7. 语义分割，自动生成 5 分区互斥遮罩
       const newMask = this.generateSemanticMaskFromPixels(rgbPixels);
       for (let i = 0; i < 4096; i++) {
         if (transparentFlags[i]) {
@@ -449,67 +418,17 @@ class ImageGemApp {
    * 将普通 64x64 像素运行几何分析并归并为 5 分区互斥遮罩
    */
   private generateSemanticMaskFromPixels(pixels: Rgb[]): Uint8Array {
-    const mask = new Uint8Array(4096);
     try {
-      const gate = new StrictGeometryGate();
-      const mouthDetector = new MouthDetector();
-      const geom = gate.analyzeImage(pixels);
-      const mouth = mouthDetector.analyzeImage(pixels, geom.face);
-      const semInitial = analyzeSemanticRegions(pixels, geom, mouth);
-      const sem = assignResidualRegions(
-        semInitial,
-        geom.outer.foregroundMask,
-        geom.face.features.chin_y
-      );
-
-      const chinY = typeof geom.face.features.chin_y === 'number' ? geom.face.features.chin_y : 38;
-
-      for (let i = 0; i < 4096; i++) {
-        const isForeground = geom.outer.foregroundMask[i];
-        if (!isForeground) {
-          mask[i] = SemanticZone.Background;
-          continue;
-        }
-
-        // 优先级：眼睛 > 头发 > 皮肤 > 衣服
-        if (sem.eyeMask[i]) {
-          mask[i] = SemanticZone.Eyes;
-        } else if (sem.hairMask[i]) {
-          mask[i] = SemanticZone.Hair;
-        } else if (sem.faceSkinMask[i] || sem.bodySkinMask[i] || sem.mouthExpressionMask[i]) {
-          mask[i] = SemanticZone.Skin;
-        } else if (sem.clothingMask[i] || sem.otherMask[i]) {
-          mask[i] = SemanticZone.Clothes;
-        } else if (sem.outlineMask[i]) {
-          // 轮廓像素智能归属
-          const y = Math.floor(i / 64);
-          if (y > chinY) {
-            mask[i] = SemanticZone.Clothes;
-          } else {
-            mask[i] = SemanticZone.Hair;
-          }
-        } else {
-          mask[i] = SemanticZone.Clothes;
-        }
-      }
+      return computeSemanticMask(pixels);
     } catch (err) {
       console.warn('Semantic analysis fallback to safe foreground:', err);
-      // 容错降级：检测四角连通背景色，其余前景保守归为 Clothes(4)，绝不全图染发
+      // 容错降级：与左上角颜色相近的视为背景，其余前景保守归为衣服，绝不全图染发
       const cornerColor = pixels[0];
       const isCornerBg = (p: Rgb) =>
         Math.abs(p[0] - cornerColor[0]) + Math.abs(p[1] - cornerColor[1]) + Math.abs(p[2] - cornerColor[2]) < 25;
-
-      for (let i = 0; i < 4096; i++) {
-        if (isCornerBg(pixels[i])) {
-          mask[i] = SemanticZone.Background;
-        } else {
-          mask[i] = SemanticZone.Clothes;
-        }
-      }
       this.showToast('⚠️ 人脸特征识别未达标，请在遮罩模式手动涂抹头发区域', 'warning');
+      return Uint8Array.from(pixels, (p) => (isCornerBg(p) ? SemanticZone.Background : SemanticZone.Clothes));
     }
-
-    return mask;
   }
 
   /**
