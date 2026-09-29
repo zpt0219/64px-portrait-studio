@@ -2,15 +2,14 @@
  * 画中画实时预览：1×~4× 原寸预览，可切换 GBA 液晶 / 棋盘格背景，可拖拽、可最小化
  */
 
+import { drawIndexedPixels } from '../core/pixelRender';
+import { ViewModel } from '../app/viewModel';
+import { EditorContext } from '../app/editorContext';
+import { Panel } from './Panel';
+
 type PreviewBgMode = 'lcd' | 'checker';
 
-interface RealtimePreviewCallbacks {
-  onVisibilityChange?: (visible: boolean) => void;
-}
-
-export class RealtimePreview {
-  private container: HTMLElement;
-  private callbacks: RealtimePreviewCallbacks;
+export class RealtimePreview extends Panel {
 
   // DOM 元素
   private rootEl: HTMLElement | null = null;
@@ -24,10 +23,9 @@ export class RealtimePreview {
 
   // 状态
   private scale: number = 2; // 1, 2, 3, 4
-  private isVisible: boolean = true;
   private isMinimized: boolean = false;
-  private isLoaded: boolean = false;
-  private lastSourceCanvas: HTMLCanvasElement | null = null;
+  private sourceCanvas: HTMLCanvasElement;
+  private sourceCtx: CanvasRenderingContext2D;
 
   // 拖拽控制
   private isDragging = false;
@@ -36,15 +34,41 @@ export class RealtimePreview {
   private initialLeft = 0;
   private initialTop = 0;
 
-  constructor(container: HTMLElement, callbacks: RealtimePreviewCallbacks = {}) {
-    this.container = container;
-    this.callbacks = callbacks;
+  constructor(private readonly container: HTMLElement, vm: ViewModel, private readonly ctx: EditorContext) {
+    super(vm);
+    this.sourceCanvas = document.createElement('canvas');
+    this.sourceCanvas.width = 64;
+    this.sourceCanvas.height = 64;
+    this.sourceCtx = this.sourceCanvas.getContext('2d')!;
 
-    this.render();
+    this.build();
     this.setupEvents();
+    this.markDirty();
   }
 
-  private render(): void {
+  onDocumentReplaced(): void {
+    this.markDirty();
+  }
+  onPixelsChanged(): void {
+    this.markDirty();
+  }
+  onMaskChanged(): void {
+    this.markDirty();
+  }
+  onPaletteChanged(): void {
+    this.markDirty();
+  }
+  onHairPresetChanged(): void {
+    this.markDirty();
+  }
+  onSessionChanged(): void {
+    this.markDirty();
+  }
+  onContextChanged(): void {
+    this.markDirty();
+  }
+
+  private build(): void {
     const card = document.createElement('div');
     card.className = 'pip-preview-card';
     card.id = 'pip-preview-card';
@@ -141,7 +165,7 @@ export class RealtimePreview {
 
     // 4. 关闭 / 隐藏
     const closeBtn = this.rootEl.querySelector('#pip-btn-close');
-    closeBtn?.addEventListener('click', () => this.hide());
+    closeBtn?.addEventListener('click', () => this.ctx.setPreviewVisible(false));
 
     // 5. 窗口拖拽交互 (仅在 header 触发)
     this.headerEl?.addEventListener('mousedown', (e) => {
@@ -269,71 +293,24 @@ export class RealtimePreview {
     }
   }
 
-  public toggleVisibility(): void {
-    if (!this.isLoaded) {
-      return;
-    }
-    if (this.isVisible) {
-      this.hide();
-    } else {
-      this.show();
-    }
-  }
-
-  public show(): void {
-    this.isVisible = true;
-    if (this.rootEl && this.isLoaded) {
-      this.rootEl.style.display = 'block';
-      this.callbacks.onVisibilityChange?.(true);
-      this.redrawCanvas();
-    }
-  }
-
-  public hide(): void {
-    this.isVisible = false;
-    if (this.rootEl) {
-      this.rootEl.style.display = 'none';
-    }
-    this.callbacks.onVisibilityChange?.(false);
-  }
-
-  public getIsVisible(): boolean {
-    return this.isVisible;
-  }
-
-  /**
-   * 从主画布的 64×64 离屏画布同步预览内容
-   */
-  public update(sourceCanvas: HTMLCanvasElement, isLoaded: boolean): void {
-    this.lastSourceCanvas = sourceCanvas;
-    this.isLoaded = isLoaded;
-
+  /** 与主画布显示同一份像素 (有发色草稿时为预览像素) */
+  render(): void {
     if (!this.rootEl) return;
-
-    if (!isLoaded) {
-      this.rootEl.style.display = 'none';
-      this.callbacks.onVisibilityChange?.(false);
-      return;
-    }
-
-    if (this.isVisible) {
-      this.rootEl.style.display = 'block';
-      this.callbacks.onVisibilityChange?.(true);
-    } else {
-      this.rootEl.style.display = 'none';
-      this.callbacks.onVisibilityChange?.(false);
-    }
+    const isLoaded = this.vm.session.isLoaded;
+    this.rootEl.style.display = isLoaded && this.ctx.previewVisible ? 'block' : 'none';
+    if (!isLoaded) return;
 
     const placeholder = this.rootEl.querySelector('#pip-empty-placeholder') as HTMLElement;
     if (placeholder) placeholder.style.display = 'none';
     if (this.previewCanvas) this.previewCanvas.style.display = 'block';
 
+    drawIndexedPixels(this.sourceCtx, this.vm.displayPixels(), this.vm.doc.palette);
     this.redrawCanvas();
   }
 
   private redrawCanvas(): void {
-    if (!this.previewCanvas || !this.previewCtx || !this.lastSourceCanvas || !this.isLoaded) return;
-    if (this.isMinimized || !this.isVisible) return;
+    if (!this.previewCanvas || !this.previewCtx || !this.vm.session.isLoaded) return;
+    if (this.isMinimized || !this.ctx.previewVisible) return;
 
     const targetSize = 64 * this.scale;
 
@@ -349,7 +326,7 @@ export class RealtimePreview {
     this.previewCtx.clearRect(0, 0, targetSize, targetSize);
 
     this.previewCtx.drawImage(
-      this.lastSourceCanvas,
+      this.sourceCanvas,
       0,
       0,
       64,

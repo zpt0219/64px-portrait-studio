@@ -6,7 +6,8 @@
  * 同一形态下只更新文字/状态而不重建 DOM，避免拖拽中按钮闪烁。
  */
 
-import { StudioState, RectSelection } from '../../types';
+import { RectSelection } from '../../types';
+import { EditorSession } from '../../model/session';
 
 interface ContextBarCallbacks {
   onFlipHorizontal: () => void;
@@ -40,7 +41,7 @@ export class ContextBar {
   }
 
   /** boxSelecting：正在拖拽中的框选矩形 (尚未成为选区) */
-  public update(state: StudioState, selection: RectSelection | null, boxSelecting: RectSelection | null): void {
+  public update(state: EditorSession, selection: RectSelection | null, boxSelecting: RectSelection | null): void {
     if (!state.isLoaded || state.activeMode !== 'pixel') return this.hide();
 
     if (selection) {

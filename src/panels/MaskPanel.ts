@@ -2,35 +2,33 @@
  * 右栏：5 分区遮罩列表 (显隐 / 锁定 / 像素统计)、遮罩透明度、重新识别、9 大发色预设置换
  */
 
-import { StudioState, SemanticZone, ZONE_CONFIG, ALL_ZONES } from '../types';
+import { SemanticZone, ZONE_CONFIG, ALL_ZONES } from '../types';
 import { RAMPS_INFO } from '../data/palette';
 import { PIXEL_COUNT } from '../core/pixelGrid';
+import { ViewModel } from '../app/viewModel';
+import { Panel } from './Panel';
 
-interface MaskPanelCallbacks {
-  onSelectZone: (zone: SemanticZone, solo?: boolean) => void;
-  onToggleZoneVisibility: (zone: SemanticZone, visible: boolean) => void;
-  onSetAllZonesVisibility: (visible: boolean) => void;
-  onToggleLockZone: (zone: SemanticZone) => void;
-  onMaskOpacityChange: (opacity: number) => void;
-  onApplyHairPreset: (presetKey: string) => void;
-  onOpenHairModal?: () => void;
-  onRecomputeSemanticMask: () => void;
-  onActivate: () => void;
-}
-
-export class MaskPanel {
-  private container: HTMLElement;
-  private callbacks: MaskPanelCallbacks;
-  private draftHairPreset: string | null = null;
-  private lastState: StudioState | null = null;
-
-  constructor(container: HTMLElement, callbacks: MaskPanelCallbacks) {
-    this.container = container;
-    this.callbacks = callbacks;
-    this.render();
+export class MaskPanel extends Panel {
+  constructor(private readonly container: HTMLElement, vm: ViewModel) {
+    super(vm);
+    this.build();
+    this.markDirty();
   }
 
-  private render(): void {
+  onSessionChanged(): void {
+    this.markDirty();
+  }
+  onMaskChanged(): void {
+    this.markDirty();
+  }
+  onHairPresetChanged(): void {
+    this.markDirty();
+  }
+  onDocumentReplaced(): void {
+    this.markDirty();
+  }
+
+  private build(): void {
     this.container.innerHTML = `
       <aside class="column-sidebar mask-sidebar-inner">
         <div class="panel-section">
@@ -111,7 +109,7 @@ export class MaskPanel {
       const val = parseInt((e.target as HTMLInputElement).value, 10);
       const opacityText = this.container.querySelector('#mask-opacity-text');
       if (opacityText) opacityText.textContent = `${val}%`;
-      this.callbacks.onMaskOpacityChange(val / 100);
+      this.vm.setMaskOpacity(val / 100);
     });
     opacitySlider?.addEventListener('change', () => {
       opacitySlider.blur();
@@ -120,17 +118,17 @@ export class MaskPanel {
     // 全选 / 清空遮罩显隐
     const btnSelectAll = this.container.querySelector('#btn-mask-select-all');
     btnSelectAll?.addEventListener('click', () => {
-      this.callbacks.onSetAllZonesVisibility(true);
+      this.vm.setAllZonesVisibility(true);
     });
 
     const btnSelectNone = this.container.querySelector('#btn-mask-select-none');
     btnSelectNone?.addEventListener('click', () => {
-      this.callbacks.onSetAllZonesVisibility(false);
+      this.vm.setAllZonesVisibility(false);
     });
 
     // 重新识别语义遮罩
     this.container.querySelector('#btn-recompute-mask')?.addEventListener('click', () => {
-      this.callbacks.onRecomputeSemanticMask();
+      this.vm.recomputeSemanticMask();
     });
 
     // 分区卡片：勾选框控制显隐，锁按钮切换锁定，点击卡片其余部分选择画刷
@@ -143,7 +141,7 @@ export class MaskPanel {
       const zone = cardZone(e);
       const checkbox = e.target as HTMLInputElement;
       if (zone !== null && checkbox.classList.contains('zone-checkbox')) {
-        this.callbacks.onToggleZoneVisibility(zone, checkbox.checked);
+        this.vm.toggleZoneVisibility(zone, checkbox.checked);
       }
     });
     zoneList?.addEventListener('click', (e) => {
@@ -151,10 +149,10 @@ export class MaskPanel {
       const target = e.target as HTMLElement;
       if (zone === null || target.closest('.zone-checkbox-wrap')) return;
       if (target.closest('.zone-lock-btn')) {
-        this.callbacks.onToggleLockZone(zone);
+        this.vm.toggleLockZone(zone);
       } else {
-        this.callbacks.onActivate();
-        this.callbacks.onSelectZone(zone);
+        this.vm.setMode('mask');
+        this.vm.setActiveZone(zone);
       }
     });
 
@@ -162,18 +160,19 @@ export class MaskPanel {
     this.container.querySelector('#hair-presets-grid')?.addEventListener('click', (e) => {
       const key = (e.target as HTMLElement).closest<HTMLElement>('.hair-preset-card')?.dataset.preset;
       if (!key) return;
-      if (key === this.draftHairPreset) this.callbacks.onOpenHairModal?.();
-      else this.callbacks.onApplyHairPreset(key);
+      if (key === this.vm.session.hairDraftPreset) this.vm.openHairRecolorPrompt();
+      else this.vm.applyHairPreset(key);
     });
 
     // 发色草稿：点击打开居中确认弹窗
     this.container.querySelector('#btn-hair-open-modal')?.addEventListener('click', () => {
-      this.callbacks.onOpenHairModal?.();
+      this.vm.openHairRecolorPrompt();
     });
   }
 
-  public update(state: StudioState): void {
-    this.lastState = state;
+  render(): void {
+    const state = { ...this.vm.session, ...this.vm.doc };
+    const draftHairPreset = state.hairDraftPreset;
 
     // 1. 活跃状态指示徽章
     const isMaskActive = state.activeMode === 'mask';
@@ -276,7 +275,7 @@ export class MaskPanel {
     // 5.5 更新发色操作入口显隐
     const actionBox = this.container.querySelector('#hair-action-box') as HTMLElement;
     if (actionBox) {
-      actionBox.style.display = this.draftHairPreset ? 'block' : 'none';
+      actionBox.style.display = draftHairPreset ? 'block' : 'none';
     }
 
     // 6. 渲染 9 大发色预设卡片 (支持未固化预览态与固化状态区分)
@@ -285,8 +284,8 @@ export class MaskPanel {
       hairGrid.innerHTML = '';
       Object.entries(RAMPS_INFO).forEach(([key, info]) => {
         const isCommitted = state.currentHairPreset === key;
-        const isDraft = this.draftHairPreset === key;
-        const isActive = isDraft || (isCommitted && !this.draftHairPreset);
+        const isDraft = draftHairPreset === key;
+        const isActive = isDraft || (isCommitted && !draftHairPreset);
         const card = document.createElement('div');
         card.className = `hair-preset-card ${isActive ? 'active' : ''} ${isDraft ? 'previewing' : ''}`;
         card.dataset.preset = key;
@@ -318,13 +317,6 @@ export class MaskPanel {
 
         hairGrid.appendChild(card);
       });
-    }
-  }
-
-  public setHairDraft(draftKey: string | null): void {
-    this.draftHairPreset = draftKey;
-    if (this.lastState) {
-      this.update(this.lastState);
     }
   }
 }

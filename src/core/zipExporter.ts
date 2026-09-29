@@ -10,8 +10,9 @@
  */
 
 import JSZip from 'jszip';
-import { StudioState, SemanticZone, ProjectData } from '../types';
-import { stateToProjectData } from './storage';
+import { SemanticZone, ProjectData } from '../types';
+import { PortraitDocument } from '../model/document';
+import { documentToProjectData } from './storage';
 import { validateProjectData } from './projectData';
 import { encodeMinimalIndexedPng } from './minimalPng';
 import { Rgb, hexToRgb } from './colorUtils';
@@ -47,18 +48,18 @@ function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
 /**
  * 指定缩放倍率的像素头像 (保留透明)
  */
-function createPixelCanvas(state: StudioState, scale = 1): HTMLCanvasElement {
-  return createScaledCanvas((ctx) => drawIndexedPixels(ctx, state.pixelIndices, state.palette), scale);
+function createPixelCanvas(doc: PortraitDocument, scale = 1): HTMLCanvasElement {
+  return createScaledCanvas((ctx) => drawIndexedPixels(ctx, doc.pixelIndices, doc.palette), scale);
 }
 
 /**
  * 按 SemanticZone 值逐像素填色的遮罩画布
  */
-function createMaskCanvas(state: StudioState, colorOf: (zone: SemanticZone) => Rgb, scale = 1): HTMLCanvasElement {
+function createMaskCanvas(doc: PortraitDocument, colorOf: (zone: SemanticZone) => Rgb, scale = 1): HTMLCanvasElement {
   return createScaledCanvas((ctx) => {
     const imgData = ctx.createImageData(IMAGE_WIDTH, IMAGE_HEIGHT);
     for (let i = 0; i < PIXEL_COUNT; i++) {
-      const rgb = colorOf(state.semanticMask[i] as SemanticZone) || [0, 0, 0];
+      const rgb = colorOf(doc.semanticMask[i] as SemanticZone) || [0, 0, 0];
       imgData.data.set([rgb[0], rgb[1], rgb[2], 255], i * 4);
     }
     ctx.putImageData(imgData, 0, 0);
@@ -66,23 +67,23 @@ function createMaskCanvas(state: StudioState, colorOf: (zone: SemanticZone) => R
 }
 
 /** 5 色互斥综合语义遮罩 (背景为纯黑) */
-function createCompositeMaskCanvas(state: StudioState, scale = 1): HTMLCanvasElement {
+function createCompositeMaskCanvas(doc: PortraitDocument, scale = 1): HTMLCanvasElement {
   const table = zoneRgbTable([0, 0, 0]);
-  return createMaskCanvas(state, (zone) => table[zone], scale);
+  return createMaskCanvas(doc, (zone) => table[zone], scale);
 }
 
 /**
  * 单个分区的黑白二值遮罩 (白=选定分区, 黑=其他区域)
  * 便于导入游戏引擎、Photoshop 图层蒙版或作为 AI 训练数据
  */
-function createBinaryMaskCanvas(state: StudioState, targetZone: SemanticZone): HTMLCanvasElement {
-  return createMaskCanvas(state, (zone) => (zone === targetZone ? [255, 255, 255] : [0, 0, 0]));
+function createBinaryMaskCanvas(doc: PortraitDocument, targetZone: SemanticZone): HTMLCanvasElement {
+  return createMaskCanvas(doc, (zone) => (zone === targetZone ? [255, 255, 255] : [0, 0, 0]));
 }
 
 /**
  * 绘制色板色卡预览图 (6 列 x 6 行 36 色色卡栅格)
  */
-function createPaletteSwatchCanvas(state: StudioState): HTMLCanvasElement {
+function createPaletteSwatchCanvas(doc: PortraitDocument): HTMLCanvasElement {
   const chipSize = 32;
   const gap = 4;
   const padding = 12;
@@ -111,7 +112,7 @@ function createPaletteSwatchCanvas(state: StudioState): HTMLCanvasElement {
     const x = padding + col * (chipSize + gap);
     const y = padding + row * (chipSize + gap);
 
-    const hex = state.palette[i] || '#000000';
+    const hex = doc.palette[i] || '#000000';
     ctx.fillStyle = hex;
     ctx.fillRect(x, y, chipSize, chipSize);
 
@@ -131,7 +132,7 @@ function createPaletteSwatchCanvas(state: StudioState): HTMLCanvasElement {
 /**
  * 生成 Aseprite / GIMP 标准格式的色板文件 (.gpl)
  */
-function generateGplPalette(state: StudioState): string {
+function generateGplPalette(doc: PortraitDocument): string {
   const lines: string[] = [
     'GIMP Palette',
     'Name: 64px Portrait Studio 36 Color Palette',
@@ -139,7 +140,7 @@ function generateGplPalette(state: StudioState): string {
     '#',
   ];
 
-  state.palette.forEach((hex, idx) => {
+  doc.palette.forEach((hex, idx) => {
     const rgb = hexToRgb(hex);
     const r = rgb[0].toString().padStart(3, ' ');
     const g = rgb[1].toString().padStart(3, ' ');
@@ -153,14 +154,14 @@ function generateGplPalette(state: StudioState): string {
 /**
  * 生成 README.txt 导出说明文件
  */
-function generateReadme(state: StudioState): string {
-  const hairPreset = state.currentHairPreset || '未选择 / 自定义发色';
+function generateReadme(doc: PortraitDocument): string {
+  const hairPreset = doc.currentHairPreset || '未选择 / 自定义发色';
   const nowStr = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
 
   // 统计各遮罩分区像素数
   const zoneStats: Record<number, number> = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0 };
   for (let i = 0; i < PIXEL_COUNT; i++) {
-    const z = state.semanticMask[i];
+    const z = doc.semanticMask[i];
     if (zoneStats[z] !== undefined) zoneStats[z]++;
   }
 
@@ -219,33 +220,31 @@ function generateReadme(state: StudioState): string {
 /**
  * 导出单个极简 64x64 纯净 PNG (8-bit 索引色，无冗余元数据，最小化体积)
  */
-export async function exportProjectPng(state: StudioState): Promise<void> {
-  if (!state.isLoaded) return;
-  const finalBlob = await encodeMinimalIndexedPng(state.pixelIndices, state.palette);
+export async function exportProjectPng(doc: PortraitDocument): Promise<void> {
+  const finalBlob = await encodeMinimalIndexedPng(doc.pixelIndices, doc.palette);
   downloadBlob(finalBlob, `avatar_36color_64x64_${Date.now()}.png`);
 }
 
 /**
  * 打包并导出完整工程 ZIP (包含全部渲染图、遮罩、色板与工程数据)
  */
-export async function exportProjectZip(state: StudioState): Promise<void> {
-  if (!state.isLoaded) return;
+export async function exportProjectZip(doc: PortraitDocument): Promise<void> {
 
   const zip = new JSZip();
-  const projectData = stateToProjectData(state);
+  const projectData = documentToProjectData(doc);
 
   // 1. 核心工程文件
-  const minimalPngBlob = await encodeMinimalIndexedPng(state.pixelIndices, state.palette);
-  const canvas64 = createPixelCanvas(state, 1);
+  const minimalPngBlob = await encodeMinimalIndexedPng(doc.pixelIndices, doc.palette);
+  const canvas64 = createPixelCanvas(doc, 1);
   const blob64 = await canvasToBlob(canvas64);
 
   zip.file('imagegem_project_64x64.png', minimalPngBlob);
   zip.file('imagegem_project.json', JSON.stringify(projectData, null, 2));
-  zip.file('README.txt', generateReadme(state));
+  zip.file('README.txt', generateReadme(doc));
 
   // 2. 渲染图 (1x, 4x, 8x)
-  const canvas256 = createPixelCanvas(state, 4);
-  const canvas512 = createPixelCanvas(state, 8);
+  const canvas256 = createPixelCanvas(doc, 4);
+  const canvas512 = createPixelCanvas(doc, 8);
 
   const [blob256, blob512] = await Promise.all([
     canvasToBlob(canvas256),
@@ -257,8 +256,8 @@ export async function exportProjectZip(state: StudioState): Promise<void> {
   zip.file('renders/avatar_512x512_8x.png', blob512);
 
   // 3. 语义遮罩 (综合遮罩 + 5 个独立分区二值遮罩)
-  const maskComposite64 = createCompositeMaskCanvas(state, 1);
-  const maskComposite512 = createCompositeMaskCanvas(state, 8);
+  const maskComposite64 = createCompositeMaskCanvas(doc, 1);
+  const maskComposite512 = createCompositeMaskCanvas(doc, 8);
 
   const [blobMask64, blobMask512] = await Promise.all([
     canvasToBlob(maskComposite64),
@@ -270,11 +269,11 @@ export async function exportProjectZip(state: StudioState): Promise<void> {
 
   // 各分区二值遮罩
   const [blobHair, blobSkin, blobEyes, blobClothes, blobBg] = await Promise.all([
-    canvasToBlob(createBinaryMaskCanvas(state, SemanticZone.Hair)),
-    canvasToBlob(createBinaryMaskCanvas(state, SemanticZone.Skin)),
-    canvasToBlob(createBinaryMaskCanvas(state, SemanticZone.Eyes)),
-    canvasToBlob(createBinaryMaskCanvas(state, SemanticZone.Clothes)),
-    canvasToBlob(createBinaryMaskCanvas(state, SemanticZone.Background)),
+    canvasToBlob(createBinaryMaskCanvas(doc, SemanticZone.Hair)),
+    canvasToBlob(createBinaryMaskCanvas(doc, SemanticZone.Skin)),
+    canvasToBlob(createBinaryMaskCanvas(doc, SemanticZone.Eyes)),
+    canvasToBlob(createBinaryMaskCanvas(doc, SemanticZone.Clothes)),
+    canvasToBlob(createBinaryMaskCanvas(doc, SemanticZone.Background)),
   ]);
 
   zip.file('masks/layers/mask_hair_64x64.png', blobHair);
@@ -284,15 +283,15 @@ export async function exportProjectZip(state: StudioState): Promise<void> {
   zip.file('masks/layers/mask_background_64x64.png', blobBg);
 
   // 4. 色板资源
-  const palJson = state.palette.map((hex, i) => ({
+  const palJson = doc.palette.map((hex, i) => ({
     index: i,
     hex,
     rgb: hexToRgb(hex),
   }));
   zip.file('palette/palette_36.json', JSON.stringify(palJson, null, 2));
-  zip.file('palette/palette_aseprite.gpl', generateGplPalette(state));
+  zip.file('palette/palette_aseprite.gpl', generateGplPalette(doc));
 
-  const swatchCanvas = createPaletteSwatchCanvas(state);
+  const swatchCanvas = createPaletteSwatchCanvas(doc);
   const swatchBlob = await canvasToBlob(swatchCanvas);
   zip.file('palette/palette_swatches.png', swatchBlob);
 

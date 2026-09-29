@@ -2,24 +2,16 @@
  * 顶栏：品牌标识、导入、导出 PNG / 工程 ZIP、清空、自动保存状态
  */
 
-import { StudioState } from '../types';
+import { SaveStatus } from '../command/events';
+import { ViewModel } from '../app/viewModel';
+import { Panel } from './Panel';
 
-interface HeaderCallbacks {
-  onFileSelect: (file: File) => void;
-  onQuickSave: () => void;
-  onExportZip: () => void;
-  onReset: () => void;
-}
-
-export class Header {
-  private container: HTMLElement;
-  private callbacks: HeaderCallbacks;
+export class Header extends Panel {
   private fileInput: HTMLInputElement;
   private saveStatusEl: HTMLElement | null = null;
 
-  constructor(container: HTMLElement, callbacks: HeaderCallbacks) {
-    this.container = container;
-    this.callbacks = callbacks;
+  constructor(private readonly container: HTMLElement, vm: ViewModel, private readonly onFileSelect: (file: File) => void) {
+    super(vm);
     this.fileInput = document.createElement('input');
     this.fileInput.type = 'file';
     this.fileInput.accept = '.zip,.png,.jpg,.jpeg,.webp,image/*';
@@ -27,7 +19,12 @@ export class Header {
     this.fileInput.addEventListener('change', this.handleFileChange.bind(this));
     document.body.appendChild(this.fileInput);
 
-    this.render();
+    this.build();
+    this.markDirty();
+  }
+
+  onSessionChanged(): void {
+    this.markDirty();
   }
 
   public triggerUpload(): void {
@@ -38,11 +35,11 @@ export class Header {
   private handleFileChange(): void {
     if (this.fileInput.files && this.fileInput.files.length > 0) {
       const file = this.fileInput.files[0];
-      this.callbacks.onFileSelect(file);
+      this.onFileSelect(file);
     }
   }
 
-  private render(): void {
+  private build(): void {
     this.container.innerHTML = `
       <header class="app-header">
         <div class="header-brand">
@@ -88,20 +85,20 @@ export class Header {
     this.saveStatusEl = this.container.querySelector('#auto-save-status');
 
     this.container.querySelector('#btn-import-file')?.addEventListener('click', () => this.triggerUpload());
-    this.container.querySelector('#btn-quick-save')?.addEventListener('click', () => this.callbacks.onQuickSave());
-    this.container.querySelector('#btn-export-zip')?.addEventListener('click', () => this.callbacks.onExportZip());
-    this.container.querySelector('#btn-header-reset')?.addEventListener('click', () => this.callbacks.onReset());
+    this.container.querySelector('#btn-quick-save')?.addEventListener('click', () => this.vm.exportPng());
+    this.container.querySelector('#btn-export-zip')?.addEventListener('click', () => this.vm.exportZip());
+    this.container.querySelector('#btn-header-reset')?.addEventListener('click', () => this.vm.requestReset());
   }
 
-  public update(state: StudioState): void {
-    const isLoaded = state.isLoaded;
+  render(): void {
+    const isLoaded = this.vm.session.isLoaded;
     const btnSave = this.container.querySelector('#btn-quick-save') as HTMLButtonElement | null;
     const btnZip = this.container.querySelector('#btn-export-zip') as HTMLButtonElement | null;
     if (btnSave) btnSave.disabled = !isLoaded;
     if (btnZip) btnZip.disabled = !isLoaded;
   }
 
-  public showSaveStatus(status: 'saving' | 'saved' | 'idle'): void {
+  onSaveStatus(status: SaveStatus): void {
     if (!this.saveStatusEl) return;
     const dot = this.saveStatusEl.querySelector('.indicator-dot') as HTMLElement;
     const text = this.saveStatusEl.querySelector('.indicator-text') as HTMLElement;
@@ -109,12 +106,9 @@ export class Header {
     if (status === 'saving') {
       dot.className = 'indicator-dot saving';
       text.innerText = '正在自动保存...';
-    } else if (status === 'saved') {
+    } else {
       dot.className = 'indicator-dot saved';
       text.innerText = '已自动存盘';
-    } else {
-      dot.className = 'indicator-dot';
-      text.innerText = '已就绪';
     }
   }
 }

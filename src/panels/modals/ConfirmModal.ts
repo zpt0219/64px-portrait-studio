@@ -2,19 +2,7 @@
  * 通用多按钮确认对话框
  */
 
-interface ConfirmModalButton {
-  label: string;
-  className?: string; // e.g. 'btn-primary', 'btn-secondary', 'btn-outline', 'btn-ghost'
-  onClick: () => void;
-}
-
-interface ConfirmModalOptions {
-  icon?: string;
-  title: string;
-  message: string;
-  subMessage?: string;
-  buttons: ConfirmModalButton[];
-}
+import { PromptOptions } from '../../app/viewModel';
 
 export class ConfirmModal {
   private container: HTMLElement;
@@ -77,7 +65,7 @@ export class ConfirmModal {
     });
   }
 
-  public show(options: ConfirmModalOptions): void {
+  public show(options: PromptOptions): void {
     if (!this.overlayEl) return;
 
     this.isOpen = true;
@@ -116,6 +104,10 @@ export class ConfirmModal {
     }
 
     this.overlayEl.style.display = 'flex';
+  }
+
+  public getIsOpen(): boolean {
+    return this.isOpen;
   }
 
   public close(): void {

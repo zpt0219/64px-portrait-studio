@@ -2,7 +2,8 @@
  * localStorage 自动暂存 (300ms 防抖) 与恢复
  */
 
-import { ProjectData, StudioState } from '../types';
+import { ProjectData } from '../types';
+import { PortraitDocument } from '../model/document';
 import { uint8ArrayToBase64, base64ToUint8Array, validateProjectData } from './projectData';
 
 const STORAGE_KEY = 'imagegem_project_autosave_v2';
@@ -10,28 +11,23 @@ const STORAGE_KEY = 'imagegem_project_autosave_v2';
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 /**
- * 将当前 StudioState 序列化为 ProjectData
+ * 将文档序列化为 ProjectData
  */
-export function stateToProjectData(state: StudioState): ProjectData {
+export function documentToProjectData(doc: PortraitDocument): ProjectData {
   return {
     v: 1,
-    palette: [...state.palette],
-    pixels: uint8ArrayToBase64(state.pixelIndices),
-    mask: uint8ArrayToBase64(state.semanticMask),
-    hairPreset: state.currentHairPreset,
+    palette: [...doc.palette],
+    pixels: uint8ArrayToBase64(doc.pixelIndices),
+    mask: uint8ArrayToBase64(doc.semanticMask),
+    hairPreset: doc.currentHairPreset,
     ts: Math.floor(Date.now() / 1000),
   };
 }
 
 /**
- * 将 ProjectData 反序列化并导入状态字段
+ * 将 ProjectData 反序列化为文档
  */
-export function projectDataToStatePatch(data: ProjectData): {
-  palette: string[];
-  pixelIndices: Uint8Array;
-  semanticMask: Uint8Array;
-  currentHairPreset: string | null;
-} {
+export function projectDataToDocument(data: ProjectData): PortraitDocument {
   return {
     palette: [...data.palette],
     pixelIndices: base64ToUint8Array(data.pixels),
@@ -43,10 +39,9 @@ export function projectDataToStatePatch(data: ProjectData): {
 /**
  * 立即保存当前进度至 LocalStorage
  */
-function saveProjectImmediate(state: StudioState): void {
-  if (!state.isLoaded) return;
+function saveProjectImmediate(doc: PortraitDocument): void {
   try {
-    const data = stateToProjectData(state);
+    const data = documentToProjectData(doc);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch (err) {
     console.warn('LocalStorage save failed:', err);
@@ -56,13 +51,12 @@ function saveProjectImmediate(state: StudioState): void {
 /**
  * 300ms 防抖静默保存当前进度
  */
-export function saveProjectDebounced(state: StudioState, onSaved?: () => void): void {
-  if (!state.isLoaded) return;
+export function saveProjectDebounced(doc: PortraitDocument, onSaved?: () => void): void {
   if (debounceTimer) {
     clearTimeout(debounceTimer);
   }
   debounceTimer = setTimeout(() => {
-    saveProjectImmediate(state);
+    saveProjectImmediate(doc);
     if (onSaved) onSaved();
   }, 300);
 }

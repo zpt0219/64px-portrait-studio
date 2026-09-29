@@ -2,39 +2,39 @@
  * 像素模式左栏：修图工具、前景/背景色、发色卡、按色系分组的 36 色色板与颜色微调
  */
 
-import { StudioState, PixelTool } from '../types';
+import { PixelTool } from '../types';
 import { PALETTE_FAMILIES, WHITE_PALETTE_INDEX, TRANSPARENT_INDEX, RAMPS_INFO, TIER_NAMES } from '../data/palette';
 import { findNearestColor } from '../core/colorUtils';
+import { ViewModel } from '../app/viewModel';
+import { EditorContext } from '../app/editorContext';
+import { Panel } from './Panel';
 
-interface PalettePanelCallbacks {
-  onSelectPaletteColor: (index: number) => void;
-  onSelectBgColor: (index: number) => void;
-  onSwapFgBg: () => void;
-  onModifyPaletteColor: (index: number, newHex: string) => void;
-  onBeforePaletteModify?: () => void;
-  onResetActiveColor: () => void;
-  onResetAllPalette: () => void;
-  onSelectTool: (tool: PixelTool) => void;
-  onSetBucketConnectivity: (conn: 8 | 4) => void;
-  onUndo: () => void;
-  onRedo: () => void;
-  onSelectHairRamp?: (presetKey: string) => void;
-  onHighlightPaletteColor?: (index: number | null) => void;
-}
-
-export class PalettePanel {
-  private container: HTMLElement;
-  private callbacks: PalettePanelCallbacks;
-  private currentState: StudioState | null = null;
+export class PalettePanel extends Panel {
   private selectedHairRampKey: string = '01_black_黑';
 
-  constructor(container: HTMLElement, callbacks: PalettePanelCallbacks) {
-    this.container = container;
-    this.callbacks = callbacks;
-    this.render();
+  constructor(private readonly container: HTMLElement, vm: ViewModel, private readonly ctx: EditorContext) {
+    super(vm);
+    this.build();
+    this.markDirty();
   }
 
-  private render(): void {
+  onSessionChanged(): void {
+    this.markDirty();
+  }
+  onPaletteChanged(): void {
+    this.markDirty();
+  }
+  onHairPresetChanged(): void {
+    this.markDirty();
+  }
+  onHistoryChanged(): void {
+    this.markDirty();
+  }
+  onDocumentReplaced(): void {
+    this.markDirty();
+  }
+
+  private build(): void {
     const rampOptions = Object.entries(RAMPS_INFO)
       .map(([key, info]) => `<option value="${key}">${info.icon} ${info.name}</option>`)
       .join('');
@@ -166,52 +166,51 @@ export class PalettePanel {
   private setupEvents(): void {
     // 工具按钮
     this.container.querySelectorAll<HTMLElement>('[data-tool]').forEach((btn) => {
-      btn.addEventListener('click', () => this.callbacks.onSelectTool(btn.dataset.tool as PixelTool));
+      btn.addEventListener('click', () => this.vm.setActiveTool(btn.dataset.tool as PixelTool));
     });
 
     // 油漆桶邻域连通性切换
     const conn8Btn = this.container.querySelector('#btn-conn-8');
     conn8Btn?.addEventListener('click', () => {
-      this.callbacks.onSetBucketConnectivity(8);
+      this.vm.setBucketConnectivity(8);
     });
 
     const conn4Btn = this.container.querySelector('#btn-conn-4');
     conn4Btn?.addEventListener('click', () => {
-      this.callbacks.onSetBucketConnectivity(4);
+      this.vm.setBucketConnectivity(4);
     });
 
     // 交换前景色与背景色
     const swapBtn = this.container.querySelector('#btn-swap-fgbg');
     swapBtn?.addEventListener('click', () => {
-      this.callbacks.onSwapFgBg();
+      this.vm.swapFgBgColors();
     });
 
     // 撤销 / 重做
-    this.container.querySelector('#btn-undo')?.addEventListener('click', () => this.callbacks.onUndo());
-    this.container.querySelector('#btn-redo')?.addEventListener('click', () => this.callbacks.onRedo());
+    this.container.querySelector('#btn-undo')?.addEventListener('click', () => this.vm.undo());
+    this.container.querySelector('#btn-redo')?.addEventListener('click', () => this.vm.redo());
 
-    // 颜色微调
+    // 颜色微调：一次打开取色器到 change 为一次拖动 (gesture)，其间的连续修改合并为一步撤销
     const colorPickerInput = this.container.querySelector('#palette-color-picker') as HTMLInputElement;
     const editColorBtn = this.container.querySelector('#btn-edit-active-color');
+    let gesture = 0;
     let isAdjustingColor = false;
 
     editColorBtn?.addEventListener('click', () => {
-      if (!this.currentState) return;
-      if (this.currentState.activePaletteIndex === TRANSPARENT_INDEX) return;
-      colorPickerInput.value = this.currentState.palette[this.currentState.activePaletteIndex] || '#000000';
+      const { activePaletteIndex } = this.vm.session;
+      if (activePaletteIndex === TRANSPARENT_INDEX) return;
+      colorPickerInput.value = this.vm.doc.palette[activePaletteIndex] || '#000000';
       isAdjustingColor = false;
       colorPickerInput.click();
     });
 
     colorPickerInput?.addEventListener('input', (e) => {
-      if (!this.currentState) return;
-      if (this.currentState.activePaletteIndex === TRANSPARENT_INDEX) return;
       if (!isAdjustingColor) {
         isAdjustingColor = true;
-        this.callbacks.onBeforePaletteModify?.();
+        gesture++;
       }
       const val = (e.target as HTMLInputElement).value.toUpperCase();
-      this.callbacks.onModifyPaletteColor(this.currentState.activePaletteIndex, val);
+      this.vm.setPaletteColor(this.vm.session.activePaletteIndex, val, gesture);
     });
 
     colorPickerInput?.addEventListener('change', () => {
@@ -219,20 +218,18 @@ export class PalettePanel {
     });
 
     this.container.querySelector('#btn-reset-active-color')?.addEventListener('click', () => {
-      this.callbacks.onResetActiveColor();
+      this.vm.resetActiveColorToDefault();
     });
 
     this.container.querySelector('#btn-reset-all-palette')?.addEventListener('click', () => {
-      if (confirm('确定要将全部色板恢复为默认的 GBA 36 色板吗？')) {
-        this.callbacks.onResetAllPalette();
-      }
+      this.vm.requestResetAllPalette();
     });
 
     // 发色系下拉菜单切换 (与右侧 9 大发色系对齐)
     const hairRampSelect = this.container.querySelector('#hair-ramp-select') as HTMLSelectElement | null;
     hairRampSelect?.addEventListener('change', () => {
       this.selectedHairRampKey = hairRampSelect.value;
-      this.callbacks.onSelectHairRamp?.(this.selectedHairRampKey);
+      this.vm.setHairPreset(this.selectedHairRampKey);
       this.renderHairRampChips();
     });
 
@@ -246,21 +243,21 @@ export class PalettePanel {
       };
       container?.addEventListener('click', (e) => {
         const idx = chipIndex(e);
-        if (idx !== null) this.callbacks.onSelectPaletteColor(idx);
+        if (idx !== null) this.vm.selectPaletteIndex(idx);
       });
       container?.addEventListener('contextmenu', (e) => {
         const idx = chipIndex(e);
         if (idx === null) return;
         e.preventDefault();
-        this.callbacks.onSelectBgColor(idx);
+        this.vm.selectBgPaletteIndex(idx);
       });
-      container?.addEventListener('mouseover', (e) => this.callbacks.onHighlightPaletteColor?.(chipIndex(e)));
-      container?.addEventListener('mouseleave', () => this.callbacks.onHighlightPaletteColor?.(null));
+      container?.addEventListener('mouseover', (e) => this.ctx.setHighlightedPaletteIndex(chipIndex(e)));
+      container?.addEventListener('mouseleave', () => this.ctx.setHighlightedPaletteIndex(null));
     }
   }
 
-  public update(state: StudioState): void {
-    this.currentState = state;
+  render(): void {
+    const state = { ...this.vm.session, ...this.vm.doc };
 
     // 1. 活跃状态指示徽章
     const isPixelActive = state.activeMode === 'pixel';
@@ -306,8 +303,8 @@ export class PalettePanel {
     // 3. 撤销 / 重做按钮禁用态
     const undoBtn = this.container.querySelector('#btn-undo') as HTMLButtonElement;
     const redoBtn = this.container.querySelector('#btn-redo') as HTMLButtonElement;
-    if (undoBtn) undoBtn.disabled = state.undoStack.length === 0;
-    if (redoBtn) redoBtn.disabled = state.redoStack.length === 0;
+    if (undoBtn) undoBtn.disabled = !this.vm.canUndo();
+    if (redoBtn) redoBtn.disabled = !this.vm.canRedo();
 
     // 4. 更新前景色与背景色预览和标签
     const fgIdx = state.activePaletteIndex;
@@ -415,14 +412,14 @@ export class PalettePanel {
    */
   private renderHairRampChips(): void {
     const container = this.container.querySelector('#hair-ramp-chips');
-    if (!container || !this.currentState) return;
+    if (!container) return;
 
     const rampInfo = RAMPS_INFO[this.selectedHairRampKey];
     if (!rampInfo) return;
 
-    const fgIdx = this.currentState.activePaletteIndex;
-    const bgIdx = this.currentState.bgPaletteIndex;
-    const palette = this.currentState.palette;
+    const fgIdx = this.vm.session.activePaletteIndex;
+    const bgIdx = this.vm.session.bgPaletteIndex;
+    const palette = this.vm.doc.palette;
 
     container.innerHTML = '';
     const tierShortNames = ['暗', '深', '中', '主', '光'];

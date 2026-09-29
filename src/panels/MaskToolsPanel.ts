@@ -2,34 +2,45 @@
  * 遮罩模式左栏工具箱：遮罩工具与笔刷尺寸、智能框选匹配色组、画面颜色一键转遮罩
  */
 
-import { StudioState, ZONE_CONFIG } from '../types';
+import { ZONE_CONFIG, MaskTool, BrushSize } from '../types';
 import { TRANSPARENT_INDEX, MATCH_COLOR_PRESETS, paletteIndexLabel } from '../data/palette';
 import { PIXEL_COUNT } from '../core/pixelGrid';
+import { ViewModel } from '../app/viewModel';
+import { Panel } from './Panel';
 
-interface MaskToolsPanelCallbacks {
-  onSelectMaskTool: (tool: 'pen' | 'eraser' | 'bucket' | 'box_select') => void;
-  onSelectBrushSize: (size: 1 | 2 | 3 | 4) => void;
-  onSetMatchPreset: (presetKey: string) => void;
-  onAddMatchColor: (colorIdx: number) => void;
-  onRemoveMatchColor: (colorIdx: number) => void;
-  onAssignColorToZone: (colorIdx: number) => void;
-  onUndo: () => void;
-  onRedo: () => void;
-}
-
-export class MaskToolsPanel {
-  private container: HTMLElement;
-  private callbacks: MaskToolsPanelCallbacks;
-  private currentState: StudioState | null = null;
+export class MaskToolsPanel extends Panel {
   private isAddPopoverOpen = false;
 
-  constructor(container: HTMLElement, callbacks: MaskToolsPanelCallbacks) {
-    this.container = container;
-    this.callbacks = callbacks;
-    this.render();
+  constructor(private readonly container: HTMLElement, vm: ViewModel) {
+    super(vm);
+    this.build();
+    this.markDirty();
   }
 
-  private render(): void {
+  onSessionChanged(): void {
+    this.markDirty();
+  }
+  onPixelsChanged(): void {
+    this.markDirty();
+  }
+  onMaskChanged(): void {
+    this.markDirty();
+  }
+  onPaletteChanged(): void {
+    this.markDirty();
+  }
+  onHistoryChanged(): void {
+    this.markDirty();
+  }
+  onDocumentReplaced(): void {
+    this.markDirty();
+  }
+
+  private get state() {
+    return { ...this.vm.session, ...this.vm.doc };
+  }
+
+  private build(): void {
     const presetOptionsHtml = MATCH_COLOR_PRESETS.map((p) =>
       `<option value="${p.id}">${p.icon} ${p.name}</option>`
     ).join('') + `<option value="custom">🎨 自定义色组...</option>`;
@@ -144,16 +155,16 @@ export class MaskToolsPanel {
     // 撤销 / 重做
     const btnUndo = this.container.querySelector('#btn-mask-undo');
     const btnRedo = this.container.querySelector('#btn-mask-redo');
-    btnUndo?.addEventListener('click', () => this.callbacks.onUndo());
-    btnRedo?.addEventListener('click', () => this.callbacks.onRedo());
+    btnUndo?.addEventListener('click', () => this.vm.undo());
+    btnRedo?.addEventListener('click', () => this.vm.redo());
 
     // 工具按钮点击
     const toolBtns = this.container.querySelectorAll<HTMLButtonElement>('.tool-tab-btn[data-tool]');
     toolBtns.forEach((btn) => {
       btn.addEventListener('click', () => {
-        const tool = btn.getAttribute('data-tool') as 'pen' | 'eraser' | 'bucket' | 'box_select';
+        const tool = btn.getAttribute('data-tool') as MaskTool;
         if (tool) {
-          this.callbacks.onSelectMaskTool(tool);
+          this.vm.setActiveMaskTool(tool);
         }
       });
     });
@@ -162,7 +173,7 @@ export class MaskToolsPanel {
     const presetSelect = this.container.querySelector('#select-match-preset') as HTMLSelectElement | null;
     presetSelect?.addEventListener('change', () => {
       if (presetSelect.value !== 'custom') {
-        this.callbacks.onSetMatchPreset(presetSelect.value);
+        this.vm.setMaskMatchPreset(presetSelect.value);
       }
     });
 
@@ -175,9 +186,9 @@ export class MaskToolsPanel {
     const pillBtns = this.container.querySelectorAll<HTMLButtonElement>('.brush-size-pill[data-size]');
     pillBtns.forEach((btn) => {
       btn.addEventListener('click', () => {
-        const size = parseInt(btn.getAttribute('data-size') || '1', 10) as 1 | 2 | 3 | 4;
+        const size = parseInt(btn.getAttribute('data-size') || '1', 10) as BrushSize;
         if (size >= 1 && size <= 4) {
-          this.callbacks.onSelectBrushSize(size);
+          this.vm.setMaskBrushSize(size);
         }
       });
     });
@@ -187,7 +198,7 @@ export class MaskToolsPanel {
       const target = e.target as HTMLElement;
       const delBtn = target.closest<HTMLElement>('.match-chip-del-btn');
       if (delBtn) {
-        this.callbacks.onRemoveMatchColor(Number(delBtn.dataset.colorIdx));
+        this.vm.removeMaskMatchColor(Number(delBtn.dataset.colorIdx));
       } else if (target.closest('.match-chip-add-btn')) {
         this.toggleAddColorPopover();
       }
@@ -198,8 +209,8 @@ export class MaskToolsPanel {
       const swatch = (e.target as HTMLElement).closest<HTMLElement>('.add-swatch-item');
       if (!swatch) return;
       const idx = Number(swatch.dataset.index);
-      if (swatch.classList.contains('is-selected')) this.callbacks.onRemoveMatchColor(idx);
-      else this.callbacks.onAddMatchColor(idx);
+      if (swatch.classList.contains('is-selected')) this.vm.removeMaskMatchColor(idx);
+      else this.vm.addMaskMatchColor(idx);
     });
 
     // 颜色卡片点击委托 (画面颜色一键转遮罩)
@@ -217,14 +228,14 @@ export class MaskToolsPanel {
       if (colorIdxStr !== null) {
         const colorIdx = parseInt(colorIdxStr, 10);
         if (!isNaN(colorIdx)) {
-          this.callbacks.onAssignColorToZone(colorIdx);
+          this.vm.assignColorToZone(colorIdx);
         }
       }
     });
   }
 
-  public update(state: StudioState): void {
-    this.currentState = state;
+  render(): void {
+    const state = this.state;
 
     // 1. 更新顶部当前分区指示
     const zoneBadge = this.container.querySelector('#mask-tools-zone-badge') as HTMLElement | null;
@@ -247,8 +258,8 @@ export class MaskToolsPanel {
     // 2. 更新撤销/重做按钮状态
     const btnUndo = this.container.querySelector('#btn-mask-undo') as HTMLButtonElement | null;
     const btnRedo = this.container.querySelector('#btn-mask-redo') as HTMLButtonElement | null;
-    if (btnUndo) btnUndo.disabled = state.undoStack.length === 0;
-    if (btnRedo) btnRedo.disabled = state.redoStack.length === 0;
+    if (btnUndo) btnUndo.disabled = !this.vm.canUndo();
+    if (btnRedo) btnRedo.disabled = !this.vm.canRedo();
 
     // 3. 更新工具激活高亮
     const activeTool = state.activeMaskTool;
@@ -307,11 +318,11 @@ export class MaskToolsPanel {
 
   private renderMatchChips(): void {
     const chipsRow = this.container.querySelector('#match-chips-row');
-    if (!chipsRow || !this.currentState) return;
+    if (!chipsRow) return;
 
     chipsRow.innerHTML = '';
-    const matchColors = this.currentState.maskMatchColors;
-    const palette = this.currentState.palette;
+    const matchColors = this.vm.session.maskMatchColors;
+    const palette = this.vm.doc.palette;
 
     matchColors.forEach((idx) => {
       const hex = palette[idx] || (idx === TRANSPARENT_INDEX ? 'transparent' : '#000000');
@@ -351,14 +362,14 @@ export class MaskToolsPanel {
 
   private renderAddColorGrid(): void {
     const grid = this.container.querySelector('#add-color-grid');
-    if (!grid || !this.currentState) return;
+    if (!grid) return;
 
     grid.innerHTML = '';
-    const currentColors = new Set(this.currentState.maskMatchColors);
+    const currentColors = new Set(this.vm.session.maskMatchColors);
 
     const allIndices = [...Array.from({ length: 36 }, (_, i) => i), TRANSPARENT_INDEX];
     allIndices.forEach((idx) => {
-      const hex = this.currentState!.palette[idx] || (idx === TRANSPARENT_INDEX ? 'transparent' : '#000000');
+      const hex = this.vm.doc.palette[idx] || (idx === TRANSPARENT_INDEX ? 'transparent' : '#000000');
       const isAlreadyIn = currentColors.has(idx);
       const isWhite = hex.toUpperCase() === '#FFFFFF';
       const isTransparent = idx === TRANSPARENT_INDEX;
@@ -382,12 +393,12 @@ export class MaskToolsPanel {
     const listEl = this.container.querySelector('#color-to-mask-list');
     if (!listEl) return;
 
-    if (!this.currentState || !this.currentState.isLoaded) {
+    if (!this.vm.session.isLoaded) {
       listEl.innerHTML = `<div class="empty-color-hint">请先载入图片以提取画面颜色</div>`;
       return;
     }
 
-    const { pixelIndices, semanticMask, palette, activeZone, lockedMaskZones = [] } = this.currentState;
+    const { pixelIndices, semanticMask, palette, activeZone, lockedMaskZones } = this.state;
     const zoneMeta = ZONE_CONFIG[activeZone];
 
     // 统计当前 64×64 画面中实际出现的有效色板索引 (0~35，过滤 255 透明)

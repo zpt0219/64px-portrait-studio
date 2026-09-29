@@ -3,7 +3,9 @@
  * 左键行 → 设为前景色，右键 → 设为背景色，悬停 → 在画布上高亮该颜色。
  */
 
-import { StudioState, RectSelection } from '../../types';
+import { RectSelection } from '../../types';
+import { PortraitDocument } from '../../model/document';
+import { EditorSession } from '../../model/session';
 import { TRANSPARENT_INDEX, WHITE_PALETTE_INDEX } from '../../data/palette';
 import { IMAGE_WIDTH as W } from '../../core/pixelGrid';
 
@@ -63,8 +65,8 @@ export class SelectionStatsPanel {
     el.addEventListener('mouseleave', () => callbacks.onHighlight(null));
   }
 
-  public update(state: StudioState, selection: RectSelection | null): void {
-    const stats = selection ? selectionColorStats(state.pixelIndices, selection) : [];
+  public update(doc: PortraitDocument, session: EditorSession, selection: RectSelection | null): void {
+    const stats = selection ? selectionColorStats(doc.pixelIndices, selection) : [];
     if (stats.length === 0) {
       this.el.style.display = 'none';
       this.el.innerHTML = '';
@@ -75,14 +77,14 @@ export class SelectionStatsPanel {
     const rowsHtml = stats
       .map((stat) => {
         const isTransparent = stat.index === TRANSPARENT_INDEX;
-        const hex = isTransparent ? '' : state.palette[stat.index] || '#000000';
+        const hex = isTransparent ? '' : doc.palette[stat.index] || '#000000';
         const idxLabel = isTransparent ? '#透' : `#${stat.index.toString().padStart(2, '0')}`;
         const pct = stat.percentage.toFixed(stat.percentage >= 1 ? 1 : 2);
         const tooltip = `${isTransparent ? '透明色' : `#${stat.index} (${hex})`}: ${stat.count} 点 (${pct}%)\n左键选取为前景色，右键选取为背景色`;
         const rowClass = [
           'stats-color-row',
-          stat.index === state.activePaletteIndex ? 'is-active-fg' : '',
-          stat.index === state.bgPaletteIndex ? 'is-active-bg' : '',
+          stat.index === session.activePaletteIndex ? 'is-active-fg' : '',
+          stat.index === session.bgPaletteIndex ? 'is-active-bg' : '',
         ].join(' ');
         const chipClass = [
           'stats-color-chip',

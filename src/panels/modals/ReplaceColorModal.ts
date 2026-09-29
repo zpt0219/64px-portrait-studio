@@ -2,8 +2,15 @@
  * 颜色替换对话框 (Shift+R)：选择原颜色 / 新颜色与作用范围 (选区或整张画布)
  */
 
-import { StudioState, RectSelection } from '../types';
-import { TRANSPARENT_INDEX, PALETTE_FAMILIES } from '../data/palette';
+import { RectSelection } from '../../types';
+import { TRANSPARENT_INDEX, PALETTE_FAMILIES } from '../../data/palette';
+
+/** 打开弹窗时需要的状态：色板与当前前景 / 背景色 */
+interface ReplaceColorSource {
+  palette: string[];
+  activePaletteIndex: number;
+  bgPaletteIndex: number;
+}
 
 interface ReplaceColorModalCallbacks {
   onConfirm: (fromIdx: number, toIdx: number, scope: 'selection' | 'all') => void;
@@ -31,7 +38,7 @@ export class ReplaceColorModal {
   private toIndex = 0;
   private activePickingSlot: 'from' | 'to' = 'from';
   private currentScope: 'selection' | 'all' = 'selection';
-  private currentState: StudioState | null = null;
+  private currentState: ReplaceColorSource | null = null;
 
   constructor(container: HTMLElement, callbacks: ReplaceColorModalCallbacks) {
     this.container = container;
@@ -226,7 +233,7 @@ export class ReplaceColorModal {
     this.updateMiniPaletteActiveState();
   }
 
-  public open(state: StudioState, selection: RectSelection | null): void {
+  public open(state: ReplaceColorSource, selection: RectSelection | null): void {
     this.currentState = state;
     this.isOpen = true;
 
