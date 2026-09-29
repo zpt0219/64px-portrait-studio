@@ -4,16 +4,22 @@
  */
 
 import { StudioState, SemanticZone, ZONE_CONFIG, RectSelection } from '../types';
-import { TRANSPARENT_INDEX, WHITE_PALETTE_INDEX } from '../data/palette';
+import { TRANSPARENT_INDEX } from '../data/palette';
 import { getToolCursors } from '../utils/cursorUtils';
-import { hexToRgb } from '../core/colorUtils';
 import { Patch, Layers, extractPatch } from '../core/editOps';
-import { drawIndexedPixels, zoneRgbTable } from '../core/pixelRender';
+import { drawIndexedPixels } from '../core/pixelRender';
+import { ContextBar } from './canvas/ContextBar';
+import { SelectionStatsPanel } from './canvas/SelectionStatsPanel';
+import {
+  drawZoneOverlay,
+  drawPatchPixels,
+  drawMatchPreview,
+  drawGrid,
+  drawColorHighlight,
+  drawMarchingAnts,
+} from './canvas/overlays';
 
 const ZOOM_STEPS = [4, 6, 8, 12, 16, 24, 32] as const;
-
-/** 遮罩覆盖层配色 (背景用深蓝灰，与深色界面区分) */
-const ZONE_OVERLAY_RGB = zoneRgbTable([15, 23, 42]);
 
 interface CanvasEditorCallbacks {
   onStrokeStart: () => void;
@@ -50,6 +56,8 @@ export class CanvasEditor {
   private displayCanvas: HTMLCanvasElement | null = null;
   private ctx: CanvasRenderingContext2D | null = null;
   private hoverInfoEl: HTMLElement | null = null;
+  private contextBar!: ContextBar;
+  private selectionStats!: SelectionStatsPanel;
   private emptyStateEl: HTMLElement | null = null;
 
   // 离屏渲染
@@ -227,84 +235,18 @@ export class CanvasEditor {
       this.callbacks.onRestoreStorage();
     });
 
-    // 悬浮上下文临时工具栏事件代理 (保证动态内容点击响应，并阻止冒泡触发画布误绘制)
-    const floatingBar = this.container.querySelector('#floating-context-bar') as HTMLElement | null;
-    floatingBar?.addEventListener('pointerdown', (e) => {
-      e.stopPropagation();
-    });
-    floatingBar?.addEventListener('mousedown', (e) => {
-      e.stopPropagation();
-    });
-    floatingBar?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const target = (e.target as HTMLElement).closest('button');
-      if (!target) return;
-      const id = target.id;
-      if (id === 'btn-flip-h') {
-        this.callbacks.onFlipHorizontal?.();
-      } else if (id === 'btn-flip-v') {
-        this.callbacks.onFlipVertical?.();
-      } else if (id === 'btn-rotate-cw') {
-        this.callbacks.onRotateCW?.();
-      } else if (id === 'btn-replace-selection-color') {
-        this.callbacks.onOpenReplaceColor?.();
-      } else if (id === 'btn-cancel-selection') {
-        this.clearSelection();
-      } else if (id === 'btn-floating-conn-8') {
-        this.callbacks.onSetBucketConnectivity?.(8);
-      } else if (id === 'btn-floating-conn-4') {
-        this.callbacks.onSetBucketConnectivity?.(4);
-      }
+    this.contextBar = new ContextBar(this.container.querySelector('#floating-context-bar')!, {
+      onFlipHorizontal: () => this.callbacks.onFlipHorizontal?.(),
+      onFlipVertical: () => this.callbacks.onFlipVertical?.(),
+      onRotateCW: () => this.callbacks.onRotateCW?.(),
+      onOpenReplaceColor: () => this.callbacks.onOpenReplaceColor?.(),
+      onCancelSelection: () => this.clearSelection(),
+      onSetBucketConnectivity: (conn) => this.callbacks.onSetBucketConnectivity?.(conn),
     });
 
-    // 选区颜色统计浮动面板事件代理 (点击选取前景色，右键选取背景色，阻止画布误绘制)
-    const statsPanel = this.container.querySelector('#selection-color-stats-panel') as HTMLElement | null;
-    statsPanel?.addEventListener('pointerdown', (e) => e.stopPropagation());
-    statsPanel?.addEventListener('mousedown', (e) => e.stopPropagation());
-    statsPanel?.addEventListener('mouseup', (e) => e.stopPropagation());
-    statsPanel?.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
-    statsPanel?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const row = (e.target as HTMLElement).closest('.stats-color-row') as HTMLElement | null;
-      if (!row) return;
-      const idxStr = row.getAttribute('data-index');
-      if (idxStr === null) return;
-      const idx = parseInt(idxStr, 10);
-      if (!isNaN(idx)) {
-        this.callbacks.onColorPick?.(idx, false);
-      }
-    });
-    statsPanel?.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const row = (e.target as HTMLElement).closest('.stats-color-row') as HTMLElement | null;
-      if (!row) return;
-      const idxStr = row.getAttribute('data-index');
-      if (idxStr === null) return;
-      const idx = parseInt(idxStr, 10);
-      if (!isNaN(idx)) {
-        this.callbacks.onColorPick?.(idx, true);
-      }
-    });
-
-    // 鼠标悬停选区统计行时高亮画布上对应的色 (全画布参与)
-    statsPanel?.addEventListener('mouseover', (e) => {
-      const row = (e.target as HTMLElement).closest('.stats-color-row') as HTMLElement | null;
-      if (row) {
-        const idxStr = row.getAttribute('data-index');
-        if (idxStr !== null) {
-          const idx = parseInt(idxStr, 10);
-          if (!isNaN(idx)) {
-            this.setHighlightedColor(idx);
-            return;
-          }
-        }
-      }
-      this.setHighlightedColor(null);
-    });
-
-    statsPanel?.addEventListener('mouseleave', () => {
-      this.setHighlightedColor(null);
+    this.selectionStats = new SelectionStatsPanel(this.container.querySelector('#selection-color-stats-panel')!, {
+      onColorPick: (idx, isBg) => this.callbacks.onColorPick(idx, isBg),
+      onHighlight: (idx) => this.setHighlightedColor(idx),
     });
   }
 
@@ -1191,13 +1133,15 @@ export class CanvasEditor {
    * 刷新整个画布渲染
    */
   public redraw(): void {
-    if (!this.currentState || !this.ctx || !this.displayCanvas) return;
-    if (!this.currentState.isLoaded) {
+    const state = this.currentState;
+    const ctx = this.ctx;
+    if (!state || !ctx || !this.displayCanvas) return;
+    if (!state.isLoaded) {
       this.updateEmptyState();
       return;
     }
 
-    const zoom = this.currentState.zoomLevel;
+    const zoom = state.zoomLevel;
     const canvasSize = 64 * zoom;
 
     if (this.displayCanvas.width !== canvasSize || this.displayCanvas.height !== canvasSize) {
@@ -1207,158 +1151,59 @@ export class CanvasEditor {
       this.displayCanvas.style.height = `${canvasSize}px`;
     }
 
-    this.ctx.imageSmoothingEnabled = false;
+    ctx.imageSmoothingEnabled = false;
 
-    // 1. 绘制底层像素画到离屏 64x64 (发色预览时优先绘制预览像素)
-    const pixelsToRender = this.previewPixelIndices ?? this.currentState.pixelIndices;
-    drawIndexedPixels(this.offscreenPixelCtx, pixelsToRender, this.currentState.palette);
+    // 1. 像素画绘制到离屏 64×64 (发色预览时优先绘制预览像素)
+    drawIndexedPixels(this.offscreenPixelCtx, this.previewPixelIndices ?? state.pixelIndices, state.palette);
 
     // 2. 放大绘制到展示画布
-    this.ctx.clearRect(0, 0, canvasSize, canvasSize);
-    this.ctx.drawImage(this.offscreenPixelCanvas, 0, 0, 64, 64, 0, 0, canvasSize, canvasSize);
+    ctx.clearRect(0, 0, canvasSize, canvasSize);
+    ctx.drawImage(this.offscreenPixelCanvas, 0, 0, 64, 64, 0, 0, canvasSize, canvasSize);
 
-    // 3. 绘制半透明 5 色遮罩覆盖层 (受 showMaskOverlay, maskOpacity 与 visibleMaskZones 共同控制)
-    const showMask = (this.currentState.showMaskOverlay ?? true) && this.currentState.maskOpacity > 0.01;
-    if (showMask) {
-      const visibleSet = new Set(this.currentState.visibleMaskZones ?? [SemanticZone.Hair]);
-      if (visibleSet.size > 0) {
-        this.ctx.save();
-        const maskOpacity = this.currentState.maskOpacity;
-
-        for (let y = 0; y < 64; y++) {
-          for (let x = 0; x < 64; x++) {
-            const idx = y * 64 + x;
-            const zone = this.currentState.semanticMask[idx];
-            if (!visibleSet.has(zone)) continue;
-
-            const rgb = ZONE_OVERLAY_RGB[zone as SemanticZone] || [0, 0, 0];
-            this.ctx.fillStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${maskOpacity})`;
-            this.ctx.fillRect(x * zoom, y * zoom, zoom, zoom);
-          }
-        }
-        this.ctx.restore();
-      }
+    // 3. 半透明分区遮罩
+    const showMask = state.showMaskOverlay && state.maskOpacity > 0.01;
+    const visibleZones = new Set(state.visibleMaskZones);
+    if (showMask && visibleZones.size > 0) {
+      drawZoneOverlay(ctx, state.semanticMask, visibleZones, state.maskOpacity, zoom);
     }
 
-    // 3.5 通用色彩探针高亮覆盖层 (鼠标悬停在选区颜色统计行或 36 色色板时，全画布高亮对应颜色)
-    if (this.highlightedPaletteIndex !== null && this.currentState.activeMode === 'pixel') {
-      this.drawColorHighlightOverlay(this.highlightedPaletteIndex, zoom);
+    // 4. 颜色探针高亮 (悬停在色板或选区统计行时)
+    if (this.highlightedPaletteIndex !== null && state.activeMode === 'pixel') {
+      drawColorHighlight(ctx, state.pixelIndices, this.highlightedPaletteIndex, zoom);
     }
 
-    // 4. 像素网格 (当放大倍数 >= 8 且开启网格时)
-    if (this.currentState.showGrid && zoom >= 8) {
-      this.ctx.save();
-      this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-      this.ctx.lineWidth = 1;
-
-      this.ctx.beginPath();
-      for (let i = 0; i <= 64; i++) {
-        const pos = i * zoom;
-        this.ctx.moveTo(pos, 0);
-        this.ctx.lineTo(pos, canvasSize);
-        this.ctx.moveTo(0, pos);
-        this.ctx.lineTo(canvasSize, pos);
-      }
-      this.ctx.stroke();
-      this.ctx.restore();
+    // 5. 像素网格 (放大倍数 >= 8 时)
+    if (state.showGrid && zoom >= 8) {
+      drawGrid(ctx, zoom);
     }
 
-    // 4.5 选区平移、复制与走马灯外框渲染 (Aseprite 实时预览规范)
+    // 6. 选区：拖动中的浮动块 / 正在框选 / 已有选区的走马灯
     if (this.isMovingSelection && this.floatingPatch) {
       const { origX, origY, patch } = this.floatingPatch;
-      const { w, h, pixels, mask } = patch;
-      const [dx, dy] = this.moveOffset;
-      const destX = origX + dx;
-      const destY = origY + dy;
+      const destX = origX + this.moveOffset[0];
+      const destY = origY + this.moveOffset[1];
       const isCopy = this.isCopyMode || this.wasCopyTriggered;
+      const origRect = { x: origX, y: origY, w: patch.w, h: patch.h };
 
-      // 如果非复制模式 (剪切平移)，原位置清空为透明底纹
-      if (!isCopy) {
-        this.ctx.clearRect(origX * zoom, origY * zoom, w * zoom, h * zoom);
-      }
-
-      // 目标位置绘制浮动的像素内容
-      this.ctx.save();
-      for (let r = 0; r < h; r++) {
-        for (let c = 0; c < w; c++) {
-          const px = destX + c;
-          const py = destY + r;
-          if (px >= 0 && px < 64 && py >= 0 && py < 64) {
-            const pIdx = r * w + c;
-            const palIdx = pixels[pIdx];
-            if (palIdx !== TRANSPARENT_INDEX) {
-              const rgb = hexToRgb(this.currentState.palette[palIdx] || '#000000');
-              this.ctx.fillStyle = `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
-              this.ctx.fillRect(px * zoom, py * zoom, zoom, zoom);
-            }
-          }
-        }
-      }
-      this.ctx.restore();
-
-      // 如果开启了半透明遮罩，同步在目标位置绘制浮动遮罩
+      // 剪切移动时原位置显示为透明
+      if (!isCopy) ctx.clearRect(origX * zoom, origY * zoom, patch.w * zoom, patch.h * zoom);
+      drawPatchPixels(ctx, patch, destX, destY, state.palette, zoom);
       if (showMask) {
-        const visibleSet = new Set(this.currentState.visibleMaskZones ?? [SemanticZone.Hair]);
-        const maskOpacity = this.currentState.maskOpacity;
-        this.ctx.save();
-        for (let r = 0; r < h; r++) {
-          for (let c = 0; c < w; c++) {
-            const px = destX + c;
-            const py = destY + r;
-            if (px >= 0 && px < 64 && py >= 0 && py < 64) {
-              const pIdx = r * w + c;
-              const zone = mask[pIdx];
-              if (visibleSet.has(zone)) {
-                const rgb = ZONE_OVERLAY_RGB[zone as SemanticZone] || [0, 0, 0];
-                this.ctx.fillStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${maskOpacity})`;
-                this.ctx.fillRect(px * zoom, py * zoom, zoom, zoom);
-              }
-            }
-          }
-        }
-        this.ctx.restore();
+        drawZoneOverlay(ctx, patch.mask, visibleZones, state.maskOpacity, zoom, { ...origRect, x: destX, y: destY });
       }
-
-      // 复制模式下，原位置保留浅色辅助虚线
-      if (isCopy) {
-        this.drawMarchingAnts({ x: origX, y: origY, w, h }, zoom, true);
-      }
-      // 目标位置绘制走马灯外框
+      if (isCopy) drawMarchingAnts(ctx, origRect, zoom, this.marchingAntsOffset, true);
     } else if (this.isBoxSelecting && this.boxSelectCurrent) {
-      if (this.currentState.activeMode === 'mask' && this.currentState.activeMaskTool === 'box_select') {
-        const matchColors = new Set(this.currentState.maskMatchColors || []);
-        const { x: bx, y: by, w: bw, h: bh } = this.boxSelectCurrent;
-        const x0 = Math.max(0, Math.min(63, bx));
-        const y0 = Math.max(0, Math.min(63, by));
-        const x1 = Math.max(0, Math.min(63, bx + bw - 1));
-        const y1 = Math.max(0, Math.min(63, by + bh - 1));
-        const isRemove = this.maskBoxAction === 'remove';
-        const zoneMeta = ZONE_CONFIG[this.currentState.activeZone];
-
-        this.ctx.save();
-        for (let r = y0; r <= y1; r++) {
-          for (let c = x0; c <= x1; c++) {
-            const offset = r * 64 + c;
-            const colorIdx = this.currentState.pixelIndices[offset];
-            if (matchColors.has(colorIdx)) {
-              if (isRemove) {
-                this.ctx.fillStyle = 'rgba(239, 68, 68, 0.5)';
-              } else {
-                this.ctx.fillStyle = zoneMeta ? `${zoneMeta.color}88` : 'rgba(168, 85, 247, 0.55)';
-              }
-              this.ctx.fillRect(c * zoom, r * zoom, zoom, zoom);
-            }
-          }
-        }
-        this.ctx.restore();
+      if (state.activeMode === 'mask' && state.activeMaskTool === 'box_select') {
+        const fill = this.maskBoxAction === 'remove' ? 'rgba(239, 68, 68, 0.5)' : `${ZONE_CONFIG[state.activeZone].color}88`;
+        drawMatchPreview(ctx, state.pixelIndices, this.boxSelectCurrent, new Set(state.maskMatchColors), fill, zoom);
       }
-      this.drawMarchingAnts(this.boxSelectCurrent, zoom, false);
-    } else if (this.currentState.activeMode === 'pixel' && this.currentSelection) {
-      this.drawMarchingAnts(this.currentSelection, zoom, false);
+      drawMarchingAnts(ctx, this.boxSelectCurrent, zoom, this.marchingAntsOffset);
+    } else if (state.activeMode === 'pixel' && this.currentSelection) {
+      drawMarchingAnts(ctx, this.currentSelection, zoom, this.marchingAntsOffset);
     }
 
-    // 5. 触发画中画实时预览等外部同步位块
-    this.callbacks.onRedrawHook?.(this.offscreenPixelCanvas, this.currentState.isLoaded);
+    // 7. 同步画中画实时预览
+    this.callbacks.onRedrawHook?.(this.offscreenPixelCanvas, state.isLoaded);
   }
 
   public update(state: StudioState): void {
@@ -1503,161 +1348,16 @@ export class CanvasEditor {
     return x >= sel.x && x < sel.x + sel.w && y >= sel.y && y < sel.y + sel.h;
   }
 
+  /** 刷新依赖选区的浮动工具条与颜色统计面板 */
   private updateSelectionToolbar(): void {
-    this.updateFloatingContextBar();
-    this.updateSelectionColorStats();
-  }
+    const state = this.currentState;
+    if (!state) return;
+    const boxSelecting = this.isBoxSelecting ? this.boxSelectCurrent : null;
+    this.contextBar.update(state, this.currentSelection, boxSelecting);
 
-  /**
-   * 统计当前活跃选区内部包含的颜色出现频次及百分比
-   * 严格按照色板索引顺序 (0 至 35，以及透明色 255) 进行排列
-   */
-  private getSelectionColorStats(): {
-    index: number;
-    hex: string;
-    isTransparent: boolean;
-    count: number;
-    percentage: number;
-  }[] {
-    if (!this.currentState || !this.currentSelection || !this.currentState.isLoaded) {
-      return [];
-    }
-
-    const { x, y, w, h } = this.currentSelection;
-    if (w <= 0 || h <= 0) return [];
-
-    const pixelIndices = this.currentState.pixelIndices;
-    const counts = new Map<number, number>();
-    let total = 0;
-
-    const sx = Math.max(0, Math.min(63, x));
-    const sy = Math.max(0, Math.min(63, y));
-    const ex = Math.min(64, Math.max(0, x + w));
-    const ey = Math.min(64, Math.max(0, y + h));
-
-    for (let py = sy; py < ey; py++) {
-      const rowOffset = py * 64;
-      for (let px = sx; px < ex; px++) {
-        const colorIdx = pixelIndices[rowOffset + px];
-        counts.set(colorIdx, (counts.get(colorIdx) || 0) + 1);
-        total++;
-      }
-    }
-
-    if (total === 0) return [];
-
-    const result: {
-      index: number;
-      hex: string;
-      isTransparent: boolean;
-      count: number;
-      percentage: number;
-    }[] = [];
-    const palette = this.currentState.palette || [];
-
-    // 1. 严格按照色板顺序 (0 至 35) 进行遍历并收集非零颜色
-    for (let i = 0; i < 36; i++) {
-      const count = counts.get(i);
-      if (count && count > 0) {
-        result.push({
-          index: i,
-          hex: palette[i] || '#000000',
-          isTransparent: false,
-          count,
-          percentage: (count / total) * 100,
-        });
-      }
-    }
-
-    // 2. 原生透明色 (TRANSPARENT_INDEX = 255) 排在最后
-    const transCount = counts.get(TRANSPARENT_INDEX);
-    if (transCount && transCount > 0) {
-      result.push({
-        index: TRANSPARENT_INDEX,
-        hex: '',
-        isTransparent: true,
-        count: transCount,
-        percentage: (transCount / total) * 100,
-      });
-    }
-
-    // 容错：若存在其他非标索引
-    counts.forEach((count, idx) => {
-      if (idx > 35 && idx !== TRANSPARENT_INDEX && count > 0) {
-        result.push({
-          index: idx,
-          hex: palette[idx] || '#000000',
-          isTransparent: false,
-          count,
-          percentage: (count / total) * 100,
-        });
-      }
-    });
-
-    return result;
-  }
-
-  /**
-   * 渲染并更新选区颜色统计面板 (位于选区悬浮工具栏下方左侧)
-   */
-  private updateSelectionColorStats(): void {
-    const statsPanel = this.container.querySelector('#selection-color-stats-panel') as HTMLElement | null;
-    if (!statsPanel) return;
-
-    if (!this.currentState || !this.currentState.isLoaded || this.currentState.activeMode !== 'pixel' || !this.currentSelection) {
-      statsPanel.style.display = 'none';
-      statsPanel.innerHTML = '';
-      if (this.highlightedPaletteIndex !== null) {
-        this.highlightedPaletteIndex = null;
-      }
-      return;
-    }
-
-    const stats = this.getSelectionColorStats();
-    if (stats.length === 0) {
-      statsPanel.style.display = 'none';
-      statsPanel.innerHTML = '';
-      return;
-    }
-
-    const totalPixels = stats.reduce((sum, s) => sum + s.count, 0);
-    const activeFg = this.currentState.activePaletteIndex;
-    const activeBg = this.currentState.bgPaletteIndex;
-
-    const rowsHtml = stats.map((stat) => {
-      const isFg = stat.index === activeFg;
-      const isBg = stat.index === activeBg;
-      const isWhite = stat.index === WHITE_PALETTE_INDEX;
-      const idxLabel = stat.isTransparent ? '#透' : `#${stat.index.toString().padStart(2, '0')}`;
-      const pctFormatted = stat.percentage.toFixed(stat.percentage >= 1 ? 1 : 2);
-
-      const tooltip = stat.isTransparent
-        ? `透明色: ${stat.count} 点 (${pctFormatted}%)\n左键选取为前景色，右键选取为背景色`
-        : `#${stat.index} (${stat.hex}): ${stat.count} 点 (${pctFormatted}%)\n左键选取为前景色，右键选取为背景色`;
-
-      return `
-        <div class="stats-color-row ${isFg ? 'is-active-fg' : ''} ${isBg ? 'is-active-bg' : ''}" 
-             data-index="${stat.index}" 
-             title="${tooltip}">
-          <span class="stats-color-chip ${stat.isTransparent ? 'chip-transparent' : ''} ${isWhite ? 'chip-white' : ''}" 
-                style="${stat.isTransparent ? '' : `background-color: ${stat.hex};`}"></span>
-          <span class="stats-color-index">${idxLabel}</span>
-          <span class="stats-color-count">${stat.count}</span>
-          <span class="stats-color-pct">${pctFormatted}%</span>
-        </div>
-      `;
-    }).join('');
-
-    statsPanel.innerHTML = `
-      <div class="stats-panel-header">
-        <span class="stats-panel-title">选区颜色</span>
-        <span class="stats-summary-badge">${stats.length}色 · ${totalPixels}px</span>
-      </div>
-      <div class="stats-color-list">
-        ${rowsHtml}
-      </div>
-    `;
-    statsPanel.style.display = 'flex';
+    const showStats = state.isLoaded && state.activeMode === 'pixel' && this.currentSelection !== null;
+    if (!showStats) this.highlightedPaletteIndex = null;
+    this.selectionStats.update(state, showStats ? this.currentSelection : null);
   }
 
   /**
@@ -1670,157 +1370,6 @@ export class CanvasEditor {
     if (this.currentState && this.currentState.activeMode === 'pixel' && this.currentState.isLoaded) {
       this.redraw();
     }
-  }
-
-  /**
-   * 通用色彩探针高亮绘制覆盖层
-   * 鼠标悬停统计面板颜色行或 36 色色板时，将画布上对应颜色的全部像素突出显现，非匹配像素半透明压暗
-   */
-  private drawColorHighlightOverlay(targetIdx: number, zoom: number): void {
-    if (!this.ctx || !this.currentState) return;
-
-    const pixelIndices = this.currentState.pixelIndices;
-    const isTargetTransparent = targetIdx === TRANSPARENT_INDEX;
-    const isTargetWhite = targetIdx === WHITE_PALETTE_INDEX;
-
-    // 1. 半透明压暗非目标像素 (全图 64×64 范围)
-    this.ctx.save();
-    this.ctx.beginPath();
-    for (let y = 0; y < 64; y++) {
-      const rowOffset = y * 64;
-      for (let x = 0; x < 64; x++) {
-        if (pixelIndices[rowOffset + x] !== targetIdx) {
-          this.ctx.rect(x * zoom, y * zoom, zoom, zoom);
-        }
-      }
-    }
-    this.ctx.fillStyle = 'rgba(10, 12, 22, 0.72)';
-    this.ctx.fill();
-    this.ctx.restore();
-
-    // 2. 为目标颜色像素绘制高对比描边与发光层
-    this.ctx.save();
-    this.ctx.beginPath();
-    let matchCount = 0;
-    for (let y = 0; y < 64; y++) {
-      const rowOffset = y * 64;
-      for (let x = 0; x < 64; x++) {
-        if (pixelIndices[rowOffset + x] === targetIdx) {
-          matchCount++;
-          this.ctx.rect(x * zoom + 0.5, y * zoom + 0.5, zoom - 1, zoom - 1);
-        }
-      }
-    }
-
-    if (matchCount > 0) {
-      // 描边色彩：纯白与透明色用高对比电光青，其它深浅色用高光纯白
-      this.ctx.strokeStyle = (isTargetWhite || isTargetTransparent) ? '#38bdf8' : '#ffffff';
-      this.ctx.lineWidth = 1;
-      this.ctx.stroke();
-
-      // 微光覆层：轻度提亮目标像素
-      this.ctx.fillStyle = isTargetTransparent ? 'rgba(56, 189, 248, 0.22)' : 'rgba(255, 255, 255, 0.18)';
-      this.ctx.fill();
-    }
-    this.ctx.restore();
-  }
-
-  private updateFloatingContextBar(): void {
-    const floatingBar = this.container.querySelector('#floating-context-bar') as HTMLElement | null;
-    if (!floatingBar) return;
-
-    if (!this.currentState || !this.currentState.isLoaded || this.currentState.activeMode !== 'pixel') {
-      floatingBar.style.display = 'none';
-      floatingBar.innerHTML = '';
-      return;
-    }
-
-    // 1. 若当前存在活跃选区：显示选区尺寸与操作按钮
-    if (this.currentSelection) {
-      floatingBar.style.display = 'inline-flex';
-      const existingBadge = floatingBar.querySelector('#selection-status-badge');
-      const isSelectionGroup = floatingBar.querySelector('#btn-flip-h');
-      if (existingBadge && isSelectionGroup) {
-        existingBadge.textContent = `选区: ${this.currentSelection.w}×${this.currentSelection.h}`;
-      } else {
-        floatingBar.innerHTML = `
-          <div class="floating-context-group">
-            <span class="selection-status-badge" id="selection-status-badge">选区: ${this.currentSelection.w}×${this.currentSelection.h}</span>
-            <div class="floating-btn-group">
-              <button class="tool-btn btn-xs" id="btn-flip-h" title="水平翻转选区 (快捷键: Shift+H)">↔ 水平翻转</button>
-              <button class="tool-btn btn-xs" id="btn-flip-v" title="垂直翻转选区 (快捷键: Shift+V)">↕ 垂直翻转</button>
-              <button class="tool-btn btn-xs" id="btn-rotate-cw" title="顺时针旋转90° (快捷键: Shift+T)">↻ 旋转90°</button>
-              <button class="tool-btn btn-xs btn-replace-selection" id="btn-replace-selection-color" title="选区内颜色替换 (快捷键: Shift+R)">🔄 替换颜色</button>
-              <button class="tool-btn btn-xs" id="btn-cancel-selection" title="取消选区 (快捷键: Esc 或 Ctrl+D)">✕ 取消</button>
-            </div>
-          </div>
-        `;
-      }
-      return;
-    }
-
-    // 2. 若正在拖拽框选：实时展示框选尺寸
-    if (this.isBoxSelecting && this.boxSelectCurrent) {
-      floatingBar.style.display = 'inline-flex';
-      const existingBadge = floatingBar.querySelector('#box-select-badge');
-      if (existingBadge) {
-        existingBadge.textContent = `选区: ${this.boxSelectCurrent.w}×${this.boxSelectCurrent.h}`;
-      } else {
-        floatingBar.innerHTML = `
-          <div class="floating-context-group">
-            <span class="selection-status-badge" id="box-select-badge">选区: ${this.boxSelectCurrent.w}×${this.boxSelectCurrent.h}</span>
-            <span class="floating-help-tip">松开鼠标完成框选 · 单击取消选区</span>
-          </div>
-        `;
-      }
-      return;
-    }
-
-    // 3. 若无选区，但激活的工具是矩形选区工具：显示选区操作引导
-    if (this.currentState.activeTool === 'select') {
-      floatingBar.style.display = 'inline-flex';
-      if (!floatingBar.querySelector('#select-tool-badge')) {
-        floatingBar.innerHTML = `
-          <div class="floating-context-group">
-            <span class="floating-tool-badge" id="select-tool-badge">⬚ 矩形选区</span>
-            <span class="floating-help-tip">在画布上拖拽框选矩形 · 选区内拖拽平移 (按住 Ctrl 复制)</span>
-          </div>
-        `;
-      }
-      return;
-    }
-
-    // 4. 若激活的工具是油漆桶工具：显示 8 邻居 / 4 邻居连通性微调
-    if (this.currentState.activeTool === 'bucket') {
-      const conn = this.currentState.bucketConnectivity ?? 8;
-      floatingBar.style.display = 'inline-flex';
-      const conn8Btn = floatingBar.querySelector('#btn-floating-conn-8');
-      const conn4Btn = floatingBar.querySelector('#btn-floating-conn-4');
-      if (conn8Btn && conn4Btn) {
-        conn8Btn.className = `connectivity-pill-btn ${conn === 8 ? 'active' : ''}`;
-        conn4Btn.className = `connectivity-pill-btn ${conn === 4 ? 'active' : ''}`;
-      } else {
-        floatingBar.innerHTML = `
-          <div class="floating-context-group">
-            <span class="floating-tool-badge">🪣 油漆桶连通域</span>
-            <div class="floating-pills-group">
-              <button class="connectivity-pill-btn ${conn === 8 ? 'active' : ''}" id="btn-floating-conn-8" title="8 邻居连通 (默认：横、竖、对角线全部连通)">
-                <span class="pill-dot">●</span> 8 邻居 (默认)
-              </button>
-              <button class="connectivity-pill-btn ${conn === 4 ? 'active' : ''}" id="btn-floating-conn-4" title="4 邻居连通 (仅十字四向，不穿透对角单像素描边)">
-                <span class="pill-dot">●</span> 4 邻居 (十字)
-              </button>
-            </div>
-            <span class="floating-help-tip">Shift+点击可全图同色替换</span>
-          </div>
-        `;
-      }
-      return;
-    }
-
-    // 5. 其余无额外参数的工具（画笔、橡皮擦、吸管等）：隐藏浮动栏
-    floatingBar.style.display = 'none';
-    floatingBar.innerHTML = '';
   }
 
   private manageMarchingAntsAnimation(): void {
@@ -1841,33 +1390,4 @@ export class CanvasEditor {
     }
   }
 
-  /**
-   * 绘制 Aseprite 风格黑白交替走马灯虚线外框
-   */
-  private drawMarchingAnts(sel: RectSelection, zoom: number, isGhost: boolean = false): void {
-    if (!this.ctx) return;
-    const x = Math.round(sel.x * zoom);
-    const y = Math.round(sel.y * zoom);
-    const w = Math.round(sel.w * zoom);
-    const h = Math.round(sel.h * zoom);
-
-    this.ctx.save();
-    if (isGhost) {
-      this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-      this.ctx.lineWidth = 1;
-      this.ctx.setLineDash([3, 3]);
-      this.ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-    } else {
-      this.ctx.lineWidth = 1.5;
-      this.ctx.setLineDash([4, 4]);
-      this.ctx.lineDashOffset = this.marchingAntsOffset;
-      this.ctx.strokeStyle = '#FFFFFF';
-      this.ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-
-      this.ctx.lineDashOffset = (this.marchingAntsOffset + 4) % 8;
-      this.ctx.strokeStyle = '#000000';
-      this.ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-    }
-    this.ctx.restore();
-  }
 }
