@@ -36,6 +36,20 @@ import { RealtimePreview } from './components/RealtimePreview';
 import { ReplaceColorModal } from './components/ReplaceColorModal';
 import { ConfirmModal } from './components/ConfirmModal';
 import { exportProjectPng, exportProjectZip, importProjectZip } from './core/zipExporter';
+import {
+  Layers,
+  Patch,
+  FULL_CANVAS,
+  extractPatch,
+  stampPatch,
+  clearRect,
+  movePatch,
+  flipRect,
+  rotateRectCW,
+  replaceColor,
+  floodFillPixels,
+  floodFillMask,
+} from './core/editOps';
 
 /** 撤销栈上限 */
 const UNDO_LIMIT = 40;
@@ -54,6 +68,7 @@ class ImageGemApp {
   private confirmModal!: ConfirmModal;
   private toastContainer!: HTMLElement;
   private strokeStartSnapshot: UndoSnapshot | null = null;
+  private clipboard: Patch | null = null;
 
   // 非破坏性发色置换缓冲区与草稿状态
   private hairRecolorBase: Uint8Array | null = null;
@@ -198,6 +213,8 @@ class ImageGemApp {
       onRotateCW: () => this.rotateContentCW(),
       onSetBucketConnectivity: (conn) => this.setBucketConnectivity(conn),
       onMaskBoxSelect: (rect, action) => this.handleMaskBoxSelect(rect, action),
+      onBucket: (x, y, button, replaceAll) => this.bucketAt(x, y, button, replaceAll),
+      onMoveSelection: (patch, from, toX, toY, copy) => movePatch(this.layers(), patch, from, toX, toY, !copy),
     });
 
     const viewportEl = this.canvasEditor.getViewportElement() || canvasMount;
@@ -1211,110 +1228,121 @@ class ImageGemApp {
   }
 
   /**
-   * 翻转内容统一调度：优先翻转选区，若无选区则翻转整张画布
+   * 翻转：有选区时翻转选区内容，否则翻转整张画布
    */
   public flipContent(axis: 'horizontal' | 'vertical'): void {
     if (!this.state.isLoaded) return;
-
-    if (this.canvasEditor.hasSelection()) {
-      this.canvasEditor.flipSelectionContent(axis);
-      const label = axis === 'horizontal' ? '↔ 水平' : '↕ 垂直';
-      this.showToast(`${label}翻转选区完成`);
-    } else {
-      this.flipCanvas(axis);
-      const label = axis === 'horizontal' ? '↔ 水平' : '↕ 垂直';
-      this.showToast(`${label}翻转整张画布完成`);
-    }
+    const selection = this.canvasEditor.getSelection();
+    this.applyEdit(() => {
+      flipRect(this.layers(), selection ?? FULL_CANVAS, axis);
+      return true;
+    });
+    const label = axis === 'horizontal' ? '↔ 水平' : '↕ 垂直';
+    this.showToast(`${label}翻转${selection ? '选区' : '整张画布'}完成`);
   }
 
   /**
-   * 整张 64×64 画布水平/垂直翻转
-   */
-  public flipCanvas(axis: 'horizontal' | 'vertical'): void {
-    if (!this.state.isLoaded) return;
-    this.pushUndoSnapshot();
-
-    const pi = this.state.pixelIndices;
-    const sm = this.state.semanticMask;
-
-    if (axis === 'horizontal') {
-      for (let y = 0; y < 64; y++) {
-        const row = y * 64;
-        for (let x = 0; x < 32; x++) {
-          const l = row + x;
-          const r = row + (63 - x);
-          const tempP = pi[l];
-          pi[l] = pi[r];
-          pi[r] = tempP;
-
-          const tempM = sm[l];
-          sm[l] = sm[r];
-          sm[r] = tempM;
-        }
-      }
-    } else {
-      for (let y = 0; y < 32; y++) {
-        const topRow = y * 64;
-        const botRow = (63 - y) * 64;
-        for (let x = 0; x < 64; x++) {
-          const t = topRow + x;
-          const b = botRow + x;
-          const tempP = pi[t];
-          pi[t] = pi[b];
-          pi[b] = tempP;
-
-          const tempM = sm[t];
-          sm[t] = sm[b];
-          sm[b] = tempM;
-        }
-      }
-    }
-
-    this.syncAllViews();
-    this.triggerAutoSave();
-  }
-
-  /**
-   * 顺时针旋转90°统一调度：优先旋转选区，若无选区则旋转整张画布
+   * 顺时针旋转 90°：有选区时旋转选区内容 (选区随之变形)，否则旋转整张画布
    */
   public rotateContentCW(): void {
     if (!this.state.isLoaded) return;
+    const selection = this.canvasEditor.getSelection();
+    this.applyEdit(() => {
+      const rotated = rotateRectCW(this.layers(), selection ?? FULL_CANVAS);
+      if (selection) this.canvasEditor.setSelection(rotated);
+      return true;
+    });
+    this.showToast(`↻ 顺时针旋转${selection ? '选区' : '整张画布'} 90° 完成`);
+  }
 
-    if (this.canvasEditor.hasSelection()) {
-      this.canvasEditor.rotateSelectionContentCW();
-      this.showToast('↻ 顺时针旋转选区 90° 完成');
-    } else {
-      this.rotateCanvasCW();
-      this.showToast('↻ 顺时针旋转整张画布 90° 完成');
-    }
+  /** 当前可编辑图层；被锁定分区的遮罩在清空类操作中受保护 */
+  private layers(): Layers {
+    return {
+      pixels: this.state.pixelIndices,
+      mask: this.state.semanticMask,
+      lockedZones: new Set(this.state.lockedMaskZones),
+    };
+  }
+
+  /** 编辑作用范围：有选区时为选区，否则为整张画布 */
+  private editScope(): RectSelection {
+    return this.canvasEditor.getSelection() ?? FULL_CANVAS;
   }
 
   /**
-   * 整张 64×64 画布顺时针旋转 90°
+   * 执行一次独立编辑 (非画笔笔划)：有变化时记录撤销并存盘，随后刷新全部视图。
    */
-  public rotateCanvasCW(): void {
-    if (!this.state.isLoaded) return;
-    this.pushUndoSnapshot();
+  private applyEdit(edit: () => boolean): boolean {
+    if (!this.state.isLoaded) return false;
+    const snapshot = this.takeSnapshot();
+    const changed = edit();
+    if (changed) {
+      this.recordUndo(snapshot);
+      if (this.hasUnappliedHairRecolor()) {
+        this.recomputeHairRecolorPreview();
+      }
+      this.triggerAutoSave();
+    }
+    this.syncAllViews();
+    return changed;
+  }
 
-    const pi = this.state.pixelIndices;
-    const sm = this.state.semanticMask;
-    const oldP = new Uint8Array(pi);
-    const oldM = new Uint8Array(sm);
+  /**
+   * 油漆桶 (在画布笔划内调用，撤销由笔划统一记录)。
+   * 左键填前景色 / 当前分区，右键填背景色 / 背景分区；replaceAll 时改为全域同色替换。
+   */
+  private bucketAt(x: number, y: number, button: 0 | 2, replaceAll: boolean): boolean {
+    const layers = this.layers();
+    const diagonal = this.state.bucketConnectivity === 8;
+    let changed: boolean;
 
-    for (let y = 0; y < 64; y++) {
-      for (let x = 0; x < 64; x++) {
-        // 90° CW: new_x = 63 - y, new_y = x
-        const newX = 63 - y;
-        const newY = x;
-        const oldOff = y * 64 + x;
-        const newOff = newY * 64 + newX;
-        pi[newOff] = oldP[oldOff];
-        sm[newOff] = oldM[oldOff];
+    if (this.state.activeMode === 'mask') {
+      const zone = button === 0 ? this.state.activeZone : SemanticZone.Background;
+      changed = floodFillMask(layers, x, y, zone, diagonal, this.editScope());
+    } else {
+      const color = button === 0 ? this.state.activePaletteIndex : this.state.bgPaletteIndex;
+      if (replaceAll) {
+        const fromColor = layers.pixels[y * 64 + x];
+        changed = replaceColor(layers, fromColor, color, this.editScope()) > 0;
+      } else {
+        changed = floodFillPixels(layers, x, y, color, diagonal, this.editScope());
       }
     }
 
-    this.syncAllViews();
-    this.triggerAutoSave();
+    if (changed) this.canvasEditor.redraw();
+    return changed;
+  }
+
+  private copySelection(): boolean {
+    const selection = this.canvasEditor.getSelection();
+    if (!this.state.isLoaded || !selection) return false;
+    this.clipboard = extractPatch(this.layers(), selection);
+    return true;
+  }
+
+  private cutSelection(): boolean {
+    return this.copySelection() && this.deleteSelectionContent();
+  }
+
+  /** 把选区内容清空为透明 (保护锁定分区的遮罩) */
+  private deleteSelectionContent(): boolean {
+    const selection = this.canvasEditor.getSelection();
+    if (!selection) return false;
+    return this.applyEdit(() => clearRect(this.layers(), selection));
+  }
+
+  /** 粘贴到当前选区左上角 (无选区时居中)，粘贴结果成为新选区 */
+  private pasteClipboard(): boolean {
+    const clip = this.clipboard;
+    if (!clip) return false;
+    return this.applyEdit(() => {
+      const selection = this.canvasEditor.getSelection();
+      const x = Math.min(selection ? selection.x : Math.max(0, Math.floor((64 - clip.w) / 2)), Math.max(0, 64 - clip.w));
+      const y = Math.min(selection ? selection.y : Math.max(0, Math.floor((64 - clip.h) / 2)), Math.max(0, 64 - clip.h));
+      stampPatch(this.layers(), clip, x, y);
+      this.canvasEditor.setSelection({ x, y, w: clip.w, h: clip.h });
+      return true;
+    });
   }
 
   // ===================== 撤销与重做 =====================
@@ -1486,10 +1514,12 @@ class ImageGemApp {
       return;
     }
 
-    const count = this.canvasEditor.replaceColor(fromIdx, toIdx, scope);
+    let count = 0;
+    this.applyEdit(() => {
+      count = replaceColor(this.layers(), fromIdx, toIdx, scope === 'selection' ? this.editScope() : FULL_CANVAS);
+      return count > 0;
+    });
     if (count > 0) {
-      this.syncAllViews();
-      this.triggerAutoSave();
       const scopeDesc = scope === 'selection' ? '选区内' : '整张画布';
       this.showToast(`🔄 已成功在${scopeDesc}替换 ${count} 个像素点`, 'success');
     } else {
@@ -1554,17 +1584,17 @@ class ImageGemApp {
       ['s', () => (this.exportProjectZip(), true)],
       ['c', () => {
         if (!canvas.hasSelection()) return false;
-        if (canvas.copySelection()) this.showToast('📋 已复制选区内容到剪贴板');
+        if (this.copySelection()) this.showToast('📋 已复制选区内容到剪贴板');
         return true;
       }],
       ['x', () => {
         if (!canvas.hasSelection()) return false;
-        if (canvas.cutSelection()) this.showToast('✂️ 已剪切选区内容到剪贴板');
+        if (this.cutSelection()) this.showToast('✂️ 已剪切选区内容到剪贴板');
         return true;
       }],
       ['v', () => {
-        if (!canvas.hasClipboard()) return false;
-        if (canvas.pasteClipboard()) this.showToast('📋 已从剪贴板粘贴选区');
+        if (!this.clipboard) return false;
+        if (this.pasteClipboard()) this.showToast('📋 已从剪贴板粘贴选区');
         return true;
       }],
       ['d', () => (this.clearSelectionWithToast(), true)],
@@ -1587,7 +1617,7 @@ class ImageGemApp {
     }
     if (is('delete', 'backspace', 'Delete', 'Backspace') && canvas.hasSelection()) {
       e.preventDefault();
-      if (canvas.deleteSelectionContent()) this.showToast('🧼 已将选区内容清空为透明像素');
+      if (this.deleteSelectionContent()) this.showToast('🧼 已将选区内容清空为透明像素');
       return;
     }
 

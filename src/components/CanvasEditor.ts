@@ -7,7 +7,7 @@ import { StudioState, SemanticZone, ZONE_CONFIG, RectSelection } from '../types'
 import { TRANSPARENT_INDEX, WHITE_PALETTE_INDEX } from '../data/palette';
 import { getToolCursors } from '../utils/cursorUtils';
 import { hexToRgb } from '../core/colorUtils';
-import { floodFill, PIXEL_COUNT } from '../core/pixelGrid';
+import { Patch, Layers, extractPatch } from '../core/editOps';
 import { drawIndexedPixels, zoneRgbTable } from '../core/pixelRender';
 
 const ZOOM_STEPS = [4, 6, 8, 12, 16, 24, 32] as const;
@@ -35,6 +35,10 @@ interface CanvasEditorCallbacks {
   onRotateCW?: () => void;
   onSetBucketConnectivity?: (connectivity: 4 | 8) => void;
   onMaskBoxSelect?: (rect: RectSelection, action: 'add' | 'remove') => void;
+  /** 油漆桶点击 (像素或遮罩模式)；replaceAll 为 Shift+点击的全域同色替换。返回是否修改了画面 */
+  onBucket: (x: number, y: number, button: 0 | 2, replaceAll: boolean) => boolean;
+  /** 选区拖动放下：把 patch 从 from 移到 (toX, toY)，copy 为 true 时保留原位置 */
+  onMoveSelection: (patch: Patch, from: RectSelection, toX: number, toY: number, copy: boolean) => void;
 }
 
 export class CanvasEditor {
@@ -77,22 +81,7 @@ export class CanvasEditor {
   private moveOffset: [number, number] = [0, 0];
   private isCopyMode = false;
   private wasCopyTriggered = false;
-  private floatingPatch: {
-    origX: number;
-    origY: number;
-    w: number;
-    h: number;
-    pixels: Uint8Array;
-    mask: Uint8Array;
-  } | null = null;
-
-  // 剪贴板状态 (Ctrl+C 复制 / Ctrl+X 剪切 / Ctrl+V 粘贴)
-  private clipboard: {
-    w: number;
-    h: number;
-    pixels: Uint8Array;
-    mask: Uint8Array;
-  } | null = null;
+  private floatingPatch: { origX: number; origY: number; patch: Patch } | null = null;
 
   // 走马灯虚线动画 (Marching Ants)
   private marchingAntsTimer: number | null = null;
@@ -562,26 +551,8 @@ export class CanvasEditor {
             this.strokeModified = false;
             this.callbacks.onStrokeStart();
 
-            // 提取浮动选区像素与遮罩数据
-            const { x: sx, y: sy, w: sw, h: sh } = this.currentSelection;
-            const pixels = new Uint8Array(sw * sh);
-            const mask = new Uint8Array(sw * sh);
-            for (let r = 0; r < sh; r++) {
-              for (let c = 0; c < sw; c++) {
-                const px = sx + c;
-                const py = sy + r;
-                const pIdx = r * sw + c;
-                if (px >= 0 && px < 64 && py >= 0 && py < 64) {
-                  const offset = py * 64 + px;
-                  pixels[pIdx] = this.currentState.pixelIndices[offset];
-                  mask[pIdx] = this.currentState.semanticMask[offset];
-                } else {
-                  pixels[pIdx] = TRANSPARENT_INDEX;
-                  mask[pIdx] = SemanticZone.Background;
-                }
-              }
-            }
-            this.floatingPatch = { origX: sx, origY: sy, w: sw, h: sh, pixels, mask };
+            const sel = this.currentSelection;
+            this.floatingPatch = { origX: sel.x, origY: sel.y, patch: extractPatch(this.readLayers(), sel) };
             if (this.displayCanvas) {
               const isCopy = this.isCopyMode || this.wasCopyTriggered;
               this.displayCanvas.style.cursor = isCopy ? 'copy' : 'grabbing';
@@ -724,55 +695,18 @@ export class CanvasEditor {
           if (this.floatingPatch && this.currentState) {
             const [dx, dy] = this.moveOffset;
             if (dx !== 0 || dy !== 0) {
-              const { origX, origY, w, h, pixels, mask } = this.floatingPatch;
-
-              // 判断是否为复制模式：当前标记、锁存标记或 mouseup 事件中的修饰键任意一个为 true 即视为复制
+              const { origX, origY, patch } = this.floatingPatch;
+              // 当前标记、锁存标记或 mouseup 时的修饰键任意一个为 true 即视为复制
               const isCopy = this.isCopyMode || this.wasCopyTriggered || e.ctrlKey || e.metaKey || e.altKey;
-
-              // 1. 若非复制模式，原选区位置填充为透明 (TRANSPARENT_INDEX) 与背景遮罩 (0) (保护锁定分区)
-              if (!isCopy) {
-                const lockedSet = new Set(this.currentState.lockedMaskZones || []);
-                for (let r = 0; r < h; r++) {
-                  for (let c = 0; c < w; c++) {
-                    const px = origX + c;
-                    const py = origY + r;
-                    if (px >= 0 && px < 64 && py >= 0 && py < 64) {
-                      const offset = py * 64 + px;
-                      this.currentState.pixelIndices[offset] = TRANSPARENT_INDEX;
-                      if (!lockedSet.has(this.currentState.semanticMask[offset])) {
-                        this.currentState.semanticMask[offset] = SemanticZone.Background;
-                      }
-                    }
-                  }
-                }
-              }
-
-              // 2. 将浮动像素与遮罩覆盖写入目标位置 (destX, destY)
               const destX = origX + dx;
               const destY = origY + dy;
-              for (let r = 0; r < h; r++) {
-                for (let c = 0; c < w; c++) {
-                  const px = destX + c;
-                  const py = destY + r;
-                  if (px >= 0 && px < 64 && py >= 0 && py < 64) {
-                    const offset = py * 64 + px;
-                    const pIdx = r * w + c;
-                    const pal = pixels[pIdx];
-                    // 仅当浮动像素为实体色时才覆盖目标位置，保留透明背景透底已有像素
-                    if (pal !== TRANSPARENT_INDEX) {
-                      this.currentState.pixelIndices[offset] = pal;
-                      this.currentState.semanticMask[offset] = mask[pIdx];
-                    }
-                  }
-                }
-              }
+              this.callbacks.onMoveSelection(patch, { x: origX, y: origY, w: patch.w, h: patch.h }, destX, destY, isCopy);
 
-              // 3. 更新当前选区到新位置 (核心：选区与画布 0~64 范围执行 & 交集操作)
-              const finalRect: RectSelection = { x: destX, y: destY, w, h };
+              // 选区跟随到新位置 (与画布求交集)
+              const finalRect: RectSelection = { x: destX, y: destY, w: patch.w, h: patch.h };
               this.currentSelection = this.intersectWithCanvas(finalRect);
               this.updateSelectionToolbar();
 
-              // 4. 提交一次性撤销快照并触发存盘
               this.callbacks.onStrokeEnd(true);
             } else {
               this.callbacks.onStrokeEnd(false);
@@ -989,37 +923,10 @@ export class CanvasEditor {
       : this.currentState.activeMaskTool === 'bucket';
 
     if (isBucket) {
-      const conn = this.currentState.bucketConnectivity ?? 8;
-      if (this.currentState.activeMode === 'pixel') {
-        const targetColor = this.currentMouseButton === 0
-          ? this.currentState.activePaletteIndex
-          : (this.currentState.bgPaletteIndex ?? TRANSPARENT_INDEX);
-
-        if (this.currentIsShift) {
-          // 油漆桶按住 Shift + 点击：触发非连通全域同色替换 (Aseprite 手感)
-          const offset = y * 64 + x;
-          const fromColor = this.currentState.pixelIndices[offset];
-          const inSelection = this.currentSelection && this.isPixelInSelection(x, y, this.currentSelection);
-          const scope = inSelection ? 'selection' : 'all';
-          const count = this.replaceColor(fromColor, targetColor, scope);
-          if (count > 0) {
-            this.strokeModified = true;
-          }
-          return;
-        }
-
-        const didFill = this.floodFillPixel(x, y, targetColor, conn);
-        if (didFill) {
-          this.strokeModified = true;
-        }
-      } else {
-        const targetZone = this.currentMouseButton === 0
-          ? this.currentState.activeZone
-          : SemanticZone.Background;
-        const didFill = this.floodFillMask(x, y, targetZone, conn);
-        if (didFill) {
-          this.strokeModified = true;
-        }
+      // Shift+点击：非连通的全域同色替换 (仅像素模式)
+      const replaceAll = this.currentState.activeMode === 'pixel' && this.currentIsShift;
+      if (this.callbacks.onBucket(x, y, this.currentMouseButton, replaceAll)) {
+        this.strokeModified = true;
       }
       return;
     }
@@ -1090,83 +997,6 @@ export class CanvasEditor {
         }
       }
     }
-  }
-
-  /**
-   * 油漆桶像素区域泛洪填充 (Flood Fill)
-   * @param startX 起始 X 坐标 (0~63)
-   * @param startY 起始 Y 坐标 (0~63)
-   * @param targetPaletteIdx 目标填充色板索引 (0~35)
-   * @param connectivity 连通邻域：8 邻居 (默认，包含对角线) 或 4 邻居 (十字四向)
-   * @returns boolean 是否产生有效修改
-   */
-  private floodFillPixel(startX: number, startY: number, targetPaletteIdx: number, connectivity: 8 | 4): boolean {
-    if (!this.currentState) return false;
-    const pixelIndices = this.currentState.pixelIndices;
-    const startOffset = (startY << 6) + startX;
-    const srcColor = pixelIndices[startOffset];
-
-    if (srcColor === targetPaletteIdx) return false;
-    if (this.currentSelection && !this.isPixelInSelection(startX, startY, this.currentSelection)) {
-      return false;
-    }
-
-    const lockedSet = new Set(this.currentState.lockedMaskZones || []);
-    const sel = this.currentSelection;
-    const region = floodFill(
-      [startOffset],
-      (o) => pixelIndices[o] === srcColor && (!sel || this.isPixelInSelection(o & 63, o >> 6, sel)),
-      connectivity === 8
-    );
-
-    for (const offset of region) {
-      pixelIndices[offset] = targetPaletteIdx;
-      if (targetPaletteIdx === TRANSPARENT_INDEX && !lockedSet.has(this.currentState.semanticMask[offset])) {
-        this.currentState.semanticMask[offset] = SemanticZone.Background;
-      }
-    }
-    const modified = region.length > 0;
-
-    if (modified) {
-      this.redraw();
-    }
-    return modified;
-  }
-
-  /**
-   * 遮罩泛洪填充 (Mask Flood Fill)
-   * @param startX 起始 X 坐标 (0~63)
-   * @param startY 起始 Y 坐标 (0~63)
-   * @param targetZone 目标遮罩分区 (0~4)
-   * @param connectivity 连通邻域：8 邻居 (默认) 或 4 邻居
-   * @returns boolean 是否产生有效修改
-   */
-  private floodFillMask(startX: number, startY: number, targetZone: SemanticZone, connectivity: 8 | 4): boolean {
-    if (!this.currentState) return false;
-    const semanticMask = this.currentState.semanticMask;
-    const startOffset = (startY << 6) + startX;
-    const srcZone = semanticMask[startOffset];
-
-    if (srcZone === targetZone) return false;
-    // 保护上锁分区
-    if (this.currentState.lockedMaskZones?.includes(srcZone)) return false;
-    if (targetZone !== SemanticZone.Background && this.currentState.lockedMaskZones?.includes(targetZone)) return false;
-    if (this.currentSelection && !this.isPixelInSelection(startX, startY, this.currentSelection)) return false;
-
-    const sel = this.currentSelection;
-    const region = floodFill(
-      [startOffset],
-      (o) => semanticMask[o] === srcZone && (!sel || this.isPixelInSelection(o & 63, o >> 6, sel)),
-      connectivity === 8
-    );
-
-    for (const offset of region) semanticMask[offset] = targetZone;
-    const modified = region.length > 0;
-
-    if (modified) {
-      this.redraw();
-    }
-    return modified;
   }
 
   /**
@@ -1435,7 +1265,8 @@ export class CanvasEditor {
 
     // 4.5 选区平移、复制与走马灯外框渲染 (Aseprite 实时预览规范)
     if (this.isMovingSelection && this.floatingPatch) {
-      const { origX, origY, w, h, pixels, mask } = this.floatingPatch;
+      const { origX, origY, patch } = this.floatingPatch;
+      const { w, h, pixels, mask } = patch;
       const [dx, dy] = this.moveOffset;
       const destX = origX + dx;
       const destY = origY + dy;
@@ -1663,308 +1494,9 @@ export class CanvasEditor {
     return this.currentSelection !== null;
   }
 
-  /**
-   * 选区或全局颜色替换 (Aseprite 规范)
-   * 将范围内的所有 fromIndex 像素批量替换为 toIndex
-   * @returns 实际被替换的像素数量
-   */
-  public replaceColor(fromIndex: number, toIndex: number, scope: 'selection' | 'all'): number {
-    if (!this.currentState || !this.currentState.isLoaded) return 0;
-    if (fromIndex === toIndex) return 0;
-
-    this.callbacks.onStrokeStart();
-    let count = 0;
-    const lockedSet = new Set(this.currentState.lockedMaskZones || []);
-
-    if (scope === 'selection' && this.currentSelection) {
-      const { x, y, w, h } = this.currentSelection;
-      for (let r = 0; r < h; r++) {
-        for (let c = 0; c < w; c++) {
-          const px = x + c;
-          const py = y + r;
-          if (px >= 0 && px < 64 && py >= 0 && py < 64) {
-            const idx = py * 64 + px;
-            if (this.currentState.pixelIndices[idx] === fromIndex) {
-              this.currentState.pixelIndices[idx] = toIndex;
-              if (toIndex === TRANSPARENT_INDEX && !lockedSet.has(this.currentState.semanticMask[idx])) {
-                this.currentState.semanticMask[idx] = SemanticZone.Background;
-              }
-              count++;
-            }
-          }
-        }
-      }
-    } else {
-      for (let i = 0; i < PIXEL_COUNT; i++) {
-        if (this.currentState.pixelIndices[i] === fromIndex) {
-          this.currentState.pixelIndices[i] = toIndex;
-          if (toIndex === TRANSPARENT_INDEX && !lockedSet.has(this.currentState.semanticMask[i])) {
-            this.currentState.semanticMask[i] = SemanticZone.Background;
-          }
-          count++;
-        }
-      }
-    }
-
-    this.callbacks.onStrokeEnd(count > 0);
-    if (count > 0) {
-      this.redraw();
-    }
-    return count;
-  }
-
-  /**
-   * Delete / Backspace 快捷键：将选区内容清空为透明像素并将遮罩设为背景 0 (保护锁定分区)
-   */
-  public deleteSelectionContent(): boolean {
-    if (!this.currentState || !this.currentSelection || !this.currentState.isLoaded) return false;
-    this.callbacks.onStrokeStart();
-    const { x, y, w, h } = this.currentSelection;
-    let modified = false;
-    const lockedSet = new Set(this.currentState.lockedMaskZones || []);
-
-    for (let r = 0; r < h; r++) {
-      for (let c = 0; c < w; c++) {
-        const px = x + c;
-        const py = y + r;
-        if (px >= 0 && px < 64 && py >= 0 && py < 64) {
-          const idx = py * 64 + px;
-          const currentZone = this.currentState.semanticMask[idx];
-          const isZoneLocked = lockedSet.has(currentZone);
-          let changed = false;
-
-          if (this.currentState.pixelIndices[idx] !== TRANSPARENT_INDEX) {
-            this.currentState.pixelIndices[idx] = TRANSPARENT_INDEX;
-            changed = true;
-          }
-          if (!isZoneLocked && currentZone !== SemanticZone.Background) {
-            this.currentState.semanticMask[idx] = SemanticZone.Background;
-            changed = true;
-          }
-          if (changed) {
-            modified = true;
-          }
-        }
-      }
-    }
-
-    this.callbacks.onStrokeEnd(modified);
-    if (modified) {
-      this.updateSelectionToolbar();
-    }
-    this.redraw();
-    return modified;
-  }
-
-  /**
-   * 选区水平 / 垂直翻转
-   */
-  public flipSelectionContent(axis: 'horizontal' | 'vertical'): boolean {
-    if (!this.currentState || !this.currentSelection || !this.currentState.isLoaded) return false;
-    const { x, y, w, h } = this.currentSelection;
-    if (w <= 0 || h <= 0) return false;
-
-    this.callbacks.onStrokeStart();
-    const pi = this.currentState.pixelIndices;
-    const sm = this.currentState.semanticMask;
-
-    if (axis === 'horizontal') {
-      const halfW = Math.floor(w / 2);
-      for (let r = 0; r < h; r++) {
-        const py = y + r;
-        if (py < 0 || py >= 64) continue;
-        const rowOffset = py * 64;
-        for (let c = 0; c < halfW; c++) {
-          const lx = x + c;
-          const rx = x + w - 1 - c;
-          if (lx < 0 || rx >= 64) continue;
-          const lOff = rowOffset + lx;
-          const rOff = rowOffset + rx;
-          const tempP = pi[lOff];
-          pi[lOff] = pi[rOff];
-          pi[rOff] = tempP;
-
-          const tempM = sm[lOff];
-          sm[lOff] = sm[rOff];
-          sm[rOff] = tempM;
-        }
-      }
-    } else {
-      const halfH = Math.floor(h / 2);
-      for (let r = 0; r < halfH; r++) {
-        const topY = y + r;
-        const botY = y + h - 1 - r;
-        if (topY < 0 || botY >= 64) continue;
-        const topOffset = topY * 64;
-        const botOffset = botY * 64;
-        for (let c = 0; c < w; c++) {
-          const px = x + c;
-          if (px < 0 || px >= 64) continue;
-          const tOff = topOffset + px;
-          const bOff = botOffset + px;
-          const tempP = pi[tOff];
-          pi[tOff] = pi[bOff];
-          pi[bOff] = tempP;
-
-          const tempM = sm[tOff];
-          sm[tOff] = sm[bOff];
-          sm[bOff] = tempM;
-        }
-      }
-    }
-
-    this.callbacks.onStrokeEnd(true);
-    this.redraw();
-    return true;
-  }
-
-  /**
-   * 选区顺时针 90° 旋转
-   */
-  public rotateSelectionContentCW(): boolean {
-    if (!this.currentState || !this.currentSelection || !this.currentState.isLoaded) return false;
-    const { x: origX, y: origY, w, h } = this.currentSelection;
-    if (w <= 0 || h <= 0) return false;
-
-    this.callbacks.onStrokeStart();
-    const pi = this.currentState.pixelIndices;
-    const sm = this.currentState.semanticMask;
-
-    // 1. 抓取原选区像素和遮罩，并从原位置清空
-    const oldPixels = new Uint8Array(w * h);
-    const oldMask = new Uint8Array(w * h);
-    for (let r = 0; r < h; r++) {
-      for (let c = 0; c < w; c++) {
-        const px = origX + c;
-        const py = origY + r;
-        if (px >= 0 && px < 64 && py >= 0 && py < 64) {
-          const off = py * 64 + px;
-          const idx = r * w + c;
-          oldPixels[idx] = pi[off];
-          oldMask[idx] = sm[off];
-          pi[off] = TRANSPARENT_INDEX;
-          sm[off] = SemanticZone.Background;
-        }
-      }
-    }
-
-    // 2. 计算新矩形 (宽变为原高，高变为原宽)
-    const nw = h;
-    const nh = w;
-    let newX = origX;
-    let newY = origY;
-    if (newX + nw > 64) newX = Math.max(0, 64 - nw);
-    if (newY + nh > 64) newY = Math.max(0, 64 - nh);
-
-    // 3. 顺时针 90° 写入: old(c, r) -> new_c = (h - 1) - r, new_r = c
-    for (let r = 0; r < h; r++) {
-      for (let c = 0; c < w; c++) {
-        const new_c = (h - 1) - r;
-        const new_r = c;
-        const px = newX + new_c;
-        const py = newY + new_r;
-        if (px >= 0 && px < 64 && py >= 0 && py < 64) {
-          const off = py * 64 + px;
-          const idx = r * w + c;
-          pi[off] = oldPixels[idx];
-          sm[off] = oldMask[idx];
-        }
-      }
-    }
-
-    this.currentSelection = { x: newX, y: newY, w: nw, h: nh };
-    this.updateSelectionToolbar();
-    this.manageMarchingAntsAnimation();
-    this.callbacks.onStrokeEnd(true);
-    this.redraw();
-    return true;
-  }
-
-  /**
-   * 复制当前选区内容到内存剪贴板
-   */
-  public copySelection(): boolean {
-    if (!this.currentState || !this.currentSelection || !this.currentState.isLoaded) return false;
-    const { x, y, w, h } = this.currentSelection;
-    if (w <= 0 || h <= 0) return false;
-
-    const pixels = new Uint8Array(w * h);
-    const mask = new Uint8Array(w * h);
-    const pi = this.currentState.pixelIndices;
-    const sm = this.currentState.semanticMask;
-
-    for (let r = 0; r < h; r++) {
-      for (let c = 0; c < w; c++) {
-        const px = x + c;
-        const py = y + r;
-        const idx = r * w + c;
-        if (px >= 0 && px < 64 && py >= 0 && py < 64) {
-          const off = py * 64 + px;
-          pixels[idx] = pi[off];
-          mask[idx] = sm[off];
-        } else {
-          pixels[idx] = TRANSPARENT_INDEX;
-          mask[idx] = SemanticZone.Background;
-        }
-      }
-    }
-
-    this.clipboard = { w, h, pixels, mask };
-    return true;
-  }
-
-  /**
-   * 剪切当前选区内容 (复制后清空为透明)
-   */
-  public cutSelection(): boolean {
-    if (!this.copySelection()) return false;
-    return this.deleteSelectionContent();
-  }
-
-  /**
-   * 粘贴剪贴板内容到画布并置为当前选区
-   */
-  public pasteClipboard(): boolean {
-    if (!this.currentState || !this.currentState.isLoaded || !this.clipboard) return false;
-    this.callbacks.onStrokeStart();
-
-    const { w, h, pixels, mask } = this.clipboard;
-    const pi = this.currentState.pixelIndices;
-    const sm = this.currentState.semanticMask;
-
-    let destX = this.currentSelection ? this.currentSelection.x : Math.max(0, Math.floor((64 - w) / 2));
-    let destY = this.currentSelection ? this.currentSelection.y : Math.max(0, Math.floor((64 - h) / 2));
-
-    if (destX + w > 64) destX = Math.max(0, 64 - w);
-    if (destY + h > 64) destY = Math.max(0, 64 - h);
-
-    for (let r = 0; r < h; r++) {
-      for (let c = 0; c < w; c++) {
-        const px = destX + c;
-        const py = destY + r;
-        if (px >= 0 && px < 64 && py >= 0 && py < 64) {
-          const off = py * 64 + px;
-          const pIdx = r * w + c;
-          const pal = pixels[pIdx];
-          // 仅当剪贴板像素为实体色时才覆盖目标位置，保留透明背景透底已有像素
-          if (pal !== TRANSPARENT_INDEX) {
-            pi[off] = pal;
-            sm[off] = mask[pIdx];
-          }
-        }
-      }
-    }
-
-    this.currentSelection = { x: destX, y: destY, w, h };
-    this.updateSelectionToolbar();
-    this.manageMarchingAntsAnimation();
-    this.callbacks.onStrokeEnd(true);
-    this.redraw();
-    return true;
-  }
-
-  public hasClipboard(): boolean {
-    return this.clipboard !== null;
+  private readLayers(): Layers {
+    const state = this.currentState!;
+    return { pixels: state.pixelIndices, mask: state.semanticMask, lockedZones: new Set(state.lockedMaskZones) };
   }
 
   private isPixelInSelection(x: number, y: number, sel: RectSelection): boolean {
