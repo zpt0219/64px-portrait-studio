@@ -10,7 +10,7 @@
  */
 
 import JSZip from 'jszip';
-import { StudioState, SemanticZone, ImageGemProjectData } from '../types';
+import { StudioState, SemanticZone, ProjectData } from '../types';
 import { stateToProjectData } from './storage';
 import { validateProjectData } from './projectData';
 import { encodeMinimalIndexedPng } from './minimalPng';
@@ -307,10 +307,10 @@ export async function exportProjectZip(state: StudioState): Promise<void> {
 }
 
 /**
- * 从 ZIP 归档文件中解包提取 ImageGem 工程数据
- * @returns 经过合法性严格校验的 ImageGemProjectData
+ * 从 ZIP 归档文件中解包提取工程数据
+ * @returns 经过合法性严格校验的 ProjectData
  */
-export async function importProjectZip(file: File): Promise<ImageGemProjectData> {
+export async function importProjectZip(file: File): Promise<ProjectData> {
   let zip: JSZip;
   try {
     zip = await JSZip.loadAsync(file);

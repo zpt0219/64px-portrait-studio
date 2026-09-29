@@ -68,7 +68,7 @@ export const ALL_ZONES: SemanticZone[] = [
 ];
 
 /** 工程 ZIP / LocalStorage 存储的统一数据结构 */
-export interface ImageGemProjectData {
+export interface ProjectData {
   v: number;                    // Schema 版本号 (1)
   palette: string[];            // 36 色 Hex 数组
   pixels: string;               // Base64(Uint8Array[4096]) — 色板索引 0~35 或 255 (透明)
@@ -101,10 +101,10 @@ export interface StudioState {
   activeZone: SemanticZone;     // 遮罩模式：当前选中的分区类型 (0~4)
   showMaskOverlay: boolean;     // 是否显示半透明遮罩覆层
   visibleMaskZones: SemanticZone[]; // 多选可见的遮罩分区 (0~4)
-  lockedMaskZones?: SemanticZone[]; // 上锁保护的遮罩分区 (禁止被其他遮罩或橡皮擦覆盖)
-  activeMaskTool?: MaskTool; // 遮罩工具：画笔 vs 橡皮擦 vs 油漆桶 vs 智能框选 (默认 'pen')
-  maskMatchColors?: number[];   // 智能框选匹配色组 (色板索引列表 0~35 或 255)
-  maskMatchPresetKey?: string;  // 匹配色组预设 Key
+  lockedMaskZones: SemanticZone[]; // 上锁保护的遮罩分区 (禁止被其他遮罩或橡皮擦覆盖)
+  activeMaskTool: MaskTool; // 遮罩工具：画笔 vs 橡皮擦 vs 油漆桶 vs 智能框选 (默认 'pen')
+  maskMatchColors: number[];   // 智能框选匹配色组 (色板索引列表 0~35 或 255)
+  maskMatchPresetKey: string;  // 匹配色组预设 Key
   maskBrushSize: 1 | 2 | 3 | 4; // 遮罩笔刷尺寸 (1, 2, 3, 4，默认 1)
   maskOpacity: number;          // 遮罩覆盖层透明度 0~1
   showGrid: boolean;            // 是否显示像素网格

@@ -1,9 +1,8 @@
 /**
- * ImageGem PalettePanel Component (左列：色板与修图工具)
- * 专注 36 色按色系排布展示、白色独立作为背景色/橡皮擦、颜色微调、修图画笔/橡皮/吸管、撤销/重做、语义遮罩重新识别
+ * 像素模式左栏：修图工具、前景/背景色、发色卡、按色系分组的 36 色色板与颜色微调
  */
 
-import { StudioState } from '../types';
+import { StudioState, PixelTool } from '../types';
 import { PALETTE_FAMILIES, WHITE_PALETTE_INDEX, TRANSPARENT_INDEX, RAMPS_INFO, TIER_NAMES } from '../data/palette';
 import { findNearestColor } from '../core/colorUtils';
 
@@ -15,7 +14,7 @@ interface PalettePanelCallbacks {
   onBeforePaletteModify?: () => void;
   onResetActiveColor: () => void;
   onResetAllPalette: () => void;
-  onSelectTool: (tool: 'pen' | 'eraser' | 'bucket' | 'eyedropper' | 'select') => void;
+  onSelectTool: (tool: PixelTool) => void;
   onSetBucketConnectivity: (conn: 8 | 4) => void;
   onUndo: () => void;
   onRedo: () => void;
@@ -57,27 +56,27 @@ export class PalettePanel {
 
           <!-- 工具选择 (画笔 / 橡皮擦 / 油漆桶 / 吸管 / 矩形选区: 3 + 2 紧凑布局) -->
           <div class="tool-picker-group">
-            <button class="tool-tab-btn active" id="btn-tool-pen" title="画笔工具 (快捷键: P)">
+            <button class="tool-tab-btn active" id="btn-tool-pen" data-tool="pen" title="画笔工具 (快捷键: P)">
               <span class="tool-btn-icon">✏️</span>
               <span class="tool-btn-label">画笔</span>
               <kbd class="tool-btn-kbd">P</kbd>
             </button>
-            <button class="tool-tab-btn" id="btn-tool-eraser" title="橡皮擦 / 原生透明删除 (快捷键: E)">
+            <button class="tool-tab-btn" id="btn-tool-eraser" data-tool="eraser" title="橡皮擦 / 原生透明删除 (快捷键: E)">
               <span class="tool-btn-icon">🧼</span>
               <span class="tool-btn-label">橡皮</span>
               <kbd class="tool-btn-kbd">E</kbd>
             </button>
-            <button class="tool-tab-btn" id="btn-tool-bucket" title="油漆桶工具 (快捷键: B / F，单点填充同色相邻区域)">
+            <button class="tool-tab-btn" id="btn-tool-bucket" data-tool="bucket" title="油漆桶工具 (快捷键: B / F，单点填充同色相邻区域)">
               <span class="tool-btn-icon">🪣</span>
               <span class="tool-btn-label">油漆桶</span>
               <kbd class="tool-btn-kbd">B</kbd>
             </button>
-            <button class="tool-tab-btn btn-span-half" id="btn-tool-eyedropper" title="吸管取色 (快捷键: I，画布 Alt+点击)">
+            <button class="tool-tab-btn btn-span-half" id="btn-tool-eyedropper" data-tool="eyedropper" title="吸管取色 (快捷键: I，画布 Alt+点击)">
               <span class="tool-btn-icon">🧪</span>
               <span class="tool-btn-label">吸管</span>
               <kbd class="tool-btn-kbd">I</kbd>
             </button>
-            <button class="tool-tab-btn btn-span-half" id="btn-tool-select" title="矩形选区 (快捷键: M / S，框选平移，Ctrl 复制)">
+            <button class="tool-tab-btn btn-span-half" id="btn-tool-select" data-tool="select" title="矩形选区 (快捷键: M / S，框选平移，Ctrl 复制)">
               <span class="tool-btn-icon">⬚</span>
               <span class="tool-btn-label">选区</span>
               <kbd class="tool-btn-kbd">M</kbd>
@@ -165,22 +164,9 @@ export class PalettePanel {
   }
 
   private setupEvents(): void {
-    // 画笔
-    const penBtn = this.container.querySelector('#btn-tool-pen');
-    penBtn?.addEventListener('click', () => {
-      this.callbacks.onSelectTool('pen');
-    });
-
-    // 橡皮擦
-    const eraserBtn = this.container.querySelector('#btn-tool-eraser');
-    eraserBtn?.addEventListener('click', () => {
-      this.callbacks.onSelectTool('eraser');
-    });
-
-    // 油漆桶
-    const bucketBtn = this.container.querySelector('#btn-tool-bucket');
-    bucketBtn?.addEventListener('click', () => {
-      this.callbacks.onSelectTool('bucket');
+    // 工具按钮
+    this.container.querySelectorAll<HTMLElement>('[data-tool]').forEach((btn) => {
+      btn.addEventListener('click', () => this.callbacks.onSelectTool(btn.dataset.tool as PixelTool));
     });
 
     // 油漆桶邻域连通性切换
@@ -198,18 +184,6 @@ export class PalettePanel {
     const swapBtn = this.container.querySelector('#btn-swap-fgbg');
     swapBtn?.addEventListener('click', () => {
       this.callbacks.onSwapFgBg();
-    });
-
-    // 吸管
-    const eyeBtn = this.container.querySelector('#btn-tool-eyedropper');
-    eyeBtn?.addEventListener('click', () => {
-      this.callbacks.onSelectTool('eyedropper');
-    });
-
-    // 矩形选区工具
-    const selectBtn = this.container.querySelector('#btn-tool-select');
-    selectBtn?.addEventListener('click', () => {
-      this.callbacks.onSelectTool('select');
     });
 
     // 撤销 / 重做
@@ -262,45 +236,27 @@ export class PalettePanel {
       this.renderHairRampChips();
     });
 
-    // 36 色色板悬停通用色彩探针高亮 (全画布高亮对应颜色)
-    const familiesContainer = this.container.querySelector('#palette-families-container');
-    familiesContainer?.addEventListener('mouseover', (e) => {
-      const chip = (e.target as HTMLElement).closest('.palette-chip') as HTMLElement | null;
-      if (chip) {
-        const idxStr = chip.getAttribute('data-index');
-        if (idxStr !== null) {
-          const idx = parseInt(idxStr, 10);
-          if (!isNaN(idx)) {
-            this.callbacks.onHighlightPaletteColor?.(idx);
-            return;
-          }
-        }
-      }
-      this.callbacks.onHighlightPaletteColor?.(null);
-    });
-    familiesContainer?.addEventListener('mouseleave', () => {
-      this.callbacks.onHighlightPaletteColor?.(null);
-    });
-
-    // 独立发色卡 5 阶悬停通用色彩探针高亮
-    const hairContainer = this.container.querySelector('#hair-ramp-chips');
-    hairContainer?.addEventListener('mouseover', (e) => {
-      const chip = (e.target as HTMLElement).closest('.hair-chip') as HTMLElement | null;
-      if (chip) {
-        const idxStr = chip.getAttribute('data-index');
-        if (idxStr !== null) {
-          const idx = parseInt(idxStr, 10);
-          if (!isNaN(idx)) {
-            this.callbacks.onHighlightPaletteColor?.(idx);
-            return;
-          }
-        }
-      }
-      this.callbacks.onHighlightPaletteColor?.(null);
-    });
-    hairContainer?.addEventListener('mouseleave', () => {
-      this.callbacks.onHighlightPaletteColor?.(null);
-    });
+    // 色块：左键选前景色、右键选背景色、悬停在画布上高亮该颜色 (36 色板与发色卡共用)
+    for (const [containerId, chipClass] of [['#palette-families-container', '.palette-chip'], ['#hair-ramp-chips', '.hair-chip']]) {
+      const container = this.container.querySelector(containerId);
+      const chipIndex = (e: Event): number | null => {
+        const chip = (e.target as HTMLElement).closest(chipClass);
+        const idx = chip ? parseInt(chip.getAttribute('data-index') ?? '', 10) : NaN;
+        return isNaN(idx) ? null : idx;
+      };
+      container?.addEventListener('click', (e) => {
+        const idx = chipIndex(e);
+        if (idx !== null) this.callbacks.onSelectPaletteColor(idx);
+      });
+      container?.addEventListener('contextmenu', (e) => {
+        const idx = chipIndex(e);
+        if (idx === null) return;
+        e.preventDefault();
+        this.callbacks.onSelectBgColor(idx);
+      });
+      container?.addEventListener('mouseover', (e) => this.callbacks.onHighlightPaletteColor?.(chipIndex(e)));
+      container?.addEventListener('mouseleave', () => this.callbacks.onHighlightPaletteColor?.(null));
+    }
   }
 
   public update(state: StudioState): void {
@@ -322,39 +278,17 @@ export class PalettePanel {
       }
     }
 
-    // 2. 工具选择按钮高亮 (区分 画笔 / 橡皮擦 / 油漆桶 / 吸管 / 矩形选区)
-    const penBtn = this.container.querySelector('#btn-tool-pen');
-    const eraserBtn = this.container.querySelector('#btn-tool-eraser');
-    const bucketBtn = this.container.querySelector('#btn-tool-bucket');
-    const eyeBtn = this.container.querySelector('#btn-tool-eyedropper');
-    const selectBtn = this.container.querySelector('#btn-tool-select');
-
-    penBtn?.classList.remove('active');
-    eraserBtn?.classList.remove('active');
-    bucketBtn?.classList.remove('active');
-    eyeBtn?.classList.remove('active');
-    selectBtn?.classList.remove('active');
-
-    if (isPixelActive) {
-      if (state.activeTool === 'select') {
-        selectBtn?.classList.add('active');
-      } else if (state.activeTool === 'bucket') {
-        bucketBtn?.classList.add('active');
-      } else if (state.activeTool === 'eyedropper') {
-        eyeBtn?.classList.add('active');
-      } else if (state.activeTool === 'eraser') {
-        eraserBtn?.classList.add('active');
-      } else if (state.activeTool === 'pen') {
-        penBtn?.classList.add('active');
-      }
-    }
+    // 2. 工具选择按钮高亮
+    this.container.querySelectorAll<HTMLElement>('[data-tool]').forEach((btn) => {
+      btn.classList.toggle('active', isPixelActive && btn.dataset.tool === state.activeTool);
+    });
 
     // 油漆桶邻域连通性面板展示与状态
     const bucketPanel = this.container.querySelector('#bucket-connectivity-panel') as HTMLElement;
     const connTip = this.container.querySelector('#connectivity-tip') as HTMLElement;
     const btnConn8 = this.container.querySelector('#btn-conn-8');
     const btnConn4 = this.container.querySelector('#btn-conn-4');
-    const conn = state.bucketConnectivity ?? 8;
+    const conn = state.bucketConnectivity;
 
     if (bucketPanel) {
       bucketPanel.style.display = (isPixelActive && state.activeTool === 'bucket') ? 'flex' : 'none';
@@ -377,7 +311,7 @@ export class PalettePanel {
 
     // 4. 更新前景色与背景色预览和标签
     const fgIdx = state.activePaletteIndex;
-    const bgIdx = state.bgPaletteIndex ?? TRANSPARENT_INDEX;
+    const bgIdx = state.bgPaletteIndex;
     const isFgTrans = fgIdx === TRANSPARENT_INDEX;
     const isBgTrans = bgIdx === TRANSPARENT_INDEX;
     const fgHex = isFgTrans ? '透明' : (state.palette[fgIdx] || '#000000');
@@ -467,17 +401,6 @@ export class PalettePanel {
             ${isBg ? '<span class="chip-bg-dot" title="当前背景色"></span>' : ''}
           `;
 
-          // 左键：选择前景色
-          chip.addEventListener('click', () => {
-            this.callbacks.onSelectPaletteColor(index);
-          });
-
-          // 右键：选择背景色 (Aseprite 机制)
-          chip.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-            this.callbacks.onSelectBgColor(index);
-          });
-
           chipsWrap.appendChild(chip);
         });
 
@@ -498,7 +421,7 @@ export class PalettePanel {
     if (!rampInfo) return;
 
     const fgIdx = this.currentState.activePaletteIndex;
-    const bgIdx = this.currentState.bgPaletteIndex ?? TRANSPARENT_INDEX;
+    const bgIdx = this.currentState.bgPaletteIndex;
     const palette = this.currentState.palette;
 
     container.innerHTML = '';
@@ -530,15 +453,6 @@ export class PalettePanel {
         <span class="hair-chip-index">${paletteIdx}</span>
         ${isBg ? '<span class="chip-bg-dot" title="当前背景色"></span>' : ''}
       `;
-
-      chip.addEventListener('click', () => {
-        this.callbacks.onSelectPaletteColor(paletteIdx);
-      });
-
-      chip.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        this.callbacks.onSelectBgColor(paletteIdx);
-      });
 
       container.appendChild(chip);
     });

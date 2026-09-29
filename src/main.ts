@@ -1,6 +1,5 @@
 /**
- * ImageGem Studio v2.0 - 主控制器与流程编排
- * 负责全局状态管理、双通道智能载入、撤销重做栈、发色管线调度与组件生命周期
+ * 应用入口与主控制器：持有全局状态，负责导入、编辑操作、撤销/重做、发色预览、快捷键与各面板同步
  */
 
 import {
@@ -9,7 +8,7 @@ import {
   ZONE_CONFIG,
   ALL_ZONES,
   UndoSnapshot,
-  ImageGemProjectData,
+  ProjectData,
   RectSelection,
   PixelTool,
   MaskTool,
@@ -54,7 +53,7 @@ import {
 /** 撤销栈上限 */
 const UNDO_LIMIT = 40;
 
-class ImageGemApp {
+class PortraitStudioApp {
   private state: StudioState;
   private header!: Header;
   private canvasEditor!: CanvasEditor;
@@ -301,7 +300,7 @@ class ImageGemApp {
       return;
     }
 
-    // 1. 若为工程 ZIP 包：解包并 100% 完整恢复历史工程与遮罩
+    // 1. 工程 ZIP：完整恢复像素、遮罩与色板
     if (isZip) {
       try {
         const projectData = await importProjectZip(file);
@@ -449,9 +448,9 @@ class ImageGemApp {
   }
 
   /**
-   * 载入完整的 ImageGemProjectData
+   * 载入完整的 ProjectData
    */
-  private loadProjectData(data: ImageGemProjectData): void {
+  private loadProjectData(data: ProjectData): void {
     this.clearHairDraft();
     const patch = projectDataToStatePatch(data);
     this.state.palette = patch.palette;
@@ -501,12 +500,12 @@ class ImageGemApp {
     if (currentZone === zone) return;
 
     // 1. 如果当前像素所在的分区已锁定，则受保护，禁止被其他遮罩涂抹或右键擦除！
-    if (this.state.lockedMaskZones?.includes(currentZone)) {
+    if (this.state.lockedMaskZones.includes(currentZone)) {
       return;
     }
 
     // 2. 如果目标分区自身已锁定且不是擦除为背景，禁止涂抹
-    if (zone !== SemanticZone.Background && this.state.lockedMaskZones?.includes(zone)) {
+    if (zone !== SemanticZone.Background && this.state.lockedMaskZones.includes(zone)) {
       return;
     }
 
@@ -589,7 +588,7 @@ class ImageGemApp {
 
   private swapFgBgColors(): void {
     const temp = this.state.activePaletteIndex;
-    this.state.activePaletteIndex = this.state.bgPaletteIndex ?? TRANSPARENT_INDEX;
+    this.state.activePaletteIndex = this.state.bgPaletteIndex;
     this.state.bgPaletteIndex = temp;
     this.syncAllViews();
     this.showToast(`⇄ 已交换前景色与背景色`);
@@ -638,12 +637,12 @@ class ImageGemApp {
     this.state.activeMode = 'mask';
     this.state.showMaskOverlay = true;
 
-    // 切换遮罩分区时，若当前处于选区或吸管工具，自动平滑切回画笔工具 (BUG-04)
+    // 切换遮罩分区时，若当前处于选区或吸管工具，自动平滑切回画笔工具
     if (this.state.activeTool === 'select' || this.state.activeTool === 'eyedropper') {
       this.state.activeTool = 'pen';
     }
 
-    if (solo || !this.state.visibleMaskZones || this.state.visibleMaskZones.length <= 1) {
+    if (solo || this.state.visibleMaskZones.length <= 1) {
       // 单选模式或明确 solo：仅显示当前选中的遮罩
       this.state.visibleMaskZones = [zone];
     } else {
@@ -657,7 +656,7 @@ class ImageGemApp {
   }
 
   private toggleZoneVisibility(zone: SemanticZone, visible: boolean): void {
-    const current = new Set(this.state.visibleMaskZones || []);
+    const current = new Set(this.state.visibleMaskZones);
     if (visible) {
       current.add(zone);
       this.state.activeZone = zone;
@@ -691,7 +690,7 @@ class ImageGemApp {
 
   private toggleLockZone(zone: SemanticZone): void {
     const meta = ZONE_CONFIG[zone];
-    const current = new Set(this.state.lockedMaskZones || []);
+    const current = new Set(this.state.lockedMaskZones);
     const isLocked = current.has(zone);
 
     if (isLocked) {
@@ -752,7 +751,7 @@ class ImageGemApp {
         this.state.activeTool = 'pen';
       }
       this.state.showMaskOverlay = true;
-      if (!this.state.visibleMaskZones || this.state.visibleMaskZones.length === 0) {
+      if (this.state.visibleMaskZones.length === 0) {
         this.state.visibleMaskZones = [this.state.activeZone || SemanticZone.Hair];
       }
 
@@ -768,7 +767,7 @@ class ImageGemApp {
   }
 
   private initMaskMatchColors(): void {
-    const presetKey = this.state.maskMatchPresetKey || 'current_hair';
+    const presetKey = this.state.maskMatchPresetKey;
     const preset = MATCH_COLOR_PRESETS.find((p) => p.id === presetKey) || MATCH_COLOR_PRESETS[0];
     this.state.maskMatchPresetKey = preset.id;
     this.state.maskMatchColors = preset.getIndices(this.state.palette, this.state.currentHairPreset);
@@ -785,9 +784,6 @@ class ImageGemApp {
   }
 
   private addMaskMatchColor(colorIdx: number): void {
-    if (!this.state.maskMatchColors) {
-      this.state.maskMatchColors = [];
-    }
     if (!this.state.maskMatchColors.includes(colorIdx)) {
       this.state.maskMatchColors.push(colorIdx);
       this.state.maskMatchPresetKey = 'custom';
@@ -801,7 +797,6 @@ class ImageGemApp {
   }
 
   private removeMaskMatchColor(colorIdx: number): void {
-    if (!this.state.maskMatchColors) return;
     const idx = this.state.maskMatchColors.indexOf(colorIdx);
     if (idx >= 0) {
       this.state.maskMatchColors.splice(idx, 1);
@@ -814,13 +809,13 @@ class ImageGemApp {
 
   private handleMaskBoxSelect(rect: RectSelection, action: 'add' | 'remove'): void {
     if (!this.state.isLoaded) return;
-    const matchColors = new Set(this.state.maskMatchColors || []);
+    const matchColors = new Set(this.state.maskMatchColors);
     if (matchColors.size === 0) {
       this.showToast('当前匹配色组为空，请先在工具箱选择预设或添加颜色', 'warning');
       return;
     }
 
-    const lockedZones = this.state.lockedMaskZones || [];
+    const lockedZones = this.state.lockedMaskZones;
     const targetZone = this.state.activeZone;
     const zoneMeta = ZONE_CONFIG[targetZone];
 
@@ -891,7 +886,7 @@ class ImageGemApp {
   }
 
   private changeMaskBrushSize(delta: number): void {
-    const current = this.state.maskBrushSize || 1;
+    const current = this.state.maskBrushSize;
     const next = Math.max(1, Math.min(4, current + delta)) as 1 | 2 | 3 | 4;
     if (next !== current) {
       this.setMaskBrushSize(next);
@@ -904,7 +899,7 @@ class ImageGemApp {
       return;
     }
     const zoneMeta = ZONE_CONFIG[targetZone];
-    const lockedZones = this.state.lockedMaskZones || [];
+    const lockedZones = this.state.lockedMaskZones;
 
     if (lockedZones.includes(targetZone)) {
       this.showToast(`目标分区【${zoneMeta.name}】已锁定，请先解锁后再操作`, 'warning');
@@ -1127,7 +1122,7 @@ class ImageGemApp {
 
     this.pushUndoSnapshot();
 
-    // 根据当前 pixelIndices + palette 构造 RGB 数组 (透明像素以纯白作为背景基准传入分析器 BUG-09)
+    // 根据当前 pixelIndices + palette 构造 RGB 数组 (透明像素以纯白作为背景基准传入分析器)
     const pixels: Rgb[] = [];
     const paletteRgb = this.state.palette.map((hex) => hexToRgb(hex));
     for (let i = 0; i < PIXEL_COUNT; i++) {
@@ -1141,7 +1136,7 @@ class ImageGemApp {
 
     const newMask = this.generateSemanticMaskFromPixels(pixels);
 
-    // 核心保护：所有原生透明像素必须强制为背景 SemanticZone.Background (0) (BUG-09)
+    // 透明像素一律归为背景分区
     for (let i = 0; i < PIXEL_COUNT; i++) {
       if (this.state.pixelIndices[i] === TRANSPARENT_INDEX) {
         newMask[i] = SemanticZone.Background;
@@ -1149,7 +1144,7 @@ class ImageGemApp {
     }
 
     // 如果有锁定的遮罩分区，保留被锁定的像素！
-    const lockedSet = new Set(this.state.lockedMaskZones || []);
+    const lockedSet = new Set(this.state.lockedMaskZones);
     if (lockedSet.size > 0) {
       for (let i = 0; i < PIXEL_COUNT; i++) {
         const oldZone = this.state.semanticMask[i];
@@ -1162,7 +1157,7 @@ class ImageGemApp {
     this.state.semanticMask = newMask;
     this.state.activeMode = 'mask';
     this.state.showMaskOverlay = true;
-    if (!this.state.visibleMaskZones || this.state.visibleMaskZones.length === 0) {
+    if (this.state.visibleMaskZones.length === 0) {
       this.state.visibleMaskZones = [...ALL_ZONES];
     }
 
@@ -1176,7 +1171,7 @@ class ImageGemApp {
   }
 
   /**
-   * 扣除外围白色背景为原生透明色 (4-连通 BFS 泛洪算法，仅扣除从边界连通的白色，绝对保护眼白、高光、服饰内部白)
+   * 把从画布边缘 4-连通可达的白色像素改为透明 (眼睛分区与锁定分区不受影响，内部白色不会被扣除)
    */
   public removeOuterWhite(): void {
     if (!this.state.isLoaded) {
@@ -1185,7 +1180,7 @@ class ImageGemApp {
     }
 
     const { pixelIndices, semanticMask, palette } = this.state;
-    const lockedSet = new Set(this.state.lockedMaskZones || []);
+    const lockedSet = new Set(this.state.lockedMaskZones);
 
     // 辅助函数：判断指定像素索引是否为待扣除的白色 (包括透明像素以供连通遍历)
     const isBgWhiteOrTrans = (idx: number): boolean => {
@@ -1827,5 +1822,5 @@ class ImageGemApp {
 
 // 启动应用
 window.addEventListener('DOMContentLoaded', () => {
-  new ImageGemApp();
+  new PortraitStudioApp();
 });

@@ -1,10 +1,8 @@
 /**
- * ImageGem 本地持久化缓存模块 (LocalStorage)
- * 提供 300ms 防抖自动静默存盘与异常关闭恢复功能
- * 数据模型与工程 PNG 内嵌 tEXt 结构完全统一
+ * localStorage 自动暂存 (300ms 防抖) 与恢复
  */
 
-import { ImageGemProjectData, StudioState } from '../types';
+import { ProjectData, StudioState } from '../types';
 import { uint8ArrayToBase64, base64ToUint8Array, validateProjectData } from './projectData';
 
 const STORAGE_KEY = 'imagegem_project_autosave_v2';
@@ -12,9 +10,9 @@ const STORAGE_KEY = 'imagegem_project_autosave_v2';
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 /**
- * 将当前 StudioState 序列化为 ImageGemProjectData
+ * 将当前 StudioState 序列化为 ProjectData
  */
-export function stateToProjectData(state: StudioState): ImageGemProjectData {
+export function stateToProjectData(state: StudioState): ProjectData {
   return {
     v: 1,
     palette: [...state.palette],
@@ -26,9 +24,9 @@ export function stateToProjectData(state: StudioState): ImageGemProjectData {
 }
 
 /**
- * 将 ImageGemProjectData 反序列化并导入状态字段
+ * 将 ProjectData 反序列化并导入状态字段
  */
-export function projectDataToStatePatch(data: ImageGemProjectData): {
+export function projectDataToStatePatch(data: ProjectData): {
   palette: string[];
   pixelIndices: Uint8Array;
   semanticMask: Uint8Array;
@@ -51,7 +49,7 @@ function saveProjectImmediate(state: StudioState): void {
     const data = stateToProjectData(state);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch (err) {
-    console.warn('ImageGem LocalStorage save failed:', err);
+    console.warn('LocalStorage save failed:', err);
   }
 }
 
@@ -84,7 +82,7 @@ export function hasSavedProject(): boolean {
 /**
  * 从 LocalStorage 读取已保存的工程并严格校验
  */
-export function loadProjectFromStorage(): ImageGemProjectData | null {
+export function loadProjectFromStorage(): ProjectData | null {
   try {
     const item = localStorage.getItem(STORAGE_KEY);
     if (!item) return null;
@@ -96,7 +94,7 @@ export function loadProjectFromStorage(): ImageGemProjectData | null {
       console.warn('LocalStorage data failed validation:', validation.error);
     }
   } catch (err) {
-    console.warn('ImageGem LocalStorage load failed:', err);
+    console.warn('LocalStorage load failed:', err);
   }
   return null;
 }
@@ -112,6 +110,6 @@ export function clearProjectStorage(): void {
     }
     localStorage.removeItem(STORAGE_KEY);
   } catch (err) {
-    console.warn('ImageGem LocalStorage clear failed:', err);
+    console.warn('LocalStorage clear failed:', err);
   }
 }

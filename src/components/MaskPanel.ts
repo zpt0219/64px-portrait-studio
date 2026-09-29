@@ -1,6 +1,5 @@
 /**
- * ImageGem MaskPanel Component (右列：遮罩微调与发色置换)
- * 专注 5 分区遮罩画刷选择与像素统计、遮罩覆盖层透明度与显隐控制、9 大经典二次元发色预设置换
+ * 右栏：5 分区遮罩列表 (显隐 / 锁定 / 像素统计)、遮罩透明度、重新识别、9 大发色预设置换
  */
 
 import { StudioState, SemanticZone, ZONE_CONFIG, ALL_ZONES } from '../types';
@@ -134,6 +133,39 @@ export class MaskPanel {
       this.callbacks.onRecomputeSemanticMask();
     });
 
+    // 分区卡片：勾选框控制显隐，锁按钮切换锁定，点击卡片其余部分选择画刷
+    const zoneList = this.container.querySelector('#zone-list');
+    const cardZone = (e: Event) => {
+      const card = (e.target as HTMLElement).closest<HTMLElement>('.zone-card');
+      return card ? (Number(card.dataset.zone) as SemanticZone) : null;
+    };
+    zoneList?.addEventListener('change', (e) => {
+      const zone = cardZone(e);
+      const checkbox = e.target as HTMLInputElement;
+      if (zone !== null && checkbox.classList.contains('zone-checkbox')) {
+        this.callbacks.onToggleZoneVisibility(zone, checkbox.checked);
+      }
+    });
+    zoneList?.addEventListener('click', (e) => {
+      const zone = cardZone(e);
+      const target = e.target as HTMLElement;
+      if (zone === null || target.closest('.zone-checkbox-wrap')) return;
+      if (target.closest('.zone-lock-btn')) {
+        this.callbacks.onToggleLockZone(zone);
+      } else {
+        this.callbacks.onActivate();
+        this.callbacks.onSelectZone(zone);
+      }
+    });
+
+    // 发色预设卡片：点击预览；点击正在预览的卡片则打开固化/还原弹窗
+    this.container.querySelector('#hair-presets-grid')?.addEventListener('click', (e) => {
+      const key = (e.target as HTMLElement).closest<HTMLElement>('.hair-preset-card')?.dataset.preset;
+      if (!key) return;
+      if (key === this.draftHairPreset) this.callbacks.onOpenHairModal?.();
+      else this.callbacks.onApplyHairPreset(key);
+    });
+
     // 发色草稿：点击打开居中确认弹窗
     this.container.querySelector('#btn-hair-open-modal')?.addEventListener('click', () => {
       this.callbacks.onOpenHairModal?.();
@@ -190,8 +222,8 @@ export class MaskPanel {
     const zoneList = this.container.querySelector('#zone-list');
     if (zoneList) {
       zoneList.innerHTML = '';
-      const visibleSet = new Set(state.visibleMaskZones ?? [SemanticZone.Hair]);
-      const lockedSet = new Set(state.lockedMaskZones || []);
+      const visibleSet = new Set(state.visibleMaskZones);
+      const lockedSet = new Set(state.lockedMaskZones);
 
       ALL_ZONES.forEach((zone) => {
         const meta = ZONE_CONFIG[zone];
@@ -202,6 +234,7 @@ export class MaskPanel {
 
         const card = document.createElement('div');
         card.className = `zone-card ${isActive ? 'active' : ''} ${isLocked ? 'is-locked' : ''}`;
+        card.dataset.zone = String(zone);
         card.style.borderLeftColor = meta.color;
         card.title = isLocked
           ? `【已锁定】${meta.name} 遮罩受保护，不可被涂抹或右键擦除 (点击可切换选中)`
@@ -236,31 +269,6 @@ export class MaskPanel {
           </div>
         `;
 
-        // 阻止 checkbox-wrap 点击向卡片主体冒泡
-        const checkboxWrap = card.querySelector('.zone-checkbox-wrap');
-        checkboxWrap?.addEventListener('click', (e) => {
-          e.stopPropagation();
-        });
-
-        const checkbox = card.querySelector('.zone-checkbox') as HTMLInputElement;
-        checkbox?.addEventListener('change', (e) => {
-          e.stopPropagation();
-          this.callbacks.onToggleZoneVisibility(zone, checkbox.checked);
-        });
-
-        // 锁定按钮点击
-        const lockBtn = card.querySelector('.zone-lock-btn');
-        lockBtn?.addEventListener('click', (e) => {
-          e.stopPropagation();
-          this.callbacks.onToggleLockZone(zone);
-        });
-
-        // 卡片主体点击：激活画刷
-        card.addEventListener('click', () => {
-          this.callbacks.onActivate();
-          this.callbacks.onSelectZone(zone);
-        });
-
         zoneList.appendChild(card);
       });
     }
@@ -281,6 +289,7 @@ export class MaskPanel {
         const isActive = isDraft || (isCommitted && !this.draftHairPreset);
         const card = document.createElement('div');
         card.className = `hair-preset-card ${isActive ? 'active' : ''} ${isDraft ? 'previewing' : ''}`;
+        card.dataset.preset = key;
         card.title = isDraft
           ? `当前正在预览: ${info.name} (点击可打开固化/还原弹窗)`
           : (isCommitted ? `已固化发色: ${info.name}` : `置换发色为: ${info.name}`);
@@ -306,15 +315,6 @@ export class MaskPanel {
             ${rampChips}
           </div>
         `;
-
-        card.addEventListener('click', () => {
-          if (isDraft) {
-            // 点击正在预览中的发色卡片，唤起居中弹窗确认固化或还原
-            this.callbacks.onOpenHairModal?.();
-          } else {
-            this.callbacks.onApplyHairPreset(key);
-          }
-        });
 
         hairGrid.appendChild(card);
       });

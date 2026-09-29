@@ -1,7 +1,5 @@
 /**
- * ImageGem Minimal Indexed-Color PNG Encoder
- * 遵循 ISO/IEC 15948 PNG 国际标准规范 (Color Type 3, Indexed Color + PLTE + tRNS)
- * 无任何多余 metadata chunk，将 64×64 36 色像素图体积压缩至约 400 字节。
+ * 8-bit 索引色 PNG 编码 (PLTE + tRNS，无额外元数据)，64×64 头像约 400 字节
  */
 
 import { hexToRgb } from './colorUtils';

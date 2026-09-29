@@ -1,6 +1,5 @@
 /**
- * ImageGem Canvas Cursor Utilities
- * 为画笔、橡皮擦、油漆桶、吸管等工具生成与工具栏图标一致的自定义小图标光标
+ * 用 emoji 渲染的工具光标 (画笔 / 橡皮 / 油漆桶 / 吸管)
  */
 
 interface ToolCursorMap {
@@ -13,7 +12,7 @@ interface ToolCursorMap {
 let cachedCursors: ToolCursorMap | null = null;
 
 /**
- * 将 Emoji 渲染为小巧精致、以方形包围盒左下角为严格锚点的高精度 PNG 光标 Data URL (Aseprite 规范)
+ * 把 emoji 渲染成 PNG 光标，热点取可见像素包围盒的左下角 (与 Aseprite 一致)
  */
 function renderEmojiToCursor(emoji: string, fontSize = 15, size = 32): string {
   const canvas = document.createElement('canvas');
@@ -24,12 +23,11 @@ function renderEmojiToCursor(emoji: string, fontSize = 15, size = 32): string {
 
   ctx.clearRect(0, 0, size, size);
 
-  // 选用 Windows 原生 Segoe UI Emoji，获得精致细腻的原生质感
   ctx.font = `${fontSize}px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  // 增加对称精致的高对比度深色微轮廓 (无位移，四周均匀描边，防止偏角)
+  // 四周均匀的深色描边，保证在任意背景上可见
   ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
   ctx.shadowBlur = 1.5;
   ctx.shadowOffsetX = 0;
@@ -86,7 +84,7 @@ export function getToolCursors(): ToolCursorMap {
       eyedropper: renderEmojiToCursor('🧪', 15, 32),
     };
   } catch (err) {
-    console.warn('[ImageGem] Failed to generate custom emoji cursors, falling back to CSS default', err);
+    console.warn('Failed to generate custom emoji cursors, falling back to CSS default', err);
     cachedCursors = {
       pen: 'crosshair',
       eraser: 'cell',

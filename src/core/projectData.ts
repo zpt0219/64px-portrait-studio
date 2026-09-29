@@ -1,9 +1,9 @@
 /**
- * 工程数据 (ImageGemProjectData) 的 Base64 编解码与合法性校验。
+ * 工程数据 (ProjectData) 的 Base64 编解码与合法性校验。
  * localStorage 自动暂存与工程 ZIP 共用同一数据结构。
  */
 
-import { ImageGemProjectData } from '../types';
+import { ProjectData } from '../types';
 import { TRANSPARENT_INDEX } from '../data/palette';
 import { PIXEL_COUNT } from './pixelGrid';
 
@@ -27,7 +27,7 @@ export function base64ToUint8Array(base64: string): Uint8Array {
 /**
  * 严格校验工程数据：版本号、36 色色板格式、4096 像素索引 (0~35 或 255)、4096 遮罩值 (0~4)
  */
-export function validateProjectData(raw: unknown): { valid: boolean; error?: string; data?: ImageGemProjectData } {
+export function validateProjectData(raw: unknown): { valid: boolean; error?: string; data?: ProjectData } {
   if (!raw || typeof raw !== 'object') {
     return { valid: false, error: '工程数据不是有效的 JSON 对象' };
   }

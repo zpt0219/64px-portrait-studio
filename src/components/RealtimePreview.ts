@@ -1,7 +1,5 @@
 /**
- * ImageGem RealtimePreview Component
- * 1:1 原尺寸视网膜级画中画实时预览器 (Picture-in-Picture Viewport)
- * 支持 1×~4× 连续倍率滑杆、深色/浅色/GBA LCD/透明棋盘背景模拟、可拖拽悬浮窗与极简折叠胶囊
+ * 画中画实时预览：1×~4× 原寸预览，可切换 GBA 液晶 / 棋盘格背景，可拖拽、可最小化
  */
 
 type PreviewBgMode = 'lcd' | 'checker';
@@ -304,8 +302,7 @@ export class RealtimePreview {
   }
 
   /**
-   * 核心实时更新方法：直接从主画布的 64×64 离屏像素画布同步位块 (BitBlit)
-   * 执行耗时 < 0.1ms，绝对零延迟响应每一笔绘制与换色
+   * 从主画布的 64×64 离屏画布同步预览内容
    */
   public update(sourceCanvas: HTMLCanvasElement, isLoaded: boolean): void {
     this.lastSourceCanvas = sourceCanvas;
@@ -347,7 +344,7 @@ export class RealtimePreview {
       this.previewCanvas.style.height = `${targetSize}px`;
     }
 
-    // 关键：禁用图像平滑，呈现绝对精准的原生像素画晶格
+    // 禁用平滑，保持像素锐利
     this.previewCtx.imageSmoothingEnabled = false;
     this.previewCtx.clearRect(0, 0, targetSize, targetSize);
 

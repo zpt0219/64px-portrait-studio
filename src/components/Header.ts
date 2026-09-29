@@ -1,7 +1,5 @@
 /**
- * ImageGem Header Component
- * 顶部导航栏：品牌标识、工作台状态、文件上传触发、快速存盘、自动保存状态反馈
- * (已按需求移除顶部模式切换按钮，采用左-中-右 3 列直观布局)
+ * 顶栏：品牌标识、导入、导出 PNG / 工程 ZIP、清空、自动保存状态
  */
 
 import { StudioState } from '../types';

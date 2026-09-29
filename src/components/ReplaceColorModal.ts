@@ -1,7 +1,5 @@
 /**
- * ImageGem ReplaceColorModal Component
- * Aseprite 风格选区与全画布颜色替换交互面板 (Shift+R)
- * 支持 From/To 双向设色、点击迷你色板选取、选区/全画布作用域切换与 Enter 快速确认
+ * 颜色替换对话框 (Shift+R)：选择原颜色 / 新颜色与作用范围 (选区或整张画布)
  */
 
 import { StudioState, RectSelection } from '../types';
@@ -233,8 +231,8 @@ export class ReplaceColorModal {
     this.isOpen = true;
 
     // 默认 From 为当前背景色 (右键色)；To 为当前前景色 (左键色)
-    this.fromIndex = state.bgPaletteIndex ?? TRANSPARENT_INDEX;
-    this.toIndex = state.activePaletteIndex ?? 0;
+    this.fromIndex = state.bgPaletteIndex;
+    this.toIndex = state.activePaletteIndex;
 
     // 范围默认：若有选区则默认选区，无选区则整张画布
     const hasSel = selection !== null;

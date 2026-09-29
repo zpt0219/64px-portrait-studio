@@ -1,6 +1,6 @@
 /**
- * ImageGem CanvasEditor Component
- * 64×64 核心交互画布：双层渲染、连续平滑绘制、Bresenham插值、吸管拾色、5 分区半透明遮罩与网格
+ * 主画布：像素与遮罩渲染、鼠标/键盘交互、工具分发、矩形选区交互。
+ * 画布只读取 StudioState，所有修改通过回调交给 main 执行。
  */
 
 import { StudioState, SemanticZone, ZONE_CONFIG, RectSelection } from '../types';
@@ -420,7 +420,7 @@ export class CanvasEditor {
         this.updateCanvasCursor({ altKey: false });
       }
       if (e.key === 'Control' || e.key === 'Meta' || e.key === 'Alt') {
-        // 关键防护：如果鼠标当前正按住拖拽选区 (isMouseDown / isMovingSelection)，绝不重置复制锁存状态！
+        // 拖拽选区过程中不重置复制锁存状态：
         // 避免用户在松开鼠标按键前几十毫秒释放 Ctrl 键导致被意外判定为“非复制平移”而清空原位置像素
         if (!this.isMouseDown && !this.isMovingSelection) {
           this.isCopyMode = false;
@@ -434,7 +434,7 @@ export class CanvasEditor {
       }
     });
 
-    // 窗口失焦保护：Alt+Tab 或点击其他窗口时重置修饰键状态，避免 Space 抓手 / Alt 吸色按键死锁 (BUG-05)
+    // 窗口失焦保护：Alt+Tab 或点击其他窗口时重置修饰键状态，避免 Space 抓手 / Alt 吸色按键死锁
     window.addEventListener('blur', () => {
       this.isSpacePressed = false;
       this.currentIsAlt = false;
@@ -689,7 +689,7 @@ export class CanvasEditor {
           }
 
           if (this.boxSelectCurrent) {
-            // 核心：框选区域与画布 0~64 范围执行 & 交集操作
+            // 框选区域与画布求交集
             const intersected = this.intersectWithCanvas(this.boxSelectCurrent);
 
             // 如果单点点击且尺寸为 1x1，或者与画布交集为空，则按 Aseprite 规范取消选区 (Deselect)
@@ -895,7 +895,7 @@ export class CanvasEditor {
         }
       } else if (this.currentMouseButton === 2) {
         // 鼠标右键：绘制背景色 (Aseprite 机制，默认透明 255 或右键选用的颜色)
-        const bgIdx = this.currentState.bgPaletteIndex ?? TRANSPARENT_INDEX;
+        const bgIdx = this.currentState.bgPaletteIndex;
         const offset = y * 64 + x;
         if (this.currentState.pixelIndices[offset] !== bgIdx) {
           this.strokeModified = true;
@@ -908,9 +908,9 @@ export class CanvasEditor {
     } else {
       // 遮罩模式：支持 1~4px 方形笔刷与橡皮擦，严格遵守图层锁定保护
       const isEraser = this.currentState.activeMaskTool === 'eraser' || this.currentMouseButton === 2;
-      const brushSize = this.currentState.maskBrushSize || 1;
+      const brushSize = this.currentState.maskBrushSize;
       const offsets = CanvasEditor.getBrushOffsets(brushSize);
-      const lockedZones = this.currentState.lockedMaskZones || [];
+      const lockedZones = this.currentState.lockedMaskZones;
 
       for (const offsetCoord of offsets) {
         const px = x + offsetCoord.dx;
@@ -1025,7 +1025,7 @@ export class CanvasEditor {
 
     // 遮罩模式光标调度
     if (this.currentState.activeMode === 'mask') {
-      const maskTool = this.currentState.activeMaskTool || 'pen';
+      const maskTool = this.currentState.activeMaskTool;
       if (maskTool === 'eraser') {
         this.displayCanvas.style.cursor = cursors.eraser;
       } else if (maskTool === 'bucket') {
@@ -1088,13 +1088,13 @@ export class CanvasEditor {
     this.ctx.save();
 
     if (this.currentState.activeMode === 'mask') {
-      const maskTool = this.currentState.activeMaskTool || 'pen';
+      const maskTool = this.currentState.activeMaskTool;
       if (maskTool === 'bucket') {
         this.ctx.strokeStyle = '#c084fc';
         this.ctx.lineWidth = 1.5;
         this.ctx.strokeRect(x * zoom + 0.5, y * zoom + 0.5, zoom - 1, zoom - 1);
       } else {
-        const brushSize = this.currentState.maskBrushSize || 1;
+        const brushSize = this.currentState.maskBrushSize;
         const rect = CanvasEditor.getBrushRect(x, y, brushSize);
         if (maskTool === 'eraser') {
           this.ctx.strokeStyle = '#f472b6';

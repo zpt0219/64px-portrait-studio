@@ -1,6 +1,5 @@
 /**
- * ImageGem ConfirmModal Component
- * 通用优雅的模态确认对话框组件，用于模式切换、导出拦截等确认场景
+ * 通用多按钮确认对话框
  */
 
 interface ConfirmModalButton {

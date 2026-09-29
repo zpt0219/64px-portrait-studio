@@ -1,13 +1,5 @@
 /**
- * ImageGem MaskToolsPanel Component (遮罩模式专用左栏工具箱)
- * 包含：
- * 1. 顶部标题与当前分区指示 (头发/皮肤/衣服/眼睛/背景)
- * 2. 遮罩工具选择 (画笔 P / 橡皮 E / 油漆桶 B)
- * 3. 笔刷尺寸切换 (1×1, 2×2, 3×3, 4×4，支持快捷键 [ / ])
- * 4. 方案 A：画面颜色一键转遮罩 (Color-to-Mask Magic)
- *    - 扫描画面实际出现的有效颜色
- *    - 实时显示各颜色当前在目标分区的占比进度条
- *    - 一键批量将该颜色像素赋予当前分区 (严格遵守图层锁定保护)
+ * 遮罩模式左栏工具箱：遮罩工具与笔刷尺寸、智能框选匹配色组、画面颜色一键转遮罩
  */
 
 import { StudioState, ZONE_CONFIG } from '../types';
@@ -124,7 +116,7 @@ export class MaskToolsPanel {
             <div class="match-tip-box">
               <div class="match-tip-line">🖱️ <b>左键框选</b>：将框内匹配色划入当前遮罩</div>
               <div class="match-tip-line">🖱️ <b>右键框选</b>：将框内匹配色从遮罩剔除</div>
-              <div class="match-sub-tip">💡 在色板点击颜色亦可快速追加，悬停色块点 ✕ 剔除</div>
+              <div class="match-sub-tip">💡 点击「➕ 添加」追加颜色，悬停色块点 ✕ 剔除</div>
             </div>
           </div>
 
@@ -190,6 +182,26 @@ export class MaskToolsPanel {
       });
     });
 
+    // 匹配色块：✕ 移除，➕ 展开加色浮层
+    this.container.querySelector('#match-chips-row')?.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      const delBtn = target.closest<HTMLElement>('.match-chip-del-btn');
+      if (delBtn) {
+        this.callbacks.onRemoveMatchColor(Number(delBtn.dataset.colorIdx));
+      } else if (target.closest('.match-chip-add-btn')) {
+        this.toggleAddColorPopover();
+      }
+    });
+
+    // 加色浮层：已在组中的颜色点击移除，否则加入
+    this.container.querySelector('#add-color-grid')?.addEventListener('click', (e) => {
+      const swatch = (e.target as HTMLElement).closest<HTMLElement>('.add-swatch-item');
+      if (!swatch) return;
+      const idx = Number(swatch.dataset.index);
+      if (swatch.classList.contains('is-selected')) this.callbacks.onRemoveMatchColor(idx);
+      else this.callbacks.onAddMatchColor(idx);
+    });
+
     // 颜色卡片点击委托 (画面颜色一键转遮罩)
     const listEl = this.container.querySelector('#color-to-mask-list');
     listEl?.addEventListener('click', (e) => {
@@ -239,7 +251,7 @@ export class MaskToolsPanel {
     if (btnRedo) btnRedo.disabled = state.redoStack.length === 0;
 
     // 3. 更新工具激活高亮
-    const activeTool = state.activeMaskTool || 'pen';
+    const activeTool = state.activeMaskTool;
     const toolBtns = this.container.querySelectorAll<HTMLButtonElement>('.tool-tab-btn[data-tool]');
     toolBtns.forEach((btn) => {
       const tool = btn.getAttribute('data-tool');
@@ -261,7 +273,7 @@ export class MaskToolsPanel {
     }
 
     // 5. 更新笔刷尺寸激活高亮
-    const activeSize = state.maskBrushSize || 1;
+    const activeSize = state.maskBrushSize;
     const pillBtns = this.container.querySelectorAll<HTMLButtonElement>('.brush-size-pill[data-size]');
     pillBtns.forEach((btn) => {
       const size = parseInt(btn.getAttribute('data-size') || '1', 10);
@@ -279,7 +291,7 @@ export class MaskToolsPanel {
     }
 
     const countTag = this.container.querySelector('#match-color-count-tag') as HTMLElement | null;
-    const matchColors = state.maskMatchColors || [];
+    const matchColors = state.maskMatchColors;
     if (countTag) {
       countTag.textContent = `${matchColors.length} 色`;
     }
@@ -298,7 +310,7 @@ export class MaskToolsPanel {
     if (!chipsRow || !this.currentState) return;
 
     chipsRow.innerHTML = '';
-    const matchColors = this.currentState.maskMatchColors || [];
+    const matchColors = this.currentState.maskMatchColors;
     const palette = this.currentState.palette;
 
     matchColors.forEach((idx) => {
@@ -315,11 +327,6 @@ export class MaskToolsPanel {
         <button class="match-chip-del-btn" data-color-idx="${idx}" title="从匹配组移除">✕</button>
       `;
 
-      chip.querySelector('.match-chip-del-btn')?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.callbacks.onRemoveMatchColor(idx);
-      });
-
       chipsRow.appendChild(chip);
     });
 
@@ -329,9 +336,6 @@ export class MaskToolsPanel {
     addBtn.type = 'button';
     addBtn.innerHTML = '➕ 添加';
     addBtn.title = '展开色板挑选颜色追加进匹配组';
-    addBtn.addEventListener('click', () => {
-      this.toggleAddColorPopover();
-    });
     chipsRow.appendChild(addBtn);
   }
 
@@ -350,7 +354,7 @@ export class MaskToolsPanel {
     if (!grid || !this.currentState) return;
 
     grid.innerHTML = '';
-    const currentColors = new Set(this.currentState.maskMatchColors || []);
+    const currentColors = new Set(this.currentState.maskMatchColors);
 
     const allIndices = [...Array.from({ length: 36 }, (_, i) => i), TRANSPARENT_INDEX];
     allIndices.forEach((idx) => {
@@ -360,6 +364,7 @@ export class MaskToolsPanel {
       const isTransparent = idx === TRANSPARENT_INDEX;
 
       const swatch = document.createElement('div');
+      swatch.dataset.index = String(idx);
       swatch.className = `add-swatch-item ${isAlreadyIn ? 'is-selected' : ''} ${isTransparent ? 'chip-transparent' : ''} ${isWhite ? 'chip-white' : ''}`;
       swatch.style.backgroundColor = isTransparent ? '' : hex;
       swatch.title = `#${paletteIndexLabel(idx)} ${hex} ${isAlreadyIn ? '(已在组中，点击移除)' : '(点击加入)'}`;
@@ -368,14 +373,6 @@ export class MaskToolsPanel {
         <span class="swatch-idx">${paletteIndexLabel(idx)}</span>
         ${isAlreadyIn ? '<span class="swatch-check">✓</span>' : ''}
       `;
-
-      swatch.addEventListener('click', () => {
-        if (isAlreadyIn) {
-          this.callbacks.onRemoveMatchColor(idx);
-        } else {
-          this.callbacks.onAddMatchColor(idx);
-        }
-      });
 
       grid.appendChild(swatch);
     });
