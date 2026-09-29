@@ -19,7 +19,6 @@ interface PalettePanelCallbacks {
   onSetBucketConnectivity: (conn: 8 | 4) => void;
   onUndo: () => void;
   onRedo: () => void;
-  onActivate: () => void;
   onSelectHairRamp?: (presetKey: string) => void;
   onHighlightPaletteColor?: (index: number | null) => void;
 }
@@ -169,21 +168,18 @@ export class PalettePanel {
     // 画笔
     const penBtn = this.container.querySelector('#btn-tool-pen');
     penBtn?.addEventListener('click', () => {
-      this.callbacks.onActivate();
       this.callbacks.onSelectTool('pen');
     });
 
     // 橡皮擦
     const eraserBtn = this.container.querySelector('#btn-tool-eraser');
     eraserBtn?.addEventListener('click', () => {
-      this.callbacks.onActivate();
       this.callbacks.onSelectTool('eraser');
     });
 
     // 油漆桶
     const bucketBtn = this.container.querySelector('#btn-tool-bucket');
     bucketBtn?.addEventListener('click', () => {
-      this.callbacks.onActivate();
       this.callbacks.onSelectTool('bucket');
     });
 
@@ -207,14 +203,12 @@ export class PalettePanel {
     // 吸管
     const eyeBtn = this.container.querySelector('#btn-tool-eyedropper');
     eyeBtn?.addEventListener('click', () => {
-      this.callbacks.onActivate();
       this.callbacks.onSelectTool('eyedropper');
     });
 
     // 矩形选区工具
     const selectBtn = this.container.querySelector('#btn-tool-select');
     selectBtn?.addEventListener('click', () => {
-      this.callbacks.onActivate();
       this.callbacks.onSelectTool('select');
     });
 
@@ -475,14 +469,12 @@ export class PalettePanel {
 
           // 左键：选择前景色
           chip.addEventListener('click', () => {
-            this.callbacks.onActivate();
             this.callbacks.onSelectPaletteColor(index);
           });
 
           // 右键：选择背景色 (Aseprite 机制)
           chip.addEventListener('contextmenu', (e) => {
             e.preventDefault();
-            this.callbacks.onActivate();
             this.callbacks.onSelectBgColor(index);
           });
 
@@ -540,13 +532,11 @@ export class PalettePanel {
       `;
 
       chip.addEventListener('click', () => {
-        this.callbacks.onActivate();
         this.callbacks.onSelectPaletteColor(paletteIdx);
       });
 
       chip.addEventListener('contextmenu', (e) => {
         e.preventDefault();
-        this.callbacks.onActivate();
         this.callbacks.onSelectBgColor(paletteIdx);
       });
 

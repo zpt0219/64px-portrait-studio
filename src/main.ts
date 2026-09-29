@@ -11,10 +11,12 @@ import {
   UndoSnapshot,
   ImageGemProjectData,
   RectSelection,
+  PixelTool,
+  MaskTool,
 } from './types';
 import { PALETTE_36, RAMPS_INFO, TRANSPARENT_INDEX, MATCH_COLOR_PRESETS, paletteIndexLabel } from './data/palette';
-import { Rgb, hexToRgb, findNearestColor, quantizeToPalette } from './core/colorUtils';
-import { nearestTierForColor } from './core/recolorEngine';
+import { Rgb, hexToRgb, quantizeToPalette } from './core/colorUtils';
+import { detectHairPreset, recolorHair } from './core/recolorEngine';
 import { computeSemanticMask } from './core/segmentation';
 import { floodFill, borderOffsets, PIXEL_COUNT } from './core/pixelGrid';
 import {
@@ -34,6 +36,9 @@ import { RealtimePreview } from './components/RealtimePreview';
 import { ReplaceColorModal } from './components/ReplaceColorModal';
 import { ConfirmModal } from './components/ConfirmModal';
 import { exportProjectPng, exportProjectZip, importProjectZip } from './core/zipExporter';
+
+/** 撤销栈上限 */
+const UNDO_LIMIT = 40;
 
 class ImageGemApp {
   private state: StudioState;
@@ -140,13 +145,7 @@ class ImageGemApp {
     });
 
     this.palettePanel = new PalettePanel(this.palettePanelWrapper, {
-      onSelectPaletteColor: (idx) => {
-        if (this.state.activeMode === 'mask' && this.state.activeMaskTool === 'box_select') {
-          this.addMaskMatchColor(idx);
-          return;
-        }
-        this.selectPaletteIndex(idx);
-      },
+      onSelectPaletteColor: (idx) => this.selectPaletteIndex(idx),
       onSelectBgColor: (idx) => this.selectBgPaletteIndex(idx),
       onSwapFgBg: () => this.swapFgBgColors(),
       onModifyPaletteColor: (idx, hex) => this.modifyPaletteColor(idx, hex),
@@ -157,7 +156,6 @@ class ImageGemApp {
       onSetBucketConnectivity: (conn) => this.setBucketConnectivity(conn),
       onUndo: () => this.undo(),
       onRedo: () => this.redo(),
-      onActivate: () => this.setMode('pixel'),
       onSelectHairRamp: (presetKey) => {
         this.state.currentHairPreset = presetKey;
         this.maskPanel.update(this.state);
@@ -387,7 +385,7 @@ class ImageGemApp {
       this.hasInitializedMaskMatchPreset = false;
       this.state.pixelIndices = newIndices;
       this.state.semanticMask = newMask;
-      this.state.currentHairPreset = this.detectHairPreset(newIndices, newMask);
+      this.state.currentHairPreset = detectHairPreset(newIndices, newMask, this.state.palette);
       this.state.visibleMaskZones = [SemanticZone.Hair];
       this.state.showMaskOverlay = false;
       this.state.activeMode = 'pixel';
@@ -431,41 +429,6 @@ class ImageGemApp {
       this.showToast('⚠️ 人脸特征识别未达标，请在遮罩模式手动涂抹头发区域', 'warning');
       return Uint8Array.from(pixels, (p) => (isCornerBg(p) ? SemanticZone.Background : SemanticZone.Clothes));
     }
-  }
-
-  /**
-   * 自动识别图像当前所属的 9 大发色预设（基于头发掩码区域内的核心发色投票）
-   */
-  private detectHairPreset(indices: Uint8Array, mask: Uint8Array): string | null {
-    const hairCounts: Record<string, number> = {};
-    let totalHair = 0;
-    for (let i = 0; i < PIXEL_COUNT; i++) {
-      if (mask[i] === SemanticZone.Hair && indices[i] !== TRANSPARENT_INDEX) {
-        const hex = this.state.palette[indices[i]];
-        if (hex && hex !== '#FFFFFF') {
-          hairCounts[hex] = (hairCounts[hex] || 0) + 1;
-          totalHair++;
-        }
-      }
-    }
-    if (totalHair === 0) return null;
-
-    let bestPreset: string | null = null;
-    let bestScore = 0;
-
-    for (const [presetKey, info] of Object.entries(RAMPS_INFO)) {
-      let score = 0;
-      for (const h of info.hexes) {
-        if (h === '#FFFFFF') continue;
-        if (hairCounts[h]) score += hairCounts[h];
-      }
-      if (score > bestScore) {
-        bestScore = score;
-        bestPreset = presetKey;
-      }
-    }
-
-    return bestScore >= 50 ? bestPreset : null;
   }
 
   /**
@@ -542,111 +505,69 @@ class ImageGemApp {
 
   private onStrokeStart(): void {
     if (!this.state.isLoaded) return;
-    this.strokeStartSnapshot = {
-      pixelIndices: new Uint8Array(this.state.pixelIndices),
-      semanticMask: new Uint8Array(this.state.semanticMask),
-      currentHairPreset: this.state.currentHairPreset,
-      selection: this.canvasEditor ? this.canvasEditor.getSelection() : null,
-      palette: [...this.state.palette],
-    };
+    this.strokeStartSnapshot = this.takeSnapshot();
   }
 
   private onStrokeEnd(didModify: boolean): void {
     if (didModify && this.strokeStartSnapshot) {
-      this.state.undoStack.push(this.strokeStartSnapshot);
-      if (this.state.undoStack.length > 40) {
-        this.state.undoStack.shift();
-      }
-      this.state.redoStack = [];
+      this.recordUndo(this.strokeStartSnapshot);
       if (this.hasUnappliedHairRecolor()) {
         this.recomputeHairRecolorPreview();
       }
-      this.palettePanel.update(this.state);
-      this.maskPanel.update(this.state);
       this.triggerAutoSave();
     }
     this.strokeStartSnapshot = null;
   }
 
   private selectPaletteIndex(index: number): void {
-    if (this.state.activeMode === 'mask') {
-      this.setMode('pixel', () => {
-        this.selectPaletteIndexDirect(index);
-      });
-      return;
-    }
-    this.selectPaletteIndexDirect(index);
-  }
-
-  private selectPaletteIndexDirect(index: number): void {
-    this.state.activePaletteIndex = index;
-    this.state.activeMode = 'pixel';
-    this.state.showMaskOverlay = false;
-    // 若当前为选区、吸管，或橡皮擦且选了具体颜色，自动切回画笔
-    if (
-      this.state.activeTool === 'select' ||
-      this.state.activeTool === 'eyedropper' ||
-      (this.state.activeTool === 'eraser' && index !== TRANSPARENT_INDEX)
-    ) {
-      this.state.activeTool = 'pen';
-    }
-    this.syncAllViews();
-    if (index === TRANSPARENT_INDEX) {
-      this.showToast(`已选择前景色：[透明色] (绘制透明/删除)`);
-    } else {
-      this.showToast(`已选择前景色 #${index} (${this.state.palette[index]})`);
-    }
+    this.setMode('pixel', () => {
+      this.state.activePaletteIndex = index;
+      // 若当前为选区、吸管，或橡皮擦且选了具体颜色，自动切回画笔
+      if (
+        this.state.activeTool === 'select' ||
+        this.state.activeTool === 'eyedropper' ||
+        (this.state.activeTool === 'eraser' && index !== TRANSPARENT_INDEX)
+      ) {
+        this.state.activeTool = 'pen';
+      }
+      this.syncAllViews();
+      if (index === TRANSPARENT_INDEX) {
+        this.showToast(`已选择前景色：[透明色] (绘制透明/删除)`);
+      } else {
+        this.showToast(`已选择前景色 #${index} (${this.state.palette[index]})`);
+      }
+    });
   }
 
   /**
-   * 从画布吸管取色 (保持当前工具不变，不触发切画笔逻辑，防止拖拽微动误涂抹破坏画面 BUG-08)
+   * 从画布吸管取色 (保持当前工具不变，避免拖拽微动误涂抹)
    */
   private pickColorFromCanvas(colorIdx: number, isBg: boolean = false): void {
-    if (this.state.activeMode === 'mask') {
-      this.setMode('pixel', () => {
-        this.pickColorFromCanvasDirect(colorIdx, isBg);
-      });
+    if (isBg) {
+      this.selectBgPaletteIndex(colorIdx);
       return;
     }
-    this.pickColorFromCanvasDirect(colorIdx, isBg);
-  }
-
-  private pickColorFromCanvasDirect(colorIdx: number, isBg: boolean = false): void {
-    if (isBg) {
-      this.selectBgPaletteIndexDirect(colorIdx);
-    } else {
+    this.setMode('pixel', () => {
       this.state.activePaletteIndex = colorIdx;
-      this.state.activeMode = 'pixel';
-      this.state.showMaskOverlay = false;
       this.syncAllViews();
       if (colorIdx === TRANSPARENT_INDEX) {
         this.showToast(`🧪 已吸取前景色：[透明色]`);
       } else {
         this.showToast(`🧪 已吸取前景色 #${colorIdx} (${this.state.palette[colorIdx]})`);
       }
-    }
+    });
   }
 
   private selectBgPaletteIndex(index: number): void {
-    if (this.state.activeMode === 'mask') {
-      this.setMode('pixel', () => {
-        this.selectBgPaletteIndexDirect(index);
-      });
-      return;
-    }
-    this.selectBgPaletteIndexDirect(index);
-  }
-
-  private selectBgPaletteIndexDirect(index: number): void {
-    this.state.bgPaletteIndex = index;
-    this.state.activeMode = 'pixel';
-    this.state.showMaskOverlay = false;
-    this.syncAllViews();
-    if (index === TRANSPARENT_INDEX) {
-      this.showToast(`已设置背景色：[透明色] (鼠标右键直接擦除)`);
-    } else {
-      this.showToast(`已设置背景色 #${index} (${this.state.palette[index]}) (右键绘制)`);
-    }
+    this.setMode('pixel', () => {
+      this.state.bgPaletteIndex = index;
+      this.syncAllViews();
+      if (index === TRANSPARENT_INDEX) {
+        this.showToast(`已设置背景色：[透明色] (鼠标右键直接擦除)`);
+      } else {
+        this.showToast(`已设置背景色 #${index} (${this.state.palette[index]}) (右键绘制)`);
+      }
+    });
   }
 
   private swapFgBgColors(): void {
@@ -682,21 +603,11 @@ class ImageGemApp {
     this.showToast('已重置全部 36 色板为 GBA 默认值');
   }
 
-  private setActiveTool(tool: 'pen' | 'eraser' | 'bucket' | 'eyedropper' | 'select'): void {
-    if (this.state.activeMode === 'mask') {
-      this.setMode('pixel', () => {
-        this.setActiveToolDirect(tool);
-      });
-      return;
-    }
-    this.setActiveToolDirect(tool);
-  }
-
-  private setActiveToolDirect(tool: 'pen' | 'eraser' | 'bucket' | 'eyedropper' | 'select'): void {
-    this.state.activeTool = tool;
-    this.state.activeMode = 'pixel';
-    this.state.showMaskOverlay = false;
-    this.syncAllViews();
+  private setActiveTool(tool: PixelTool): void {
+    this.setMode('pixel', () => {
+      this.state.activeTool = tool;
+      this.syncAllViews();
+    });
   }
 
   private setBucketConnectivity(conn: 8 | 4): void {
@@ -779,8 +690,8 @@ class ImageGemApp {
   }
 
   /**
-   * 切换工作区模式：'pixel' (像素模式) 或 'mask' (遮罩模式)
-   * 离开蒙版模式前，若存在未固化的发色预览，弹窗提醒用户选择应用或放弃
+   * 切换工作区模式：'pixel' (像素模式) 或 'mask' (遮罩模式)，切换完成 (或已在目标模式) 后执行 onProceed。
+   * 离开蒙版模式前，若存在未固化的发色预览，弹窗让用户选择应用或放弃。
    */
   private setMode(mode: 'pixel' | 'mask', onProceed?: () => void): void {
     if (mode === this.state.activeMode) {
@@ -788,40 +699,24 @@ class ImageGemApp {
       return;
     }
 
-    if (mode === 'pixel' && this.state.activeMode === 'mask' && this.hasUnappliedHairRecolor()) {
-      const draftName = RAMPS_INFO[this.hairPresetDraft!]?.name || '新发色';
-      this.confirmModal.show({
+    if (mode === 'pixel' && this.hasUnappliedHairRecolor()) {
+      const switchToPixel = () => {
+        this.applyModeDirect('pixel');
+        onProceed?.();
+      };
+      this.confirmHairDraft({
         icon: '🎨',
         title: '应用发色修改？',
-        message: `检测到您正在预览发色【${draftName}】，尚未固化到画面。`,
+        message: `检测到您正在预览发色【${this.hairDraftName()}】，尚未固化到画面。`,
         subMessage: '切换到像素绘制模式前，是否将当前发色修改应用到画布？',
-        buttons: [
-          {
-            label: '✓ 应用并切换',
-            className: 'btn-primary',
-            onClick: () => {
-              this.commitHairRecolor();
-              this.applyModeDirect('pixel');
-              onProceed?.();
-            },
-          },
-          {
-            label: '✕ 放弃修改并切换',
-            className: 'btn-outline',
-            onClick: () => {
-              this.discardHairRecolor();
-              this.applyModeDirect('pixel');
-              onProceed?.();
-            },
-          },
-          {
-            label: '留在蒙版模式',
-            className: 'btn-ghost',
-            onClick: () => {
-              // 留在蒙版模式，不执行模式切换
-            },
-          },
-        ],
+        applyLabel: '✓ 应用并切换',
+        onApplied: switchToPixel,
+        otherLabel: '✕ 放弃修改并切换',
+        onOther: () => {
+          this.discardHairRecolor();
+          switchToPixel();
+        },
+        cancelLabel: '留在蒙版模式',
       });
       return;
     }
@@ -967,7 +862,7 @@ class ImageGemApp {
     }
   }
 
-  private setActiveMaskTool(tool: 'pen' | 'eraser' | 'bucket' | 'box_select'): void {
+  private setActiveMaskTool(tool: MaskTool): void {
     this.state.activeMaskTool = tool;
     this.syncAllViews();
   }
@@ -1062,68 +957,23 @@ class ImageGemApp {
     this.maskPanel.setHairDraft(null);
   }
 
-  /**
-   * 基于未破坏的原始基准像素与当前语义遮罩计算发色置换
-   * 无论切换多少次预设，均严格以 basePixels 作为基准，避免多次累积导致色阶崩溃与光影丢失
-   */
-  private computeHairRecolorPixels(basePixels: Uint8Array, mask: Uint8Array, presetKey: string): Uint8Array {
-    const result = new Uint8Array(basePixels);
-    const rampSpec = RAMPS_INFO[presetKey];
-    if (!rampSpec) return result;
-
-    const targetRamp = rampSpec.hexes;
-    const currentRamp = this.state.currentHairPreset ? RAMPS_INFO[this.state.currentHairPreset]?.hexes : null;
-
-    for (let i = 0; i < PIXEL_COUNT; i++) {
-      if (mask[i] !== SemanticZone.Hair) continue;
-      const baseIdx = basePixels[i];
-      if (baseIdx === TRANSPARENT_INDEX) continue;
-
-      const currentColorHex = this.state.palette[baseIdx];
-      let targetTier = -1;
-
-      // 如果基准发色已知且均为 5 阶规范，优先采用严格 1:1 对称阶梯置换
-      if (currentRamp && currentRamp.length === targetRamp.length) {
-        const sourceTier = currentRamp.indexOf(currentColorHex);
-        if (sourceTier >= 0) {
-          targetTier = sourceTier;
-        } else {
-          targetTier = nearestTierForColor(currentColorHex, currentRamp);
-        }
-      }
-
-      // 未知色阶或杂色像素，基于相对亮度感知距离平滑映射
-      if (targetTier < 0 || targetTier >= targetRamp.length) {
-        targetTier = nearestTierForColor(currentColorHex, targetRamp);
-      }
-
-      // 安全限制阶梯范围
-      targetTier = Math.max(0, Math.min(targetRamp.length - 1, targetTier));
-      const newHex = targetRamp[targetTier];
-
-      // 在当前 36 色板中寻找对应项索引
-      let newIdx = this.state.palette.indexOf(newHex);
-      if (newIdx === -1) {
-        const nearestHex = findNearestColor(newHex, this.state.palette);
-        newIdx = this.state.palette.indexOf(nearestHex);
-      }
-
-      result[i] = newIdx >= 0 ? newIdx : 0;
-    }
-
-    return result;
+  /** 以首次预览时捕获的原始像素为基准，计算 presetKey 发色的预览像素 */
+  private computeHairPreview(presetKey: string): Uint8Array {
+    return recolorHair(
+      this.hairRecolorBase!,
+      this.state.semanticMask,
+      this.state.palette,
+      this.state.currentHairPreset,
+      presetKey
+    );
   }
 
   /**
-   * 重新计算发色预览并更新画布
+   * 遮罩变化后重新计算发色预览并更新画布
    */
   private recomputeHairRecolorPreview(): void {
     if (!this.hasUnappliedHairRecolor() || !this.hairRecolorBase) return;
-    this.recoloredPixels = this.computeHairRecolorPixels(
-      this.hairRecolorBase,
-      this.state.semanticMask,
-      this.hairPresetDraft!
-    );
+    this.recoloredPixels = this.computeHairPreview(this.hairPresetDraft!);
     this.canvasEditor.setPreviewPixels(this.recoloredPixels);
   }
 
@@ -1154,7 +1004,7 @@ class ImageGemApp {
     }
 
     this.hairPresetDraft = presetKey;
-    this.recoloredPixels = this.computeHairRecolorPixels(this.hairRecolorBase, this.state.semanticMask, presetKey);
+    this.recoloredPixels = this.computeHairPreview(presetKey);
 
     // 注入画布预览与蒙版面板草稿态
     this.canvasEditor.setPreviewPixels(this.recoloredPixels);
@@ -1197,37 +1047,57 @@ class ImageGemApp {
   }
 
   /**
-   * 弹出全屏居中对话框供用户固化或还原发色修改
+   * 弹出对话框供用户固化或还原发色预览
    */
   public openHairRecolorModal(): void {
     if (!this.hasUnappliedHairRecolor()) return;
-
-    const draftName = RAMPS_INFO[this.hairPresetDraft!]?.name || '新发色';
-    this.confirmModal.show({
+    this.confirmHairDraft({
       icon: '💇',
       title: '固化或还原发色',
-      message: `当前正在预览发色【${draftName}】。`,
+      message: `当前正在预览发色【${this.hairDraftName()}】。`,
       subMessage: '请选择是否将此发色固化应用到画面中，或放弃并还原：',
+      applyLabel: '✓ 确认应用并固化',
+      onApplied: () => {},
+      otherLabel: '✕ 放弃修改并还原',
+      onOther: () => this.discardHairRecolor(),
+      cancelLabel: '继续试色',
+    });
+  }
+
+  private hairDraftName(): string {
+    return RAMPS_INFO[this.hairPresetDraft!]?.name || '新发色';
+  }
+
+  /**
+   * 未固化发色预览的三选一对话框：第一个按钮先固化发色再执行 onApplied，第三个按钮什么都不做
+   */
+  private confirmHairDraft(options: {
+    icon: string;
+    title: string;
+    message: string;
+    subMessage: string;
+    applyLabel: string;
+    onApplied: () => void;
+    otherLabel: string;
+    onOther: () => void;
+    cancelLabel: string;
+  }): void {
+    this.confirmModal.show({
+      icon: options.icon,
+      title: options.title,
+      message: options.message,
+      subMessage: options.subMessage,
       buttons: [
         {
-          label: '✓ 确认应用并固化',
+          label: options.applyLabel,
           className: 'btn-primary',
           onClick: () => {
             this.commitHairRecolor();
+            options.onApplied();
           },
         },
-        {
-          label: '✕ 放弃修改并还原',
-          className: 'btn-outline',
-          onClick: () => {
-            this.discardHairRecolor();
-          },
-        },
-        {
-          label: '继续试色',
-          className: 'btn-ghost',
-          onClick: () => {},
-        },
+        { label: options.otherLabel, className: 'btn-outline', onClick: options.onOther },
+        { label: options.cancelLabel, className: 'btn-ghost', onClick: () => {} },
       ],
     });
   }
@@ -1449,17 +1319,28 @@ class ImageGemApp {
 
   // ===================== 撤销与重做 =====================
 
-  private pushUndoSnapshot(): void {
-    const snapshot: UndoSnapshot = {
+  private takeSnapshot(): UndoSnapshot {
+    return {
       pixelIndices: new Uint8Array(this.state.pixelIndices),
       semanticMask: new Uint8Array(this.state.semanticMask),
       currentHairPreset: this.state.currentHairPreset,
-      selection: this.canvasEditor ? this.canvasEditor.getSelection() : null,
+      selection: this.canvasEditor.getSelection(),
       palette: [...this.state.palette],
     };
+  }
 
+  private restoreSnapshot(snapshot: UndoSnapshot): void {
+    this.state.pixelIndices.set(snapshot.pixelIndices);
+    this.state.semanticMask.set(snapshot.semanticMask);
+    this.state.currentHairPreset = snapshot.currentHairPreset;
+    this.state.palette = [...snapshot.palette];
+    this.canvasEditor.setSelection(snapshot.selection);
+  }
+
+  /** 压入一条新的撤销记录 (清空重做栈)，并刷新撤销/重做按钮状态 */
+  private recordUndo(snapshot: UndoSnapshot): void {
     this.state.undoStack.push(snapshot);
-    if (this.state.undoStack.length > 40) {
+    if (this.state.undoStack.length > UNDO_LIMIT) {
       this.state.undoStack.shift();
     }
     this.state.redoStack = [];
@@ -1467,62 +1348,31 @@ class ImageGemApp {
     this.maskPanel.update(this.state);
   }
 
+  private pushUndoSnapshot(): void {
+    this.recordUndo(this.takeSnapshot());
+  }
+
   private undo(): void {
-    if (this.hasUnappliedHairRecolor()) {
-      this.discardHairRecolor();
-    }
-    if (this.state.undoStack.length === 0) return;
-
-    const currentSnapshot: UndoSnapshot = {
-      pixelIndices: new Uint8Array(this.state.pixelIndices),
-      semanticMask: new Uint8Array(this.state.semanticMask),
-      currentHairPreset: this.state.currentHairPreset,
-      selection: this.canvasEditor ? this.canvasEditor.getSelection() : null,
-      palette: [...this.state.palette],
-    };
-    this.state.redoStack.push(currentSnapshot);
-
-    const prevSnapshot = this.state.undoStack.pop()!;
-    this.state.pixelIndices.set(prevSnapshot.pixelIndices);
-    this.state.semanticMask.set(prevSnapshot.semanticMask);
-    this.state.currentHairPreset = prevSnapshot.currentHairPreset ?? null;
-    if (prevSnapshot.palette) {
-      this.state.palette = [...prevSnapshot.palette];
-    }
-    this.canvasEditor.setSelection(prevSnapshot.selection ?? null);
-
-    this.syncAllViews();
-    this.triggerAutoSave();
-    this.showToast('↩️ 撤销成功');
+    this.stepHistory(this.state.undoStack, this.state.redoStack, '↩️ 撤销成功');
   }
 
   private redo(): void {
+    this.stepHistory(this.state.redoStack, this.state.undoStack, '↪️ 重做成功');
+  }
+
+  /** 从 from 栈取出一条快照恢复，并把当前状态存入 to 栈；未固化的发色预览会被放弃 */
+  private stepHistory(from: UndoSnapshot[], to: UndoSnapshot[], message: string): void {
     if (this.hasUnappliedHairRecolor()) {
       this.discardHairRecolor();
     }
-    if (this.state.redoStack.length === 0) return;
+    if (from.length === 0) return;
 
-    const currentSnapshot: UndoSnapshot = {
-      pixelIndices: new Uint8Array(this.state.pixelIndices),
-      semanticMask: new Uint8Array(this.state.semanticMask),
-      currentHairPreset: this.state.currentHairPreset,
-      selection: this.canvasEditor ? this.canvasEditor.getSelection() : null,
-      palette: [...this.state.palette],
-    };
-    this.state.undoStack.push(currentSnapshot);
-
-    const nextSnapshot = this.state.redoStack.pop()!;
-    this.state.pixelIndices.set(nextSnapshot.pixelIndices);
-    this.state.semanticMask.set(nextSnapshot.semanticMask);
-    this.state.currentHairPreset = nextSnapshot.currentHairPreset ?? null;
-    if (nextSnapshot.palette) {
-      this.state.palette = [...nextSnapshot.palette];
-    }
-    this.canvasEditor.setSelection(nextSnapshot.selection ?? null);
+    to.push(this.takeSnapshot());
+    this.restoreSnapshot(from.pop()!);
 
     this.syncAllViews();
     this.triggerAutoSave();
-    this.showToast('↪️ 重做成功');
+    this.showToast(message);
   }
 
   // ===================== 列宽拖拽调整 =====================
@@ -1650,249 +1500,173 @@ class ImageGemApp {
   // ===================== 全局快捷键与存盘 =====================
 
   private setupGlobalKeyboardShortcuts(): void {
-    window.addEventListener('keydown', (e) => {
-      // 仅忽略处于真正文本编辑状态下的按键 (如文本框输入中)，滑杆 (range)、复选框 (checkbox)、单选框 (radio) 等非文本输入组件不阻塞快捷键
-      const target = e.target as HTMLElement | null;
-      if (target) {
-        if (target.isContentEditable || target.tagName === 'TEXTAREA') {
+    window.addEventListener('keydown', (e) => this.handleShortcut(e));
+  }
+
+  /**
+   * 全局快捷键。按以下顺序匹配，命中即停止：
+   * 1. Shift+字母 (不论是否按 Ctrl)  2. Ctrl/Cmd+字母  3. Esc / Delete
+   * 4. 其余带 Ctrl/Alt 的组合一律忽略  5. 单键 (工具、模式、分区)
+   * 同时匹配 e.key 与 e.code，兼容中文输入法与 CapsLock。
+   */
+  private handleShortcut(e: KeyboardEvent): void {
+    // 只在真正的文本输入中屏蔽快捷键；滑杆、复选框等非文本控件不阻塞
+    const target = e.target as HTMLElement | null;
+    if (target) {
+      if (target.isContentEditable || target.tagName === 'TEXTAREA') return;
+      if (target.tagName === 'INPUT') {
+        const type = ((target as HTMLInputElement).type || 'text').toLowerCase();
+        if (!['range', 'checkbox', 'radio', 'color', 'button', 'submit', 'reset'].includes(type)) return;
+      }
+    }
+    // 颜色替换弹窗打开期间由弹窗自己处理按键
+    if (this.replaceColorModal.getIsOpen()) return;
+
+    const key = e.key.toLowerCase();
+    const is = (...names: string[]) => names.includes(key) || names.includes(e.code);
+    const letter = (ch: string) => is(ch, `Key${ch.toUpperCase()}`);
+    const ctrlOrCmd = e.ctrlKey || e.metaKey;
+    const inMask = this.state.activeMode === 'mask';
+    const canvas = this.canvasEditor;
+
+    type Action = () => void;
+    // Shift+字母：画布变换
+    const shiftActions: [string, Action][] = [
+      ['r', () => this.openReplaceColorModal()],
+      ['h', () => this.flipContent('horizontal')],
+      ['v', () => this.flipContent('vertical')],
+      ['t', () => this.rotateContentCW()],
+    ];
+    if (e.shiftKey) {
+      for (const [ch, run] of shiftActions) {
+        if (letter(ch)) {
+          e.preventDefault();
+          run();
           return;
         }
-        if (target.tagName === 'INPUT') {
-          const type = ((target as HTMLInputElement).type || 'text').toLowerCase();
-          const nonTextTypes = ['range', 'checkbox', 'radio', 'color', 'button', 'submit', 'reset'];
-          if (!nonTextTypes.includes(type)) {
-            return;
-          }
+      }
+    }
+
+    // Ctrl/Cmd+字母：返回 false 表示不拦截浏览器默认行为
+    const ctrlActions: [string, () => boolean][] = [
+      ['z', () => (e.shiftKey ? this.redo() : this.undo(), true)],
+      ['y', () => (this.redo(), true)],
+      ['s', () => (this.exportProjectZip(), true)],
+      ['c', () => {
+        if (!canvas.hasSelection()) return false;
+        if (canvas.copySelection()) this.showToast('📋 已复制选区内容到剪贴板');
+        return true;
+      }],
+      ['x', () => {
+        if (!canvas.hasSelection()) return false;
+        if (canvas.cutSelection()) this.showToast('✂️ 已剪切选区内容到剪贴板');
+        return true;
+      }],
+      ['v', () => {
+        if (!canvas.hasClipboard()) return false;
+        if (canvas.pasteClipboard()) this.showToast('📋 已从剪贴板粘贴选区');
+        return true;
+      }],
+      ['d', () => (this.clearSelectionWithToast(), true)],
+      ['a', () => (canvas.selectAll(), this.showToast('已全选整张画布 (64×64)'), true)],
+      // 拦截 Ctrl+P 避免调出打印窗口，顺便切换为画笔
+      ['p', () => (this.setActiveTool('pen'), this.showToast('✏️ 已切换为画笔工具 (左键绘制前景色，右键绘制背景色)'), true)],
+    ];
+    if (ctrlOrCmd) {
+      for (const [ch, run] of ctrlActions) {
+        if (letter(ch)) {
+          if (run()) e.preventDefault();
+          return;
         }
       }
+    }
 
-      // 颜色替换弹窗开启期间，忽略全局快捷键，防止后台误触
-      if (this.replaceColorModal?.getIsOpen()) {
-        return;
-      }
+    if (is('escape', 'Escape')) {
+      this.clearSelectionWithToast();
+      return;
+    }
+    if (is('delete', 'backspace', 'Delete', 'Backspace') && canvas.hasSelection()) {
+      e.preventDefault();
+      if (canvas.deleteSelectionContent()) this.showToast('🧼 已将选区内容清空为透明像素');
+      return;
+    }
 
-      const key = e.key.toLowerCase();
-      const code = e.code;
-      const ctrlOrCmd = e.ctrlKey || e.metaKey;
+    // 避免 Ctrl/Alt 组合误触单键快捷键
+    if (ctrlOrCmd || e.altKey) return;
 
-      // 颜色替换快捷键 (Shift+R)
-      if (e.shiftKey && (key === 'r' || code === 'KeyR')) {
-        e.preventDefault();
-        this.openReplaceColorModal();
-        return;
-      }
+    // 遮罩模式下 [ / ] 调整笔刷尺寸
+    if (inMask && is('[', 'BracketLeft')) return this.changeMaskBrushSize(-1);
+    if (inMask && is(']', 'BracketRight')) return this.changeMaskBrushSize(1);
 
-      // 水平翻转快捷键 (Shift+H)
-      if (e.shiftKey && (key === 'h' || code === 'KeyH')) {
-        e.preventDefault();
-        this.flipContent('horizontal');
-        return;
-      }
-
-      // 垂直翻转快捷键 (Shift+V)
-      if (e.shiftKey && (key === 'v' || code === 'KeyV')) {
-        e.preventDefault();
-        this.flipContent('vertical');
-        return;
-      }
-
-      // 顺时针旋转90°快捷键 (Shift+T)
-      if (e.shiftKey && (key === 't' || code === 'KeyT')) {
-        e.preventDefault();
-        this.rotateContentCW();
-        return;
-      }
-
-      // 撤销 / 重做 (Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y)
-      if (ctrlOrCmd && (key === 'z' || code === 'KeyZ')) {
-        e.preventDefault();
-        if (e.shiftKey) {
-          this.redo();
+    // 同一个键在像素模式与遮罩模式下分别对应的工具
+    const toolKey = (maskTool: MaskTool, maskToast: string, pixelAction: Action) =>
+      () => {
+        if (inMask) {
+          this.setActiveMaskTool(maskTool);
+          this.showToast(maskToast);
         } else {
-          this.undo();
+          pixelAction();
         }
-        return;
-      }
+      };
 
-      if (ctrlOrCmd && (key === 'y' || code === 'KeyY')) {
-        e.preventDefault();
-        this.redo();
-        return;
-      }
-
-      // 保存工程 ZIP (Ctrl+S)
-      if (ctrlOrCmd && (key === 's' || code === 'KeyS')) {
-        e.preventDefault();
-        this.exportProjectZip();
-        return;
-      }
-
-      // 复制选区 (Ctrl+C)
-      if (ctrlOrCmd && (key === 'c' || code === 'KeyC')) {
-        if (this.canvasEditor.hasSelection()) {
-          e.preventDefault();
-          const ok = this.canvasEditor.copySelection();
-          if (ok) this.showToast('📋 已复制选区内容到剪贴板');
-        }
-        return;
-      }
-
-      // 剪切选区 (Ctrl+X)
-      if (ctrlOrCmd && (key === 'x' || code === 'KeyX')) {
-        if (this.canvasEditor.hasSelection()) {
-          e.preventDefault();
-          const ok = this.canvasEditor.cutSelection();
-          if (ok) this.showToast('✂️ 已剪切选区内容到剪贴板');
-        }
-        return;
-      }
-
-      // 粘贴选区 (Ctrl+V)
-      if (ctrlOrCmd && (key === 'v' || code === 'KeyV')) {
-        if (this.canvasEditor.hasClipboard()) {
-          e.preventDefault();
-          const ok = this.canvasEditor.pasteClipboard();
-          if (ok) this.showToast('📋 已从剪贴板粘贴选区');
-          return;
-        }
-      }
-
-      // 取消选区 (Ctrl+D)
-      if (ctrlOrCmd && (key === 'd' || code === 'KeyD')) {
-        e.preventDefault();
-        if (this.canvasEditor.hasSelection()) {
-          this.canvasEditor.clearSelection();
-          this.showToast('已取消矩形选区');
-        }
-        return;
-      }
-
-      // 全选整张画布 (Ctrl+A)
-      if (ctrlOrCmd && (key === 'a' || code === 'KeyA')) {
-        e.preventDefault();
-        this.canvasEditor.selectAll();
-        this.showToast('已全选整张画布 (64×64)');
-        return;
-      }
-
-      // 拦截 Ctrl+P 避免调出系统打印窗口，并友好切换为画笔工具
-      if (ctrlOrCmd && (key === 'p' || code === 'KeyP')) {
-        e.preventDefault();
+    const singleKeyActions: [string[], Action][] = [
+      [['q'], () => this.setMode('pixel')],
+      [['w'], () => this.setMode('mask')],
+      [['m', 's'], toolKey('box_select', '🔲 已切换为智能框选工具 (左键拖拽匹配色划入遮罩，右键剔除)', () => {
+        this.setActiveTool('select');
+        this.showToast('⬚ 矩形选区工具：拖拽框选，选区内拖动平移 (原位透明)，按住 Ctrl 复制');
+      })],
+      [['p'], toolKey('pen', '✏️ 已切换为遮罩画笔', () => {
         this.setActiveTool('pen');
         this.showToast('✏️ 已切换为画笔工具 (左键绘制前景色，右键绘制背景色)');
-        return;
-      }
-
-      // 取消选区 (Escape)
-      if (key === 'escape' || code === 'Escape') {
-        if (this.canvasEditor.hasSelection()) {
-          this.canvasEditor.clearSelection();
-          this.showToast('已取消矩形选区');
-        }
-        return;
-      }
-
-      // 清空选区内容 (Delete / Backspace)
-      if (key === 'delete' || key === 'backspace' || code === 'Delete' || code === 'Backspace') {
-        if (this.canvasEditor.hasSelection()) {
-          e.preventDefault();
-          const didDelete = this.canvasEditor.deleteSelectionContent();
-          if (didDelete) {
-            this.showToast('🧼 已将选区内容清空为透明像素');
-          }
-          return;
-        }
-      }
-
-      // 如果按住了 Ctrl / Meta / Alt 组合键 (且上面未处理)，避免误触单字母工具快捷键
-      if (ctrlOrCmd || e.altKey) {
-        return;
-      }
-
-      // 笔刷尺寸切换快捷键 ( [ 减小 / ] 增大)
-      if (key === '[' || code === 'BracketLeft') {
-        if (this.state.activeMode === 'mask') {
-          this.changeMaskBrushSize(-1);
-          return;
-        }
-      } else if (key === ']' || code === 'BracketRight') {
-        if (this.state.activeMode === 'mask') {
-          this.changeMaskBrushSize(1);
-          return;
-        }
-      }
-
-      // 单字母工具快捷键 (同时匹配 key 与 code，抗中文输入法 / CapsLock 干扰)
-      if (key === 'q' || code === 'KeyQ') {
-        this.setMode('pixel');
-      } else if (key === 'w' || code === 'KeyW') {
-        this.setMode('mask');
-      } else if (key === 'm' || key === 's' || code === 'KeyM' || code === 'KeyS') {
-        if (this.state.activeMode === 'mask') {
-          this.setActiveMaskTool('box_select');
-          this.showToast('🔲 已切换为智能框选工具 (左键拖拽匹配色划入遮罩，右键剔除)');
-        } else {
-          this.setActiveTool('select');
-          this.showToast('⬚ 矩形选区工具：拖拽框选，选区内拖动平移 (原位透明)，按住 Ctrl 复制');
-        }
-      } else if (key === 'p' || code === 'KeyP') {
-        if (this.state.activeMode === 'mask') {
-          this.setActiveMaskTool('pen');
-          this.showToast('✏️ 已切换为遮罩画笔');
-        } else {
-          this.setActiveTool('pen');
-          this.showToast('✏️ 已切换为画笔工具 (左键绘制前景色，右键绘制背景色)');
-        }
-      } else if (key === 'b' || key === 'f' || code === 'KeyB' || code === 'KeyF') {
-        if (this.state.activeMode === 'mask') {
+      })],
+      [['b', 'f'], () => {
+        if (inMask) {
           this.setActiveMaskTool('bucket');
           this.showToast(`🪣 已切换为遮罩油漆桶 (${this.state.bucketConnectivity} 邻居连通)`);
+        } else if (this.state.activeTool === 'bucket') {
+          // 已是油漆桶时再按一次切换 8/4 连通
+          this.setBucketConnectivity(this.state.bucketConnectivity === 8 ? 4 : 8);
         } else {
-          if (this.state.activeTool === 'bucket') {
-            const nextConn = this.state.bucketConnectivity === 8 ? 4 : 8;
-            this.setBucketConnectivity(nextConn);
-          } else {
-            this.setActiveTool('bucket');
-            this.showToast(`🪣 已切换为油漆桶工具 (当前：${this.state.bucketConnectivity} 邻居连通)`);
-          }
+          this.setActiveTool('bucket');
+          this.showToast(`🪣 已切换为油漆桶工具 (当前：${this.state.bucketConnectivity} 邻居连通)`);
         }
-      } else if (key === 'e' || code === 'KeyE') {
-        if (this.state.activeMode === 'mask') {
-          this.setActiveMaskTool('eraser');
-          this.showToast('🧼 已切换为遮罩橡皮擦 (擦除为背景 0)');
-        } else {
-          this.setActiveTool('eraser');
-          this.showToast('🧼 已切换为橡皮擦工具 (原生透明删除)');
-        }
-      } else if (key === 'i' || code === 'KeyI') {
-        if (this.state.activeMode === 'mask') {
-          this.showToast('吸管工具仅在像素画图模式下有效 (按 Q 切换)', 'info');
-        } else {
-          this.setActiveTool('eyedropper');
-        }
-      } else if (key === 'g' || code === 'KeyG') {
-        this.setGrid(!this.state.showGrid);
-      } else if (key === 'x' || code === 'KeyX') {
-        this.swapFgBgColors();
-      } else if (key === '0' || code === 'Digit0' || code === 'Numpad0') {
-        this.setActiveZone(SemanticZone.Background);
-        this.showToast('⚫ 已选择背景遮罩 [0]');
-      } else if (key === '1' || code === 'Digit1' || code === 'Numpad1') {
-        this.setActiveZone(SemanticZone.Hair);
-        this.showToast('🔴 已选择头发遮罩 [1]');
-      } else if (key === '2' || code === 'Digit2' || code === 'Numpad2') {
-        this.setActiveZone(SemanticZone.Skin);
-        this.showToast('🟢 已选择皮肤遮罩 [2]');
-      } else if (key === '3' || code === 'Digit3' || code === 'Numpad3') {
-        this.setActiveZone(SemanticZone.Eyes);
-        this.showToast('🔵 已选择眼睛遮罩 [3]');
-      } else if (key === '4' || code === 'Digit4' || code === 'Numpad4') {
-        this.setActiveZone(SemanticZone.Clothes);
-        this.showToast('🟡 已选择衣服遮罩 [4]');
-      } else if (key === 'v' || code === 'KeyV') {
-        this.toggleRealtimePreview();
+      }],
+      [['e'], toolKey('eraser', '🧼 已切换为遮罩橡皮擦 (擦除为背景 0)', () => {
+        this.setActiveTool('eraser');
+        this.showToast('🧼 已切换为橡皮擦工具 (原生透明删除)');
+      })],
+      [['i'], () => {
+        if (inMask) this.showToast('吸管工具仅在像素画图模式下有效 (按 Q 切换)', 'info');
+        else this.setActiveTool('eyedropper');
+      }],
+      [['g'], () => this.setGrid(!this.state.showGrid)],
+      [['x'], () => this.swapFgBgColors()],
+      [['v'], () => this.toggleRealtimePreview()],
+    ];
+    for (const [letters, run] of singleKeyActions) {
+      if (letters.some(letter)) {
+        run();
+        return;
       }
-    });
+    }
+
+    // 0~4 选择遮罩分区
+    for (const zone of ALL_ZONES) {
+      const digit = ZONE_CONFIG[zone].hotkey;
+      if (is(digit, `Digit${digit}`, `Numpad${digit}`)) {
+        this.setActiveZone(zone);
+        this.showToast(`🎭 已选择${ZONE_CONFIG[zone].shortName}遮罩 [${digit}]`);
+        return;
+      }
+    }
+  }
+
+  private clearSelectionWithToast(): void {
+    if (this.canvasEditor.hasSelection()) {
+      this.canvasEditor.clearSelection();
+      this.showToast('已取消矩形选区');
+    }
   }
 
   private toggleRealtimePreview(): void {
@@ -1906,46 +1680,17 @@ class ImageGemApp {
     this.showToast(isVisible ? '👁️ 原寸实时预览已开启' : '👁️ 原寸实时预览已隐藏');
   }
 
-  public async exportProjectPng(): Promise<void> {
-    if (!this.state.isLoaded) {
-      this.showToast('请先载入头像后再导出 PNG', 'warning');
-      return;
-    }
-
-    if (this.hasUnappliedHairRecolor()) {
-      const draftName = RAMPS_INFO[this.hairPresetDraft!]?.name || '新发色';
-      this.confirmModal.show({
-        icon: '💾',
-        title: '导出 PNG 发色确认',
-        message: `当前处于发色【${draftName}】预览状态，尚未固化到画布。`,
-        subMessage: '请选择如何导出该头像 PNG：',
-        buttons: [
-          {
-            label: '✓ 应用新发色并导出',
-            className: 'btn-primary',
-            onClick: async () => {
-              this.commitHairRecolor();
-              await this.doExportProjectPng();
-            },
-          },
-          {
-            label: '以原图发色导出',
-            className: 'btn-outline',
-            onClick: async () => {
-              await this.doExportProjectPng();
-            },
-          },
-          {
-            label: '取消',
-            className: 'btn-ghost',
-            onClick: () => {},
-          },
-        ],
-      });
-      return;
-    }
-
-    await this.doExportProjectPng();
+  public exportProjectPng(): void {
+    this.exportWithHairDraftCheck({
+      notLoadedMessage: '请先载入头像后再导出 PNG',
+      icon: '💾',
+      title: '导出 PNG 发色确认',
+      notCommittedText: '尚未固化到画布',
+      subMessage: '请选择如何导出该头像 PNG：',
+      applyLabel: '✓ 应用新发色并导出',
+      originalLabel: '以原图发色导出',
+      doExport: () => this.doExportProjectPng(),
+    });
   }
 
   private async doExportProjectPng(): Promise<void> {
@@ -1958,46 +1703,49 @@ class ImageGemApp {
     }
   }
 
-  public async exportProjectZip(): Promise<void> {
+  public exportProjectZip(): void {
+    this.exportWithHairDraftCheck({
+      notLoadedMessage: '请先载入头像后再导出工程 ZIP',
+      icon: '📦',
+      title: '导出 ZIP 发色确认',
+      notCommittedText: '尚未固化到工程中',
+      subMessage: '请选择如何打包导出工程 ZIP：',
+      applyLabel: '✓ 应用新发色并打包',
+      originalLabel: '以原图发色打包',
+      doExport: () => this.doExportProjectZip(),
+    });
+  }
+
+  /** 导出前若有未固化的发色预览，先让用户选择「应用后导出」或「按原发色导出」 */
+  private exportWithHairDraftCheck(o: {
+    notLoadedMessage: string;
+    icon: string;
+    title: string;
+    notCommittedText: string;
+    subMessage: string;
+    applyLabel: string;
+    originalLabel: string;
+    doExport: () => Promise<void>;
+  }): void {
     if (!this.state.isLoaded) {
-      this.showToast('请先载入头像后再导出工程 ZIP', 'warning');
+      this.showToast(o.notLoadedMessage, 'warning');
       return;
     }
-
-    if (this.hasUnappliedHairRecolor()) {
-      const draftName = RAMPS_INFO[this.hairPresetDraft!]?.name || '新发色';
-      this.confirmModal.show({
-        icon: '📦',
-        title: '导出 ZIP 发色确认',
-        message: `当前处于发色【${draftName}】预览状态，尚未固化到工程中。`,
-        subMessage: '请选择如何打包导出工程 ZIP：',
-        buttons: [
-          {
-            label: '✓ 应用新发色并打包',
-            className: 'btn-primary',
-            onClick: async () => {
-              this.commitHairRecolor();
-              await this.doExportProjectZip();
-            },
-          },
-          {
-            label: '以原图发色打包',
-            className: 'btn-outline',
-            onClick: async () => {
-              await this.doExportProjectZip();
-            },
-          },
-          {
-            label: '取消',
-            className: 'btn-ghost',
-            onClick: () => {},
-          },
-        ],
-      });
+    if (!this.hasUnappliedHairRecolor()) {
+      void o.doExport();
       return;
     }
-
-    await this.doExportProjectZip();
+    this.confirmHairDraft({
+      icon: o.icon,
+      title: o.title,
+      message: `当前处于发色【${this.hairDraftName()}】预览状态，${o.notCommittedText}。`,
+      subMessage: o.subMessage,
+      applyLabel: o.applyLabel,
+      onApplied: () => void o.doExport(),
+      otherLabel: o.originalLabel,
+      onOther: () => void o.doExport(),
+      cancelLabel: '取消',
+    });
   }
 
   private async doExportProjectZip(): Promise<void> {

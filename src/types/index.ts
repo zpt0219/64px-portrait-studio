@@ -81,10 +81,13 @@ export interface ImageGemProjectData {
 export interface UndoSnapshot {
   pixelIndices: Uint8Array;     // 深拷贝 (4096 bytes)
   semanticMask: Uint8Array;     // 深拷贝 (4096 bytes)
-  currentHairPreset?: string | null;
-  selection?: RectSelection | null; // 选区快照
-  palette?: string[];           // 色板快照 (36 色 Hex)
+  currentHairPreset: string | null;
+  selection: RectSelection | null; // 选区快照
+  palette: string[];            // 色板快照 (36 色 Hex)
 }
+
+export type PixelTool = 'pen' | 'eraser' | 'bucket' | 'eyedropper' | 'select';
+export type MaskTool = 'pen' | 'eraser' | 'bucket' | 'box_select';
 
 /** 运行时全局工作台状态 */
 export interface StudioState {
@@ -99,7 +102,7 @@ export interface StudioState {
   showMaskOverlay: boolean;     // 是否显示半透明遮罩覆层
   visibleMaskZones: SemanticZone[]; // 多选可见的遮罩分区 (0~4)
   lockedMaskZones?: SemanticZone[]; // 上锁保护的遮罩分区 (禁止被其他遮罩或橡皮擦覆盖)
-  activeMaskTool?: 'pen' | 'eraser' | 'bucket' | 'box_select'; // 遮罩工具：画笔 vs 橡皮擦 vs 油漆桶 vs 智能框选 (默认 'pen')
+  activeMaskTool?: MaskTool; // 遮罩工具：画笔 vs 橡皮擦 vs 油漆桶 vs 智能框选 (默认 'pen')
   maskMatchColors?: number[];   // 智能框选匹配色组 (色板索引列表 0~35 或 255)
   maskMatchPresetKey?: string;  // 匹配色组预设 Key
   maskBrushSize: 1 | 2 | 3 | 4; // 遮罩笔刷尺寸 (1, 2, 3, 4，默认 1)
@@ -108,7 +111,7 @@ export interface StudioState {
   zoomLevel: number;            // 画布缩放倍数 (4, 6, 8, 12, 16, 24, 32)
   undoStack: UndoSnapshot[];    // 撤销栈 (上限 40)
   redoStack: UndoSnapshot[];    // 重做栈
-  activeTool: 'pen' | 'eraser' | 'bucket' | 'eyedropper' | 'select'; // 当前修图工具：画笔 / 橡皮擦 / 油漆桶 / 吸管 / 矩形选区
+  activeTool: PixelTool; // 当前修图工具：画笔 / 橡皮擦 / 油漆桶 / 吸管 / 矩形选区
   bucketConnectivity: 8 | 4;                             // 油漆桶连通邻域：8 邻居 (默认) 或 4 邻居
   isLoaded: boolean;            // 是否已载入有效头像
 }
