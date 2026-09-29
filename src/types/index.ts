@@ -88,6 +88,8 @@ export interface UndoSnapshot {
 
 export type PixelTool = 'pen' | 'eraser' | 'bucket' | 'eyedropper' | 'select';
 export type MaskTool = 'pen' | 'eraser' | 'bucket' | 'box_select';
+export type EditorMode = 'pixel' | 'mask';
+export type BrushSize = 1 | 2 | 3 | 4;
 
 /** 运行时全局工作台状态 */
 export interface StudioState {
