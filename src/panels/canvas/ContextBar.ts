@@ -115,7 +115,7 @@ export class ContextBar {
                 <span class="pill-dot">●</span> 4 邻居 (十字)
               </button>
             </div>
-            <span class="floating-help-tip">Shift+点击可全图同色替换</span>
+            <span class="floating-help-tip">按住 Shift 预览同色像素，Shift+点击全图替换</span>
           </div>
         `);
       }

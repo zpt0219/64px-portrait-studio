@@ -1,6 +1,6 @@
 /**
  * 主画布面板 (对应 tile_map_editor_imgui 的 TileMapPanel)：
- * 鼠标 / 键盘输入、视口平移缩放、矩形选区与智能框选的交互状态机、悬停信息与光标。
+ * 鼠标 / 键盘输入 (空格键等同左键)、视口平移缩放、矩形选区与智能框选的交互状态机、悬停信息与光标。
  * 只读取 ViewModel 状态，所有修改都调用 ViewModel 方法；绘制交给 CanvasRenderer。
  */
 
@@ -18,6 +18,9 @@ import { CanvasRenderer } from './CanvasRenderer';
 import { CanvasToolbar } from './CanvasToolbar';
 import { ContextBar } from './ContextBar';
 import { SelectionStatsPanel } from './SelectionStatsPanel';
+
+/** 鼠标事件与空格键模拟左键共用的输入字段 */
+type PointerInput = Pick<MouseEvent, 'clientX' | 'clientY' | 'button' | 'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey'>;
 
 /** 画布面板需要 App 提供的入口 (文件导入、弹窗、画中画) */
 export interface CanvasHooks {
@@ -44,7 +47,9 @@ export class CanvasPanel extends Panel {
   private isMouseDown = false;
   private currentMouseButton: 0 | 2 = 0; // 0 左键 (前景色)，2 右键 (背景色)
   private currentIsAlt = false;          // 按住 Alt：吸管快速取色
-  private isSpacePressed = false;
+  private isShiftHeld = false;           // 悬停时按住 Shift：高亮全图与指向像素同色的像素
+  private spacePress = false;            // 当前按下来自空格键 (等同左键)，由 keyup 而非 mouseup 结束
+  private pointer: { clientX: number; clientY: number } | null = null; // 最近一次鼠标位置，供空格键定位
   private isPanning = false;
   private lastX = -1;
   private lastY = -1;
@@ -239,9 +244,15 @@ export class CanvasPanel extends Panel {
         : null,
       boxSelect: this.boxSelect ? { rect: this.boxSelect.rect, maskAction: this.boxSelect.maskAction } : null,
       hover: this.hover && !this.isMouseDown ? { ...this.hover, alt: this.currentIsAlt } : null,
-      highlightedPaletteIndex: this.ctx.highlightedPaletteIndex,
+      highlightedPaletteIndex: this.ctx.highlightedPaletteIndex ?? this.shiftProbeIndex(),
       antsOffset: this.antsOffset,
     });
+  }
+
+  /** 悬停时按住 Shift：指向像素的色板索引 (与色板悬停的颜色探针同一种高亮) */
+  private shiftProbeIndex(): number | null {
+    if (!this.isShiftHeld || !this.hover || this.isMouseDown || this.vm.session.activeMode !== 'pixel') return null;
+    return this.vm.doc.pixelIndices[this.hover.y * 64 + this.hover.x];
   }
 
   private updateEmptyState(): void {
@@ -319,7 +330,7 @@ export class CanvasPanel extends Panel {
       }
     }, { passive: false });
 
-    // 中键或空格+左键拖拽平移视口
+    // 中键拖拽平移视口
     let panStartX = 0;
     let panStartY = 0;
     let scrollStartX = 0;
@@ -327,7 +338,7 @@ export class CanvasPanel extends Panel {
 
     viewport.addEventListener('mousedown', (e: MouseEvent) => {
       this.releaseControlFocus();
-      if (e.button === 1 || (e.button === 0 && this.isSpacePressed)) {
+      if (e.button === 1) {
         this.isPanning = true;
         panStartX = e.clientX;
         panStartY = e.clientY;
@@ -337,17 +348,7 @@ export class CanvasPanel extends Panel {
         e.preventDefault();
         return;
       }
-
-      // 选区工具在视口空白处按下：从画布外沿开始框选 (单击则取消选区)
-      const s = this.vm.session;
-      if (e.button === 0 && !this.isSpacePressed && s.isLoaded && s.activeTool === 'select' && e.target !== canvas) {
-        const [rawX, rawY] = this.getPixelCoordsRaw(e);
-        this.isMouseDown = true;
-        this.startBoxSelect(rawX, rawY, null);
-        this.lastX = rawX;
-        this.lastY = rawY;
-        e.preventDefault();
-      }
+      if (e.target !== canvas && this.onViewportMouseDown(e)) e.preventDefault();
     });
 
     window.addEventListener('mousemove', (e: MouseEvent) => {
@@ -358,18 +359,19 @@ export class CanvasPanel extends Panel {
     });
 
     window.addEventListener('mouseup', (e: MouseEvent) => {
-      if (this.isPanning && (e.button === 1 || e.button === 0)) {
+      if (this.isPanning && e.button === 1) {
         this.isPanning = false;
-        viewport.style.cursor = this.isSpacePressed ? 'grab' : '';
+        viewport.style.cursor = '';
       }
     });
 
-    // 空格抓手；Ctrl/Alt 在拖动选区时切换为复制；Alt 悬停显示吸管光标
+    // 空格等同左键；Shift 悬停同色高亮；Ctrl/Alt 在拖动选区时切换为复制；Alt 悬停显示吸管光标
     window.addEventListener('keydown', (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !this.isSpacePressed && !(e.target as HTMLElement)?.matches('input, textarea')) {
-        e.preventDefault();
-        this.isSpacePressed = true;
-        viewport.style.cursor = 'grab';
+      if (e.code === 'Space') this.onSpaceDown(e);
+      if (e.key === 'Shift') this.setShiftHeld(true);
+      if (e.key === 'Alt' && !this.isMouseDown) {
+        this.currentIsAlt = true;
+        this.markDirty();
       }
       if (e.key === 'Alt' || e.key === 'Control' || e.key === 'Meta') {
         if (this.moving) {
@@ -386,11 +388,19 @@ export class CanvasPanel extends Panel {
     });
 
     window.addEventListener('keyup', (e: KeyboardEvent) => {
-      if (e.code === 'Space') {
-        this.isSpacePressed = false;
-        if (!this.isPanning) viewport.style.cursor = '';
+      if (e.code === 'Space' && this.spacePress) {
+        this.spacePress = false;
+        this.onMouseUp(this.pointerInput(e));
+        this.onMouseMove(this.pointerInput(e)); // 恢复悬停线框与坐标信息
       }
-      if (e.key === 'Alt') this.updateCanvasCursor({ altKey: false });
+      if (e.key === 'Shift') this.setShiftHeld(false);
+      if (e.key === 'Alt') {
+        if (!this.isMouseDown) {
+          this.currentIsAlt = false;
+          this.markDirty();
+        }
+        this.updateCanvasCursor({ altKey: false });
+      }
       if (e.key === 'Control' || e.key === 'Meta' || e.key === 'Alt') {
         // 拖动选区过程中不重置复制锁存：避免松开鼠标前先松开 Ctrl 被误判为剪切移动
         if (!this.isMouseDown && !this.moving) {
@@ -401,10 +411,14 @@ export class CanvasPanel extends Panel {
       }
     });
 
-    // 窗口失焦：重置修饰键状态，避免空格抓手 / Alt 吸色死锁
+    // 窗口失焦：收不到 keyup，结束空格按下并重置修饰键状态，避免笔划 / Alt 吸色死锁
     window.addEventListener('blur', () => {
-      this.isSpacePressed = false;
+      if (this.spacePress) {
+        this.spacePress = false;
+        this.onMouseUp({ clientX: 0, clientY: 0, button: 0, altKey: false, ctrlKey: false, metaKey: false, shiftKey: false });
+      }
       this.currentIsAlt = false;
+      this.setShiftHeld(false);
       if (!this.isMouseDown && !this.moving) {
         this.isCopyMode = false;
         this.wasCopyTriggered = false;
@@ -418,15 +432,57 @@ export class CanvasPanel extends Panel {
     });
 
     canvas.addEventListener('mousedown', (e) => this.onCanvasMouseDown(e));
-    window.addEventListener('mousemove', (e) => this.onMouseMove(e));
-    window.addEventListener('mouseup', (e) => this.onMouseUp(e));
+    window.addEventListener('mousemove', (e) => {
+      this.pointer = { clientX: e.clientX, clientY: e.clientY };
+      this.onMouseMove(e);
+    });
+    window.addEventListener('mouseup', (e) => {
+      if (!this.spacePress) this.onMouseUp(e); // 空格按下期间点鼠标不结束笔划
+    });
   }
 
-  private onCanvasMouseDown(e: MouseEvent): void {
+  /** 以最近的鼠标位置与键盘事件的修饰键构造一次左键输入 */
+  private pointerInput(e: KeyboardEvent): PointerInput {
+    const p = this.pointer ?? { clientX: -1, clientY: -1 };
+    return { ...p, button: 0, altKey: e.altKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey, shiftKey: e.shiftKey };
+  }
+
+  /** 空格按下 = 在鼠标所在位置按下左键 (鼠标需在画布或视口空白处，且不被弹窗 / 浮动面板遮挡) */
+  private onSpaceDown(e: KeyboardEvent): void {
+    const target = e.target as HTMLElement | null;
+    if (target?.isContentEditable || target?.matches('input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=color]), textarea, select')) return;
+    e.preventDefault(); // 阻止页面滚动与按钮被空格触发
+    if (e.repeat || this.isMouseDown || !this.pointer) return;
+    const hit = document.elementFromPoint(this.pointer.clientX, this.pointer.clientY);
+    const input = this.pointerInput(e);
+    if (hit === this.displayCanvas) this.onCanvasMouseDown(input);
+    else if (hit && this.viewport.contains(hit)) this.onViewportMouseDown(input);
+    if (this.isMouseDown) this.spacePress = true;
+  }
+
+  private setShiftHeld(held: boolean): void {
+    if (this.isShiftHeld === held) return;
+    this.isShiftHeld = held;
+    this.markDirty();
+  }
+
+  /** 选区工具在视口空白处按下：从画布外沿开始框选 (单击则取消选区)。返回是否处理 */
+  private onViewportMouseDown(e: PointerInput): boolean {
+    const s = this.vm.session;
+    if (e.button !== 0 || this.isMouseDown || !s.isLoaded || s.activeMode !== 'pixel' || s.activeTool !== 'select') return false;
+    const [rawX, rawY] = this.getPixelCoordsRaw(e);
+    this.isMouseDown = true;
+    this.startBoxSelect(rawX, rawY, null);
+    this.lastX = rawX;
+    this.lastY = rawY;
+    return true;
+  }
+
+  private onCanvasMouseDown(e: PointerInput): void {
     this.releaseControlFocus();
     const s = this.vm.session;
-    if (!s.isLoaded) return;
-    if (this.isSpacePressed || (e.button !== 0 && e.button !== 2)) return; // 只处理左右键，空格平移时不绘制
+    if (!s.isLoaded || this.isMouseDown) return;
+    if (e.button !== 0 && e.button !== 2) return; // 只处理左右键
 
     this.ctx.setHighlightedPaletteIndex(null);
     this.hover = null;
@@ -483,13 +539,15 @@ export class CanvasPanel extends Panel {
     this.invalidate();
   }
 
-  private onMouseMove(e: MouseEvent): void {
+  private onMouseMove(e: PointerInput): void {
     if (!this.vm.session.isLoaded) return;
     const rect = this.displayCanvas.getBoundingClientRect();
     const inCanvas = e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
+    this.setShiftHeld(e.shiftKey);
 
     if (!this.isMouseDown) {
       // 悬停反馈
+      this.currentIsAlt = e.altKey;
       if (inCanvas) {
         const [x, y] = this.getPixelCoords(e);
         this.updateHoverInfo(x, y);
@@ -544,7 +602,7 @@ export class CanvasPanel extends Panel {
     this.lastY = y;
   }
 
-  private onMouseUp(e: MouseEvent): void {
+  private onMouseUp(e: PointerInput): void {
     if (!this.isMouseDown) return;
     this.isMouseDown = false;
     const lastCoords: [number, number] = [this.lastX, this.lastY];
@@ -625,20 +683,27 @@ export class CanvasPanel extends Panel {
   // ===================== 坐标、悬停信息与光标 =====================
 
   /** 屏幕坐标 → 未经边界限制的像素坐标 (可为负或大于 63) */
-  private getPixelCoordsRaw(e: MouseEvent): [number, number] {
+  private getPixelCoordsRaw(e: { clientX: number; clientY: number }): [number, number] {
     const rect = this.displayCanvas.getBoundingClientRect();
     return [Math.floor(((e.clientX - rect.left) * 64) / rect.width), Math.floor(((e.clientY - rect.top) * 64) / rect.height)];
   }
 
   /** 屏幕坐标 → 限制在 0~63 的像素坐标 */
-  private getPixelCoords(e: MouseEvent): [number, number] {
+  private getPixelCoords(e: { clientX: number; clientY: number }): [number, number] {
     const [rawX, rawY] = this.getPixelCoordsRaw(e);
     return [Math.max(0, Math.min(63, rawX)), Math.max(0, Math.min(63, rawY))];
   }
 
+  /** 悬停像素 (未按下时) 或拖动中的最后像素；不在画布上时为 null */
+  private pointerPixel(): [number, number] | null {
+    if (this.hover) return [this.hover.x, this.hover.y];
+    return this.lastX !== -1 && this.lastY !== -1 ? [this.lastX, this.lastY] : null;
+  }
+
   private pointerInSelection(): boolean {
     const s = this.vm.session;
-    return s.activeTool === 'select' && s.selection !== null && this.lastX !== -1 && this.lastY !== -1 && isInRect(this.lastX, this.lastY, s.selection);
+    const p = this.pointerPixel();
+    return s.activeMode === 'pixel' && s.activeTool === 'select' && s.selection !== null && p !== null && isInRect(p[0], p[1], s.selection);
   }
 
   /** 解除滑杆、按钮等控件焦点，避免键盘焦点滞留导致全局快捷键受阻 */
@@ -713,10 +778,6 @@ export class CanvasPanel extends Panel {
   private updateCanvasCursor(e?: { altKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; x?: number; y?: number }): void {
     const canvas = this.displayCanvas;
     const s = this.vm.session;
-    if (this.isSpacePressed) {
-      canvas.style.cursor = 'grab';
-      return;
-    }
     const cursors = getToolCursors();
 
     if (s.activeMode === 'mask') {
@@ -732,8 +793,7 @@ export class CanvasPanel extends Panel {
     }
 
     if (s.activeTool === 'select') {
-      const px = e?.x ?? this.lastX;
-      const py = e?.y ?? this.lastY;
+      const [px, py] = e?.x !== undefined && e?.y !== undefined ? [e.x, e.y] : this.pointerPixel() ?? [-1, -1];
       const isCopy = this.isCopyMode || this.wasCopyTriggered || e?.ctrlKey || e?.metaKey || e?.altKey;
       if (this.moving) {
         canvas.style.cursor = isCopy ? 'copy' : 'grabbing';
