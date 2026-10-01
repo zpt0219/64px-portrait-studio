@@ -7,6 +7,7 @@ import { TRANSPARENT_INDEX, MATCH_COLOR_PRESETS, paletteIndexLabel } from '../da
 import { PIXEL_COUNT } from '../core/pixelGrid';
 import { ViewModel } from '../app/viewModel';
 import { Panel } from './Panel';
+import { TOOL_ICONS } from './canvas/cursors';
 
 export class MaskToolsPanel extends Panel {
   private isAddPopoverOpen = false;
@@ -63,22 +64,22 @@ export class MaskToolsPanel extends Panel {
           <!-- 工具选择 (画笔 / 橡皮 / 油漆桶 / 框选) -->
           <div class="tool-picker-group mask-tool-grid">
             <button class="tool-tab-btn active" id="btn-mask-tool-pen" data-tool="pen" title="遮罩画笔 (快捷键: P)">
-              <span class="tool-btn-icon">✏️</span>
+              <span class="tool-btn-icon">${TOOL_ICONS.pen}</span>
               <span class="tool-btn-label">画笔</span>
               <kbd class="tool-btn-kbd">P</kbd>
             </button>
             <button class="tool-tab-btn" id="btn-mask-tool-eraser" data-tool="eraser" title="遮罩橡皮 (快捷键: E，擦除为背景 0)">
-              <span class="tool-btn-icon">🧼</span>
+              <span class="tool-btn-icon">${TOOL_ICONS.eraser}</span>
               <span class="tool-btn-label">橡皮</span>
               <kbd class="tool-btn-kbd">E</kbd>
             </button>
             <button class="tool-tab-btn" id="btn-mask-tool-bucket" data-tool="bucket" title="遮罩油漆桶 (快捷键: B，泛洪填充相邻同分区)">
-              <span class="tool-btn-icon">🪣</span>
+              <span class="tool-btn-icon">${TOOL_ICONS.bucket}</span>
               <span class="tool-btn-label">油漆桶</span>
               <kbd class="tool-btn-kbd">B</kbd>
             </button>
             <button class="tool-tab-btn" id="btn-mask-tool-select" data-tool="box_select" title="智能框选 (快捷键: S，框选匹配色组快速划入/剔除遮罩)">
-              <span class="tool-btn-icon">🔲</span>
+              <span class="tool-btn-icon">${TOOL_ICONS.select}</span>
               <span class="tool-btn-label">框选</span>
               <kbd class="tool-btn-kbd">S</kbd>
             </button>

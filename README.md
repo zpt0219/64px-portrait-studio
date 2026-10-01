@@ -74,7 +74,7 @@ src/
 │   │   ├── ContextBar.ts          # 画布上方的浮动上下文工具条
 │   │   ├── SelectionStatsPanel.ts # 选区颜色统计面板
 │   │   ├── overlays.ts            # 遮罩覆盖层、网格、高亮、走马灯等绘制函数
-│   │   └── cursors.ts             # emoji 工具光标
+│   │   └── cursors.ts             # Aseprite 风格 SVG 工具光标与矢量图标
 │   └── modals/
 │       ├── ReplaceColorModal.ts
 │       └── ConfirmModal.ts

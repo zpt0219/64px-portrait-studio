@@ -243,7 +243,7 @@ export class CanvasPanel extends Panel {
         ? { ...moving.floating, dx: moving.offset[0], dy: moving.offset[1], copy: this.isCopyMode || this.wasCopyTriggered }
         : null,
       boxSelect: this.boxSelect ? { rect: this.boxSelect.rect, maskAction: this.boxSelect.maskAction } : null,
-      hover: this.hover && !this.isMouseDown ? { ...this.hover, alt: this.currentIsAlt } : null,
+      hover: this.hover && !this.isMouseDown ? { ...this.hover, alt: this.currentIsAlt, shift: this.isShiftHeld } : null,
       highlightedPaletteIndex: this.ctx.highlightedPaletteIndex ?? this.shiftProbeIndex(),
       antsOffset: this.antsOffset,
     });
@@ -463,6 +463,12 @@ export class CanvasPanel extends Panel {
   private setShiftHeld(held: boolean): void {
     if (this.isShiftHeld === held) return;
     this.isShiftHeld = held;
+    if (held && this.hover && !this.isMouseDown && this.vm.session.activeMode === 'pixel') {
+      const probeIdx = this.vm.doc.pixelIndices[this.hover.y * 64 + this.hover.x];
+      this.ctx.setHighlightedPaletteIndex(probeIdx);
+    } else if (!held && this.vm.session.activeMode === 'pixel' && this.ctx.highlightedPaletteIndex !== null) {
+      this.ctx.setHighlightedPaletteIndex(null);
+    }
     this.markDirty();
   }
 
@@ -553,8 +559,17 @@ export class CanvasPanel extends Panel {
         this.updateHoverInfo(x, y);
         this.updateCanvasCursor({ altKey: e.altKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey, x, y });
         this.hover = { x, y };
+        if (this.isShiftHeld && this.vm.session.activeMode === 'pixel') {
+          const probeIdx = this.vm.doc.pixelIndices[y * 64 + x];
+          if (this.ctx.highlightedPaletteIndex !== probeIdx) {
+            this.ctx.setHighlightedPaletteIndex(probeIdx);
+          }
+        }
         this.markDirty();
       } else {
+        if (this.isShiftHeld && this.ctx.highlightedPaletteIndex !== null) {
+          this.ctx.setHighlightedPaletteIndex(null);
+        }
         this.clearHoverInfo();
       }
       return;
@@ -771,6 +786,9 @@ export class CanvasPanel extends Panel {
   private clearHoverInfo(): void {
     this.hoverInfoEl.innerHTML = `<span>X: -- Y: --</span>`;
     this.hover = null;
+    if (this.isShiftHeld && this.ctx.highlightedPaletteIndex !== null) {
+      this.ctx.setHighlightedPaletteIndex(null);
+    }
     this.markDirty();
   }
 

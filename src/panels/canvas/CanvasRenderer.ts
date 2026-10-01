@@ -23,8 +23,8 @@ export interface CanvasOverlay {
   floating: { origX: number; origY: number; patch: Patch; dx: number; dy: number; copy: boolean } | null;
   /** 正在拖拽的框选矩形；maskAction 非空表示遮罩模式的智能框选 */
   boxSelect: { rect: RectSelection; maskAction: 'add' | 'remove' | null } | null;
-  /** 鼠标悬停的像素 (未按下鼠标时)；alt 为按住 Alt 的吸管状态 */
-  hover: { x: number; y: number; alt: boolean } | null;
+  /** 鼠标悬停的像素 (未按下鼠标时)；alt 为按住 Alt 的吸管状态；shift 为 Shift 探针状态 */
+  hover: { x: number; y: number; alt: boolean; shift?: boolean } | null;
   highlightedPaletteIndex: number | null;
   antsOffset: number;
 }
@@ -103,7 +103,7 @@ export class CanvasRenderer {
     if (overlay.hover) this.drawHoverOutline(vm, overlay.hover);
   }
 
-  private drawHoverOutline(vm: ViewModel, hover: { x: number; y: number; alt: boolean }): void {
+  private drawHoverOutline(vm: ViewModel, hover: { x: number; y: number; alt: boolean; shift?: boolean }): void {
     const s = vm.session;
     if (s.activeMode === 'pixel' && s.activeTool === 'select') return;
     if (s.activeMode === 'mask' && s.activeMaskTool === 'box_select') return;
@@ -113,7 +113,10 @@ export class CanvasRenderer {
     let lineWidth = 1.5;
     ctx.save();
 
-    if (s.activeMode === 'mask') {
+    if (s.activeMode === 'pixel' && hover.shift) {
+      ctx.strokeStyle = '#38bdf8';
+      lineWidth = 2;
+    } else if (s.activeMode === 'mask') {
       if (s.activeMaskTool === 'bucket') {
         ctx.strokeStyle = '#c084fc';
       } else {

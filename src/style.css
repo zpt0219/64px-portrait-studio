@@ -1055,9 +1055,19 @@ body.is-resizing * {
 }
 
 .connectivity-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 11px;
   font-weight: 700;
   color: #c084fc;
+}
+
+.connectivity-title svg {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
 }
 
 .connectivity-tip {
@@ -1146,6 +1156,17 @@ body.is-resizing * {
   font-size: 12px;
   line-height: 1;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+}
+
+.tool-btn-icon svg {
+  display: block;
+  width: 14px;
+  height: 14px;
 }
 
 .tool-btn-label {
@@ -1550,6 +1571,50 @@ body.is-resizing * {
   color: #38bdf8;
   font-weight: 800;
   text-shadow: 0 1px 2px #000;
+}
+
+/* =========================================================================
+   色彩探针实时联动高亮 (Shift 同色探针聚焦高亮态)
+   ========================================================================= */
+
+.palette-families-container.has-probed-color .palette-chip:not(.is-probed),
+.hair-ramp-chips.has-probed-color .hair-chip:not(.is-probed) {
+  opacity: 0.28;
+  filter: grayscale(0.2) brightness(0.65);
+  transform: scale(0.96);
+  transition: opacity 0.12s ease, transform 0.12s ease, filter 0.12s ease;
+}
+
+.palette-chip.is-probed,
+.hair-chip.is-probed {
+  opacity: 1 !important;
+  filter: none !important;
+  transform: scale(1.18) !important;
+  outline: 2.5px solid #38bdf8 !important;
+  outline-offset: 2px !important;
+  border-color: #ffffff !important;
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.95), 0 0 28px rgba(56, 189, 248, 0.6) !important;
+  z-index: 30 !important;
+  animation: probe-chip-pulse 1.2s infinite ease-in-out;
+}
+
+.palette-chip.is-probed .chip-index,
+.hair-chip.is-probed .hair-chip-index {
+  color: #ffffff !important;
+  font-weight: 900 !important;
+  text-shadow: 0 0 4px #000, 0 0 8px #000 !important;
+  font-size: 11px !important;
+}
+
+@keyframes probe-chip-pulse {
+  0%, 100% {
+    box-shadow: 0 0 14px rgba(56, 189, 248, 0.9), 0 0 24px rgba(56, 189, 248, 0.5);
+    outline-color: #38bdf8;
+  }
+  50% {
+    box-shadow: 0 0 22px rgba(56, 189, 248, 1), 0 0 36px rgba(56, 189, 248, 0.85);
+    outline-color: #ffffff;
+  }
 }
 
 .panel-divider {

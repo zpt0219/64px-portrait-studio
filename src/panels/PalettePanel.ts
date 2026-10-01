@@ -8,6 +8,7 @@ import { findNearestColor } from '../core/colorUtils';
 import { ViewModel } from '../app/viewModel';
 import { EditorContext } from '../app/editorContext';
 import { Panel } from './Panel';
+import { TOOL_ICONS } from './canvas/cursors';
 
 export class PalettePanel extends Panel {
   private selectedHairRampKey: string = '01_black_黑';
@@ -18,6 +19,9 @@ export class PalettePanel extends Panel {
     this.markDirty();
   }
 
+  onContextChanged(): void {
+    this.applyHighlightClasses(this.ctx.highlightedPaletteIndex);
+  }
   onSessionChanged(): void {
     this.markDirty();
   }
@@ -57,27 +61,27 @@ export class PalettePanel extends Panel {
           <!-- 工具选择 (画笔 / 橡皮擦 / 油漆桶 / 吸管 / 矩形选区: 3 + 2 紧凑布局) -->
           <div class="tool-picker-group">
             <button class="tool-tab-btn active" id="btn-tool-pen" data-tool="pen" title="画笔工具 (快捷键: P)">
-              <span class="tool-btn-icon">✏️</span>
+              <span class="tool-btn-icon">${TOOL_ICONS.pen}</span>
               <span class="tool-btn-label">画笔</span>
               <kbd class="tool-btn-kbd">P</kbd>
             </button>
             <button class="tool-tab-btn" id="btn-tool-eraser" data-tool="eraser" title="橡皮擦 / 原生透明删除 (快捷键: E)">
-              <span class="tool-btn-icon">🧼</span>
+              <span class="tool-btn-icon">${TOOL_ICONS.eraser}</span>
               <span class="tool-btn-label">橡皮</span>
               <kbd class="tool-btn-kbd">E</kbd>
             </button>
             <button class="tool-tab-btn" id="btn-tool-bucket" data-tool="bucket" title="油漆桶工具 (快捷键: B / F，单点填充同色相邻区域)">
-              <span class="tool-btn-icon">🪣</span>
+              <span class="tool-btn-icon">${TOOL_ICONS.bucket}</span>
               <span class="tool-btn-label">油漆桶</span>
               <kbd class="tool-btn-kbd">B</kbd>
             </button>
             <button class="tool-tab-btn btn-span-half" id="btn-tool-eyedropper" data-tool="eyedropper" title="吸管取色 (快捷键: I，画布 Alt+点击)">
-              <span class="tool-btn-icon">🧪</span>
+              <span class="tool-btn-icon">${TOOL_ICONS.eyedropper}</span>
               <span class="tool-btn-label">吸管</span>
               <kbd class="tool-btn-kbd">I</kbd>
             </button>
             <button class="tool-tab-btn btn-span-half" id="btn-tool-select" data-tool="select" title="矩形选区 (快捷键: M / S，框选平移，Ctrl 复制)">
-              <span class="tool-btn-icon">⬚</span>
+              <span class="tool-btn-icon">${TOOL_ICONS.select}</span>
               <span class="tool-btn-label">选区</span>
               <kbd class="tool-btn-kbd">M</kbd>
             </button>
@@ -86,7 +90,7 @@ export class PalettePanel extends Panel {
           <!-- 油漆桶邻域连通选项 (默认 8 邻居，可选 4 邻居) -->
           <div class="bucket-connectivity-panel" id="bucket-connectivity-panel" style="display: none;">
             <div class="connectivity-header">
-              <span class="connectivity-title">🪣 油漆桶连通邻域:</span>
+              <span class="connectivity-title">${TOOL_ICONS.bucket} 油漆桶连通邻域:</span>
               <span class="connectivity-tip" id="connectivity-tip">8 邻居 (含对角线)</span>
             </div>
             <div class="connectivity-pills">
@@ -405,6 +409,8 @@ export class PalettePanel extends Panel {
         familiesContainer.appendChild(row);
       });
     }
+
+    this.applyHighlightClasses(this.ctx.highlightedPaletteIndex);
   }
 
   /**
@@ -453,5 +459,34 @@ export class PalettePanel extends Panel {
 
       container.appendChild(chip);
     });
+  }
+
+  /**
+   * 探针联动：设置/清除左侧 36 色色板与独立发色卡中对应的高亮色块
+   * @param index 调色板索引 (0~35 或 255 代表透明色)；传入 null 则清除高亮
+   */
+  private applyHighlightClasses(index: number | null): void {
+    const familiesContainer = this.container.querySelector('#palette-families-container');
+    const hairContainer = this.container.querySelector('#hair-ramp-chips');
+
+    // 清除旧高亮
+    this.container.querySelectorAll('.palette-chip.is-probed, .hair-chip.is-probed').forEach((el) => {
+      el.classList.remove('is-probed');
+    });
+
+    if (index !== null) {
+      familiesContainer?.classList.add('has-probed-color');
+      hairContainer?.classList.add('has-probed-color');
+
+      const matchingChips = this.container.querySelectorAll(
+        `.palette-chip[data-index="${index}"], .hair-chip[data-index="${index}"]`
+      );
+      matchingChips.forEach((chip) => {
+        chip.classList.add('is-probed');
+      });
+    } else {
+      familiesContainer?.classList.remove('has-probed-color');
+      hairContainer?.classList.remove('has-probed-color');
+    }
   }
 }
