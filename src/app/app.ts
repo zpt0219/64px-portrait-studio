@@ -4,7 +4,11 @@
  */
 
 import { ZONE_CONFIG, ALL_ZONES, MaskTool } from '../types';
-import { hasSavedProject } from '../core/storage';
+import { AutosaveService, KeyValueStore } from './services/AutosaveService';
+import { createBrowserStorage } from './adapters/BrowserStorage';
+import { exportProjectPng, exportProjectZip, exportMaskPng } from './browser/projectArchive';
+import { importProjectZip } from '../core/projectArchive';
+import { decodeImageFile } from './browser/imageDecode';
 import { Header } from '../panels/Header';
 import { PalettePanel } from '../panels/PalettePanel';
 import { MaskPanel } from '../panels/MaskPanel';
@@ -21,7 +25,8 @@ import { Toaster } from './toaster';
 import { ImportCoordinator } from './controllers/ImportCoordinator';
 
 export class App implements StudioEvents {
-  readonly vm = new ViewModel();
+  readonly vm: ViewModel;
+  private readonly browserStorage: KeyValueStore;
   private readonly ctx = new EditorContext(() => this.vm.onContextChanged());
   private readonly importCoordinator: ImportCoordinator;
   private header!: Header;
@@ -40,11 +45,16 @@ export class App implements StudioEvents {
   private isDisposed = false;
 
   constructor() {
+    this.browserStorage = createBrowserStorage();
+    this.vm = new ViewModel({
+      autosave: new AutosaveService(this.browserStorage),
+      exports: { exportPng: exportProjectPng, exportZip: exportProjectZip, exportMaskPng },
+    });
     this.importCoordinator = new ImportCoordinator({
       loadProject: (data) => this.vm.loadProject(data),
       importImage: (image) => this.vm.importImage(image),
       notify: (msg, lvl) => this.vm.notify(msg, lvl),
-    });
+    }, { importProjectZip, decodeImageFile });
 
     this.buildDomLayout();
     this.createPanels();
@@ -59,7 +69,7 @@ export class App implements StudioEvents {
       }
     }, { signal: this.abortController.signal });
 
-    if (hasSavedProject()) {
+    if (this.vm.hasSavedProject()) {
       this.vm.notify('检测到上次未完成的编辑进度，可点击中心卡片快速恢复', 'info');
     }
   }
@@ -185,7 +195,7 @@ export class App implements StudioEvents {
     // 恢复本地存储的列宽偏好
     const savedWidth = (key: string, min: number, max: number): number | null => {
       try {
-        const val = localStorage.getItem(key);
+        const val = this.browserStorage.getItem(key);
         const w = parseInt(val ?? '', 10);
         return !isNaN(w) && w >= min && w <= max ? w : null;
       } catch {
@@ -220,9 +230,7 @@ export class App implements StudioEvents {
           splitter.classList.remove('is-active');
           document.body.classList.remove('is-resizing');
           try {
-            if (typeof localStorage !== 'undefined') {
-              localStorage.setItem(storageKey, pane.offsetWidth.toString());
-            }
+            this.browserStorage.setItem(storageKey, pane.offsetWidth.toString());
           } catch {
             // ignore storage error
           }

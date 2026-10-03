@@ -1,32 +1,26 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { ViewModel } from '../src/app/viewModel';
 import { App } from '../src/app/app';
 import { SemanticZone } from '../src/types';
 import { createEmptyDocument } from '../src/model/document';
 import { documentToProjectData, base64ToUint8Array } from '../src/core/projectData';
-import { setStorageAdapter, resetStorageAdapter, cancelDebouncedSave } from '../src/core/storage';
+import { AutosaveService, KeyValueStore } from '../src/app/services/AutosaveService';
+import { createMemoryStore } from './helpers/viewModelFixture';
+import { createBrowserStorage } from '../src/app/adapters/BrowserStorage';
 import { floodFillMask, FULL_CANVAS } from '../src/core/editOps';
 import { ConfirmModal } from '../src/panels/modals/ConfirmModal';
 
 describe('Review Findings (R1–R7) Regression Suite', () => {
-  beforeEach(() => {
-    resetStorageAdapter();
-    cancelDebouncedSave();
-  });
-
   afterEach(() => {
-    resetStorageAdapter();
-    cancelDebouncedSave();
     vi.restoreAllMocks();
   });
 
-  function createLoadedVm(pixel0 = 5, mask0 = SemanticZone.Hair): ViewModel {
+  function createLoadedVm(pixel0 = 5, mask0 = SemanticZone.Hair, store: KeyValueStore = createMemoryStore()): ViewModel {
     const doc = createEmptyDocument();
     doc.pixelIndices[0] = pixel0;
     doc.semanticMask[0] = mask0;
-    const vm = new ViewModel();
+    const vm = new ViewModel({ autosave: new AutosaveService(store) });
     vm.loadProject(documentToProjectData(doc));
-    cancelDebouncedSave();
     return vm;
   }
 
@@ -155,6 +149,7 @@ describe('Review Findings (R1–R7) Regression Suite', () => {
         try {
           const mockAppCtx = {
             abortController: new AbortController(),
+            browserStorage: createBrowserStorage(() => localStorage),
           };
           (App.prototype as any).setupSplitterDragging.call(mockAppCtx);
         } catch {
@@ -223,7 +218,7 @@ describe('Review Findings (R1–R7) Regression Suite', () => {
   describe('R5: Autosave Instance Isolation', () => {
     it('R5.1: multiple ViewModel instances maintain isolated autosave timers and data', () => {
       const savedDocs: number[] = [];
-      setStorageAdapter({
+      const store: KeyValueStore = {
         getItem: () => null,
         setItem: (_k: string, v: string) => {
           const parsed = JSON.parse(v);
@@ -231,11 +226,10 @@ describe('Review Findings (R1–R7) Regression Suite', () => {
           savedDocs.push(px);
         },
         removeItem: () => {},
-      });
+      };
 
-      const vmA = createLoadedVm(5);
-      const vmB = createLoadedVm(8);
-      cancelDebouncedSave();
+      const vmA = createLoadedVm(5, SemanticZone.Hair, store);
+      const vmB = createLoadedVm(8, SemanticZone.Hair, store);
 
       const statusA: string[] = [];
       const statusB: string[] = [];

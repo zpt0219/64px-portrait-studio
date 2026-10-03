@@ -1,8 +1,8 @@
-import { exportProjectPng, exportProjectZip, exportMaskPng } from '../../core/zipExporter';
+import { ExportBackend } from '../ports';
 import { PortraitDocument } from '../../model/document';
 import { ToastLevel } from '../../types';
 
-export interface ExportPorts {
+export interface ExportPorts extends ExportBackend {
   isLoaded(): boolean;
   hasHairDraft(): boolean;
   hairDraftName(): string;
@@ -41,7 +41,7 @@ export class ExportService {
             return;
           }
           try {
-            await exportProjectPng(this.ports.captureDocument());
+            await this.ports.exportPng(this.ports.captureDocument());
             this.ports.notify('🎉 PNG 导出成功！', 'success');
           } catch (err: unknown) {
             const message = err instanceof Error ? err.message : String(err);
@@ -59,7 +59,7 @@ export class ExportService {
   async exportMaskPng(scale = 1): Promise<void> {
     if (!this.ports.isLoaded()) return;
     try {
-      await exportMaskPng(this.ports.captureDocument(), scale);
+      await this.ports.exportMaskPng(this.ports.captureDocument(), scale);
       this.ports.notify('🎉 PNG 导出成功！', 'success');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -84,7 +84,7 @@ export class ExportService {
           }
           try {
             this.ports.notify('正在打包工程 ZIP...', 'info');
-            await exportProjectZip(this.ports.captureDocument());
+            await this.ports.exportZip(this.ports.captureDocument());
             this.ports.notify('🎉 成功导出完整工程 ZIP 包！', 'success');
           } catch (err) {
             console.error('Export zip failed:', err);

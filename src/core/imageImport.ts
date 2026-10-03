@@ -1,10 +1,10 @@
-import { SemanticZone, DecodedImage, ToastLevel } from '../../types';
-import { TRANSPARENT_INDEX } from '../../data/palette';
-import { Rgb, hexToRgb, quantizeToPalette } from '../../core/colorUtils';
-import { computeSemanticMask } from '../../core/segmentation';
-import { PIXEL_COUNT } from '../../core/pixelGrid';
-import { detectHairPreset } from '../../core/recolorEngine';
-import { PortraitDocument } from '../../model/document';
+import { SemanticZone, DecodedImage } from '../types';
+import { TRANSPARENT_INDEX } from '../data/palette';
+import { Rgb, hexToRgb, quantizeToPalette } from './colorUtils';
+import { computeSemanticMask } from './segmentation';
+import { PIXEL_COUNT } from './pixelGrid';
+import { detectHairPreset } from './recolorEngine';
+import { PortraitDocument } from '../model/document';
 
 export interface ImageImportResult {
   document: PortraitDocument;
@@ -43,8 +43,7 @@ export function processDecodedImage(image: DecodedImage, palette: string[]): Ima
   let mask: Uint8Array;
   try {
     mask = computeSemanticMask(rgbPixels);
-  } catch (err) {
-    console.warn('Semantic analysis fallback to safe foreground:', err);
+  } catch {
     warnings.push('⚠️ 人脸特征识别未达标，请在遮罩模式手动涂抹头发区域');
     const corner = rgbPixels[0];
     const isCornerBg = (p: Rgb) =>
@@ -80,23 +79,4 @@ export function processDecodedImage(image: DecodedImage, palette: string[]): Ima
     importInfo: { origW, origH, targetW, targetH, message },
     warnings,
   };
-}
-
-export interface ImageImportHost {
-  getPalette(): string[];
-  applyImportResult(result: ImageImportResult): void;
-  notify(message: string, level?: ToastLevel): void;
-}
-
-export class ImageImportPipeline {
-  constructor(private readonly host: ImageImportHost) {}
-
-  importImage(image: DecodedImage): void {
-    const result = processDecodedImage(image, this.host.getPalette());
-    this.host.applyImportResult(result);
-    for (const w of result.warnings) {
-      this.host.notify(w, 'warning');
-    }
-    this.host.notify(result.importInfo.message, 'success');
-  }
 }

@@ -1,6 +1,4 @@
 import { ProjectData, DecodedImage, ToastLevel } from '../../types';
-import { importProjectZip } from '../../core/zipExporter';
-import { decodeImageFile } from '../imageDecode';
 
 export interface ImportCoordinatorHost {
   loadProject(data: ProjectData): void;
@@ -18,7 +16,7 @@ export class ImportCoordinator {
 
   constructor(
     private readonly host: ImportCoordinatorHost,
-    private readonly loaders: ImportLoaders = { importProjectZip, decodeImageFile }
+    private readonly loaders: ImportLoaders
   ) {}
 
   cancelPending(): void {

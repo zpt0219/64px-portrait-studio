@@ -2,7 +2,7 @@
  * 把用户选择的图片文件解码并缩放居中到 64×64 (需要 DOM 的 Image / canvas，所以不放在 ViewModel)
  */
 
-import { DecodedImage } from './viewModel';
+import { DecodedImage } from '../../types';
 
 function guessMimeType(file: File): string {
   if (file.type) return file.type;

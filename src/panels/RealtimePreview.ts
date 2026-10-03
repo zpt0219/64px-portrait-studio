@@ -2,7 +2,7 @@
  * 画中画实时预览：1×~4× 原寸预览，可切换 GBA 液晶 / 棋盘格背景，可拖拽、可最小化
  */
 
-import { drawIndexedPixels } from '../core/pixelRender';
+import { drawIndexedPixels } from '../app/browser/pixelCanvas';
 import { ViewModel } from '../app/viewModel';
 import { EditorContext } from '../app/editorContext';
 import { Panel } from './Panel';

@@ -2,10 +2,9 @@
  * 色板索引像素与分区遮罩的 Canvas 渲染工具
  */
 
-import { SemanticZone, ZONE_CONFIG, ALL_ZONES } from '../types';
-import { TRANSPARENT_INDEX } from '../data/palette';
-import { Rgb, hexToRgb } from './colorUtils';
-import { IMAGE_WIDTH, IMAGE_HEIGHT, PIXEL_COUNT } from './pixelGrid';
+import { TRANSPARENT_INDEX } from '../../data/palette';
+import { hexToRgb } from '../../core/colorUtils';
+import { IMAGE_WIDTH, IMAGE_HEIGHT, PIXEL_COUNT } from '../../core/pixelGrid';
 
 /** 把 64×64 色板索引写入 ctx 左上角 (透明索引写为全透明) */
 export function drawIndexedPixels(ctx: CanvasRenderingContext2D, indices: Uint8Array, palette: string[]): void {
@@ -20,15 +19,6 @@ export function drawIndexedPixels(ctx: CanvasRenderingContext2D, indices: Uint8A
     data.set([rgb[0], rgb[1], rgb[2], 255], i * 4);
   }
   ctx.putImageData(imgData, 0, 0);
-}
-
-/** 各分区的 RGB 配色；背景色因用途不同 (画布覆盖层 / 导出遮罩) 由调用方指定 */
-export function zoneRgbTable(backgroundRgb: Rgb): Record<SemanticZone, Rgb> {
-  const table = {} as Record<SemanticZone, Rgb>;
-  for (const zone of ALL_ZONES) {
-    table[zone] = zone === SemanticZone.Background ? backgroundRgb : hexToRgb(ZONE_CONFIG[zone].color);
-  }
-  return table;
 }
 
 /** 新建 64×64 canvas 并用 paint 绘制，scale > 1 时最近邻放大 */

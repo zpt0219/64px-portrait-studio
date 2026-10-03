@@ -1,9 +1,9 @@
+import { importProjectZip } from '../src/core/projectArchive';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import JSZip from 'jszip';
 import {
   generateProjectZipBlob,
-  importProjectZip,
-} from '../src/core/zipExporter';
+} from '../src/app/browser/projectArchive';
 import { base64ToUint8Array } from '../src/core/projectData';
 import { cloneDocument } from '../src/model/document';
 import { createValidDocument, VALID_HAIR_PRESET_KEYS } from './helpers/documentFixture';

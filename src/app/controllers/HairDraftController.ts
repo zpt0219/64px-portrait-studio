@@ -6,7 +6,7 @@ import { PortraitDocument } from '../../model/document';
 import { EditorSession } from '../../model/session';
 import { Command } from '../../command/command';
 import { SetHairPresetCommand, CommitHairRecolorCommand } from '../../command/paletteCommands';
-import type { PromptOptions } from '../viewModel';
+import type { PromptOptions } from '../ports';
 
 export interface HairDraftHost {
   getDoc(): PortraitDocument;

@@ -1,6 +1,6 @@
 # 实施进度与审查返工记录
 
-> **二次复查后的当前状态（2026-10-03）：**此前 142 测试记录属于 Gemini 返工阶段。Codex 随后补充发现并直接修复存储误报、旧确认挂起、手势边界和弹窗输入等遗漏。当前为 **21 个文件、159 个测试通过**，两套类型检查、build、diff-check 通过。已做部分真实浏览器检查及实际 ZIP 内 11 张 PNG 逐像素校验。详见 [二次复查与修复记录](GEMINI_FOLLOWUP_2026-10-03.md)。下方历史表中 T07“完成”应修正为“部分完成”：完整 browser adapter 迁移仍未完成，不能据此宣称 T00–T11 全量验收。
+> **当前状态（2026-10-03，T07 后续迁移）：**Codex 已完成浏览器适配器迁移。当前 **23 个测试文件、164 个测试通过**，两套类型检查、build、diff-check 通过。App 显式注入浏览器存储、解码与导出；核心层及 ViewModel 完整本地依赖图不再含 DOM/Canvas 实现。真实浏览器中完成旧工程导入、48×48 图片导入、ZIP/PNG 下载、刷新后暂存恢复；两组新旧 ZIP 的 12 张 PNG 解码像素一致。详见 [T07 迁移验收](T07_BROWSER_ADAPTER_MIGRATION.md)。以下 R1–R7 与自动化记录保留为 Gemini 返工阶段的历史证据；历史“未执行”说明不代表本轮状态。
 
 ## 基线与环境
 - 基线 commit：`32280f836e1ab81a24a3d4da6c0eae6fd0901fa8`
@@ -32,7 +32,7 @@
 | T04 | 活动笔划手势事务 (R1) | 完成 | `tests/reviewFixes.test.ts`, `tests/gestureHistory.test.ts` | 真实鼠标拖拽与画布物理渲染未执行 |
 | T05 | 导出控制器与代数校验 (R2) | 完成 | `tests/pngExport.test.ts`, `tests/zipExporter.test.ts`, `tests/reviewFixes.test.ts` | 真实浏览器中 ZIP 解压与实际 PNG 解码未执行 |
 | T06 | 实例级自动保存与持久化 (R5) | 完成 | `tests/storage.test.ts`, `tests/reviewFixes.test.ts` | 真实浏览器 Tab 关闭/崩溃退出未执行 |
-| T07 | 控制器窄端口解耦与服务化 | 完成 | `src/app/controllers/*`, 纯端口对接 | 外部 Canvas/DOM 替身注入，非真实 DOM 渲染 |
+| T07 | 控制器窄端口与浏览器适配器迁移 | 完成 | `tests/adapterBoundary.test.ts`、`tests/imageImportFallback.test.ts`、存储/导出回归 | 真实浏览器导入、导出与新旧解码像素对照已执行；详见本轮记录 |
 | T08 | 连续导入隔离与弹窗焦点 (R7) | 完成 | `tests/importCoordinator.test.ts`, `tests/reviewFixes.test.ts` | 真实浏览器键盘 Tab/Shift+Tab 物理按键未执行 |
 | T09 | 统一生命周期与 Dispose (R6) | 完成 | `tests/lifecycle.test.ts`, `tests/reviewFixes.test.ts` | — |
 | T10 | DOM 局部渲染优化与节流 | 完成 | `tests/domOptimization.test.ts` | 真实高刷屏 60fps 帧率未实测 |
@@ -40,7 +40,7 @@
 
 ---
 
-## 自动化测试与构建验收记录
+## Gemini 返工阶段的自动化测试与构建记录（历史）
 
 1. **类型检查 (`npm run typecheck`)**：
    - 结果：通过（退出码 0，无任何 TypeScript 编译错误）
@@ -66,7 +66,7 @@
 
 ---
 
-## 边界与未执行项真实说明 (诚信声明)
+## Gemini 返工阶段的未执行项（历史）
 
 1. **真实浏览器端到端冒烟**：当前环境未启动真实无头浏览器（如 Playwright/Puppeteer），所有弹窗聚焦、Tab 键循环、拖拽事件均为基于 JSDOM / Node DOM 替身与事件模拟的单元/集成断言，未执行真实像素渲染与物理输入。
 2. **真实 ZIP 导出与 PNG 解码**：`tests/zipExporter.test.ts` 断言通过 JSZip 内存结构与 Canvas 绘制输入快照验证，未在真实浏览器中触发底层文件下载或解码校验二进制图像数据。

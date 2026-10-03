@@ -5,7 +5,7 @@
 
 import { ZONE_CONFIG, RectSelection } from '../../types';
 import { Patch } from '../../core/editOps';
-import { drawIndexedPixels } from '../../core/pixelRender';
+import { drawIndexedPixels } from '../../app/browser/pixelCanvas';
 import { brushRect } from '../../command/pixelCommands';
 import { ViewModel } from '../../app/viewModel';
 import {

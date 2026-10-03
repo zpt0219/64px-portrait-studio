@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { processDecodedImage } from '../src/app/controllers/ImageImportPipeline';
+import { processDecodedImage } from '../src/core/imageImport';
 import {
   validateProjectData,
   documentToProjectData,

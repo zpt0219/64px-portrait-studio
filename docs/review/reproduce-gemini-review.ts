@@ -8,15 +8,16 @@ import { ViewModel } from '../../src/app/viewModel';
 import { SemanticZone } from '../../src/types';
 import { createEmptyDocument } from '../../src/model/document';
 import { documentToProjectData, base64ToUint8Array } from '../../src/core/projectData';
-import { setStorageAdapter, cancelDebouncedSave } from '../../src/core/storage';
+import { AutosaveService } from '../../src/app/services/AutosaveService';
+import { createBrowserStorage } from '../../src/app/adapters/BrowserStorage';
 import { floodFillMask, FULL_CANVAS } from '../../src/core/editOps';
 import { App } from '../../src/app/app';
 import { ConfirmModal } from '../../src/panels/modals/ConfirmModal';
 const reports: unknown[]=[];
 const report=(id:string, detail:unknown)=>reports.push({id,detail});
 let saves:string[]=[];
-setStorageAdapter({getItem:()=>null,setItem:(_k,v)=>saves.push(v),removeItem:()=>{}});
-function loaded(pixel=5) { const doc=createEmptyDocument();doc.pixelIndices[0]=pixel;doc.semanticMask[0]=SemanticZone.Hair;const vm=new ViewModel();vm.loadProject(documentToProjectData(doc));cancelDebouncedSave();return vm; }
+const store = {getItem:()=>null,setItem:(_k: string,v: string)=>saves.push(v),removeItem:()=>{}};
+function loaded(pixel=5) { const doc=createEmptyDocument();doc.pixelIndices[0]=pixel;doc.semanticMask[0]=SemanticZone.Hair;const vm=new ViewModel({autosave:new AutosaveService(store)});vm.loadProject(documentToProjectData(doc));return vm; }
 {
  const vm=loaded(255);vm.selectPaletteIndex(1);vm.beginStroke(0,false);vm.strokeAt(0,0);vm.endStroke();
  vm.selectPaletteIndex(2);vm.beginStroke(0,false);vm.strokeAt(1,0);vm.undo();const afterUndo=[...vm.doc.pixelIndices.slice(0,3)];vm.strokeAt(2,0);vm.endStroke();vm.undo();
@@ -34,7 +35,7 @@ function loaded(pixel=5) { const doc=createEmptyDocument();doc.pixelIndices[0]=p
  const vm=loaded();vm.dispose();const before=vm.doc.palette[0];vm.setPaletteColor(0,'#123456');report('disposed-palette',{before,after:vm.doc.palette[0]});
 }
 {
- saves=[];const a=loaded(5),b=loaded(8);cancelDebouncedSave();const statusA:string[]=[],statusB:string[]=[];a.registerListener({onSaveStatus:s=>statusA.push(s)});b.registerListener({onSaveStatus:s=>statusB.push(s)});
+ saves=[];const a=loaded(5),b=loaded(8);const statusA:string[]=[],statusB:string[]=[];a.registerListener({onSaveStatus:s=>statusA.push(s)});b.registerListener({onSaveStatus:s=>statusB.push(s)});
  a.setPaletteColor(0,'#111111');b.setPaletteColor(0,'#222222');a.dispose();report('global-autosave',{savedPixels:saves.map(s=>base64ToUint8Array(JSON.parse(s).pixels)[0]),statusA,statusB});b.dispose();
 }
 {
@@ -45,7 +46,7 @@ function loaded(pixel=5) { const doc=createEmptyDocument();doc.pixelIndices[0]=p
  globalThis.document={createElement:()=>node(),getElementById:()=>node(),body:node()} as any;
  let dismissed=0;const modal=new ConfirmModal(node() as any);modal.show({title:'old',message:'old',buttons:[],onDismiss:()=>dismissed++});modal.show({title:'new',message:'new',buttons:[]});report('modal-replaced',{dismissed,expectedDismissed:1});modal.dispose();
  Object.defineProperty(globalThis,'localStorage',{configurable:true,get(){throw new DOMException('Blocked','SecurityError');}});
- try {(App.prototype as any).setupSplitterDragging.call({abortController:new AbortController()});report('storage-startup',{throws:false});}catch(e:any){report('storage-startup',{throws:true,name:e.name});}
+ try {(App.prototype as any).setupSplitterDragging.call({abortController:new AbortController(),browserStorage:createBrowserStorage(()=>localStorage)});report('storage-startup',{throws:false});}catch(e:any){report('storage-startup',{throws:true,name:e.name});}
  delete (globalThis as any).localStorage;
 }
-cancelDebouncedSave();console.log(JSON.stringify(reports,null,2));
+console.log(JSON.stringify(reports,null,2));

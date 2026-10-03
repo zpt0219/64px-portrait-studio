@@ -1,11 +1,13 @@
+import type { ViewModel } from '../src/app/viewModel';
+import { createTestViewModel } from './helpers/viewModelFixture';
 import { describe, it, expect } from 'vitest';
-import { ViewModel, PromptOptions } from '../src/app/viewModel';
+import { PromptOptions } from '../src/app/ports';
 import { SemanticZone, HairPresetKey } from '../src/types';
 import { assertDocumentInvariant } from './helpers/documentFixture';
 
 describe('Mode Switching and Mask Visibility', () => {
   it('switches between pixel and mask modes via setMode', () => {
-    const vm = new ViewModel();
+    const vm = createTestViewModel();
     expect(vm.session.activeMode).toBe('pixel');
 
     vm.setMode('mask');
@@ -16,7 +18,7 @@ describe('Mode Switching and Mask Visibility', () => {
   });
 
   it('automatically switches to pixel mode when all masks are hidden', () => {
-    const vm = new ViewModel();
+    const vm = createTestViewModel();
     // Enter mask mode
     vm.setMode('mask');
     expect(vm.session.activeMode).toBe('mask');
@@ -31,7 +33,7 @@ describe('Mode Switching and Mask Visibility', () => {
   });
 
   it('automatically switches to pixel mode when unchecking the last visible mask zone', () => {
-    const vm = new ViewModel();
+    const vm = createTestViewModel();
     vm.setMode('mask');
 
     // Only keep Hair visible
@@ -47,7 +49,7 @@ describe('Mode Switching and Mask Visibility', () => {
   });
 
   it('does not force mask mode when toggling mask visibility from pixel mode', () => {
-    const vm = new ViewModel();
+    const vm = createTestViewModel();
     expect(vm.session.activeMode).toBe('pixel');
 
     // User is drawing in pixel mode and wants to toggle Hair mask overlay on
@@ -59,7 +61,7 @@ describe('Mode Switching and Mask Visibility', () => {
   });
 
   it('enters mask mode when selecting a mask zone brush and selects ONLY that zone', () => {
-    const vm = new ViewModel();
+    const vm = createTestViewModel();
     expect(vm.session.activeMode).toBe('pixel');
 
     vm.setActiveZone(SemanticZone.Hair);
@@ -96,7 +98,7 @@ describe('Mode Switching and Mask Visibility', () => {
     }
 
     it('prompts confirmation modal before switching to pixel mode and commits recolor upon confirm', () => {
-      const vm = new ViewModel();
+      const vm = createTestViewModel();
       setupHairDraft(vm, '06_silver_银白');
 
       const prompt = createPromptCapture();
@@ -123,7 +125,7 @@ describe('Mode Switching and Mask Visibility', () => {
     });
 
     it('discards hair recolor when user clicks discard and enters pixel mode', () => {
-      const vm = new ViewModel();
+      const vm = createTestViewModel();
       setupHairDraft(vm, '06_silver_银白');
       const originalPreset = vm.doc.currentHairPreset;
 
@@ -141,7 +143,7 @@ describe('Mode Switching and Mask Visibility', () => {
     });
 
     it('stays in mask mode when user clicks continue testing', () => {
-      const vm = new ViewModel();
+      const vm = createTestViewModel();
       setupHairDraft(vm, '06_silver_银白');
 
       const prompt = createPromptCapture();
@@ -157,7 +159,7 @@ describe('Mode Switching and Mask Visibility', () => {
     });
 
     it('prompts confirmation when clearing all mask visibility with active hair draft', () => {
-      const vm = new ViewModel();
+      const vm = createTestViewModel();
       setupHairDraft(vm, '06_silver_银白');
 
       const prompt = createPromptCapture();
@@ -174,7 +176,7 @@ describe('Mode Switching and Mask Visibility', () => {
     });
 
     it('prompts confirmation when unchecking last visible mask zone with active hair draft', () => {
-      const vm = new ViewModel();
+      const vm = createTestViewModel();
       setupHairDraft(vm, '06_silver_银白');
       vm.patchSession({ visibleMaskZones: [SemanticZone.Hair] });
 
@@ -192,7 +194,7 @@ describe('Mode Switching and Mask Visibility', () => {
     });
 
     it('prompts confirmation when selecting palette color with active hair draft', () => {
-      const vm = new ViewModel();
+      const vm = createTestViewModel();
       setupHairDraft(vm, '06_silver_银白');
 
       const prompt = createPromptCapture();
@@ -212,7 +214,7 @@ describe('Mode Switching and Mask Visibility', () => {
 
   describe('Hair Presets Visibility Condition', () => {
     it('defaults to not selecting hair mask by default (Background zone)', () => {
-      const vm = new ViewModel();
+      const vm = createTestViewModel();
       expect(vm.session.activeZone).toBe(SemanticZone.Background);
       expect(vm.session.visibleMaskZones).not.toContain(SemanticZone.Hair);
 
@@ -222,7 +224,7 @@ describe('Mode Switching and Mask Visibility', () => {
     });
 
     it('selects hair mask only when activeZone is Hair and Hair is in visibleMaskZones', () => {
-      const vm = new ViewModel();
+      const vm = createTestViewModel();
       vm.setMode('mask');
 
       // Click Hair zone card

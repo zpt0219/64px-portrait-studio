@@ -6,7 +6,6 @@
 
 import { SemanticZone, ZONE_CONFIG, RectSelection } from '../../types';
 import { TRANSPARENT_INDEX } from '../../data/palette';
-import { hasSavedProject } from '../../core/storage';
 import { EditorSession, clampToCanvas, isInRect } from '../../model/session';
 import { ViewModel } from '../../app/viewModel';
 import { EditorContext } from '../../app/editorContext';
@@ -270,7 +269,7 @@ export class CanvasPanel extends Panel {
     this.displayCanvas.style.display = loaded ? 'block' : 'none';
     if (!loaded) {
       const banner = this.container.querySelector('#restore-banner') as HTMLElement;
-      banner.style.display = hasSavedProject() ? 'flex' : 'none';
+      banner.style.display = this.vm.hasSavedProject() ? 'flex' : 'none';
     }
   }
 

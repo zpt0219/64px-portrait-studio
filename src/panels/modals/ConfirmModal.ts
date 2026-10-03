@@ -2,7 +2,7 @@
  * 通用多按钮确认对话框
  */
 
-import { PromptOptions } from '../../app/viewModel';
+import { PromptOptions } from '../../app/ports';
 
 export class ConfirmModal {
   private container: HTMLElement;

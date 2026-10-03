@@ -5,7 +5,7 @@
 import { SemanticZone, RectSelection } from '../../types';
 import { TRANSPARENT_INDEX, WHITE_PALETTE_INDEX } from '../../data/palette';
 import { hexToRgb } from '../../core/colorUtils';
-import { zoneRgbTable } from '../../core/pixelRender';
+import { zoneRgbTable } from '../../core/maskColors';
 import { IMAGE_WIDTH as W, IMAGE_HEIGHT as H } from '../../core/pixelGrid';
 import { Patch } from '../../core/editOps';
 

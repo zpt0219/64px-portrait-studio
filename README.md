@@ -56,7 +56,8 @@ npm run preview          # 预览生产构建包
 ```
 
 - `core/`、`model/`、`command/` 不接触界面 DOM。
-- 业务子领域收敛为 5 个独立控制器：`ExportService`、`HairDraftController`、`ImageImportPipeline`、`ImportCoordinator`、`SelectionService`，仅依赖窄接口门面，不耦合全局 ViewModel。
+- 四个业务控制器 `ExportService`、`HairDraftController`、`ImportCoordinator`、`SelectionService` 仅依赖窄端口；图片量化与分区处理为 `core/imageImport.ts` 的纯函数。
+- App 组装浏览器存储、Canvas、图片解码和下载实现。ViewModel 默认构造支持无浏览器运行；未注入持久化或导出能力时返回失败，不误报成功。
 - 文档 (色板 / 像素 / 遮罩 / 发色预设) 只能通过命令修改，命令负责撤销 / 重做与事件；会话状态 (工具、分区、缩放、选区……) 由 ViewModel 直接修改后广播。
 - 面板在事件回调里只 `markDirty()`，下一帧统一 `render()`，相当于 ImGui 的每帧 `draw()`。
 - URL 带 `?debug` 时 `window.__studio` 暴露 App，自动化脚本可以直接调用 `window.__studio.vm`。
@@ -71,16 +72,21 @@ src/
 │   ├── app.ts               # 布局、分栏拖拽、快捷键表、文件导入、弹窗、统一生命周期
 │   ├── viewModel.ts         # 用户意图外观门面；事件扇出；持久化调度
 │   ├── editorContext.ts     # 跨面板的纯界面状态 (高亮色、画中画开关)
-│   ├── imageDecode.ts       # 图片文件解码并缩放居中到 64×64
+│   ├── ports.ts             # 导出与确认端口契约
+│   ├── adapters/BrowserStorage.ts # 安全接入浏览器 localStorage
+│   ├── services/AutosaveService.ts # 注入存储的实例级自动保存
+│   ├── browser/
+│   │   ├── imageDecode.ts   # Image / Canvas 解码并缩放居中到 64×64
+│   │   ├── pixelCanvas.ts   # 色板索引像素绘制与最近邻缩放
+│   │   └── projectArchive.ts # Canvas 资源、ZIP 打包与浏览器导出
 │   ├── toaster.ts           # 提示消息 (订阅 onNotify)
 │   ├── controllers/         # 独立业务子领域控制器 (依赖窄端口)
 │   │   ├── ExportService.ts       # ZIP 与 PNG 快照导出，无 UI 依赖
 │   │   ├── HairDraftController.ts # 发色非破坏性草稿预览与固化
-│   │   ├── ImageImportPipeline.ts # 图片量化与语义遮罩解码流水线
 │   │   ├── ImportCoordinator.ts   # 异步导入序号隔离与防漂移
 │   │   └── SelectionService.ts    # 选区剪贴板与几何变换
 │   └── utils/
-│       └── download.ts      # 跨环境浏览器文件触发与 ObjectURL 回收
+│       └── download.ts      # 浏览器下载与 ObjectURL 回收
 ├── model/
 │   ├── document.ts          # PortraitDocument：进存档、进撤销的数据
 │   └── session.ts           # EditorSession：工具、分区、缩放、选区、发色草稿
@@ -118,10 +124,10 @@ src/
 │   ├── recolorEngine.ts     # 发色识别与 5 阶色阶置换
 │   ├── colorUtils.ts        # 颜色转换、OKLab 色差、色板量化
 │   ├── pixelGrid.ts         # 64×64 网格常量、邻域、连通域、泛洪
-│   ├── pixelRender.ts       # 色板索引像素的 Canvas 渲染
+│   ├── maskColors.ts        # 语义分区 RGB 查表
+│   ├── imageImport.ts       # 纯像素量化、语义识别与导入结果
 │   ├── projectData.ts       # 工程数据 Base64 编解码与校验、旧版工程迁移
-│   ├── storage.ts           # localStorage 自动暂存、防抖与异常降级
-│   ├── zipExporter.ts       # 工程 ZIP 导出快照打包
+│   ├── projectArchive.ts    # 无 DOM 的工程 ZIP 读取与校验
 │   └── minimalPng.ts        # 8-bit 索引 PNG 编码与 CRC32
 ├── data/palette.ts          # 36 色色板、9 大发色色阶、色系分组（唯一事实数据源）
 └── types/index.ts           # SemanticZone、ZONE_CONFIG、工具类型、端口契约等
@@ -136,6 +142,7 @@ src/
 ## 文档
 
 - [docs/GEMINI_FLASH_IMPLEMENTATION_GUIDE.md](docs/GEMINI_FLASH_IMPLEMENTATION_GUIDE.md) — 重构与修复路线图实施指南 (T00–T11)
+- [docs/T07_BROWSER_ADAPTER_MIGRATION.md](docs/T07_BROWSER_ADAPTER_MIGRATION.md) — 浏览器适配器迁移与新旧输出对照验收
 - [docs/IMPLEMENTATION_PROGRESS.md](docs/IMPLEMENTATION_PROGRESS.md) — 任务实施跟踪与验收记录
 - [docs/PALETTE_CHANGELOG.md](docs/PALETTE_CHANGELOG.md) — 36 色色板演进记录
 - [docs/HAIR_COLOR_UNIFICATION_SOP.md](docs/HAIR_COLOR_UNIFICATION_SOP.md) — 发色统一化 SOP

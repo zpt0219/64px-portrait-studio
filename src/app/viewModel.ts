@@ -11,7 +11,9 @@ import { TRANSPARENT_INDEX, MATCH_COLOR_PRESETS, ZONE_DEFAULT_MATCH_PRESET, pale
 import { Rgb, hexToRgb } from '../core/colorUtils';
 import { computeSemanticMask } from '../core/segmentation';
 import { Patch } from '../core/editOps';
-import { AutosaveService, getActiveStore, projectDataToDocument, StorageSaveResult } from '../core/storage';
+import { AutosaveService, StorageSaveResult } from './services/AutosaveService';
+import { projectDataToDocument } from '../core/projectData';
+import { ExportBackend, PromptOptions, StudioPrompts, unavailableExports } from './ports';
 import { PortraitDocument, createEmptyDocument, cloneDocument } from '../model/document';
 import { EditorSession, createInitialSession, ZOOM_STEPS } from '../model/session';
 import { Command, CommandContext } from '../command/command';
@@ -21,33 +23,10 @@ import { StrokeCommand } from '../command/pixelCommands';
 import { MaskBoxSelectCommand, AssignColorToZoneCommand, SetMaskCommand } from '../command/maskCommands';
 import { SetPaletteColorCommand, ResetPaletteCommand, nextGestureId } from '../command/paletteCommands';
 
-import { ImageImportPipeline } from './controllers/ImageImportPipeline';
+import { processDecodedImage } from '../core/imageImport';
 import { HairDraftController } from './controllers/HairDraftController';
 import { SelectionService } from './controllers/SelectionService';
 import { ExportService } from './controllers/ExportService';
-
-export interface PromptButton {
-  label: string;
-  className?: string; // 'btn-primary' / 'btn-outline' / 'btn-ghost' ...
-  onClick: () => void;
-}
-
-export interface PromptOptions {
-  icon?: string;
-  title: string;
-  message: string;
-  subMessage?: string;
-  buttons: PromptButton[];
-  onDismiss?: () => void;
-}
-
-/** 由界面层实现的确认对话框端口 */
-export interface StudioPrompts {
-  confirm(options: PromptOptions): void;
-  dismiss?(): void;
-}
-
-export type { DecodedImage };
 
 export class ViewModel implements StudioEvents {
   readonly doc: PortraitDocument = createEmptyDocument();
@@ -74,36 +53,14 @@ export class ViewModel implements StudioEvents {
   }
 
   // 领域子控制器
-  private readonly importPipeline: ImageImportPipeline;
   private readonly hairDraft: HairDraftController;
   private readonly selectionService: SelectionService;
   private readonly exportService: ExportService;
 
-  constructor(options?: { autosave?: AutosaveService }) {
-    const store = getActiveStore();
-    this.autosave = options?.autosave ?? new AutosaveService(() => store);
+  constructor(options?: { autosave?: AutosaveService; exports?: ExportBackend }) {
+    this.autosave = options?.autosave ?? new AutosaveService();
     this.ctx = { doc: this.doc, session: this.session, events: this };
     this.handler = new CommandHandler(this.ctx);
-
-    this.importPipeline = new ImageImportPipeline({
-      getPalette: () => this.doc.palette,
-      applyImportResult: (result) => {
-        this.replaceDocument(result.document, {
-          visibleMaskZones: [],
-          showMaskOverlay: false,
-          activeMode: 'pixel',
-          activeZone: SemanticZone.Background,
-          lockedMaskZones: [],
-          activeMaskTool: 'pen',
-          maskBrushSize: 1,
-          maskMatchInitialized: false,
-          isLoaded: true,
-          selection: null,
-          hairDraftPreset: null,
-        });
-      },
-      notify: (msg, lvl) => this.notify(msg, lvl),
-    });
 
     this.hairDraft = new HairDraftController({
       getDoc: () => this.doc,
@@ -125,7 +82,11 @@ export class ViewModel implements StudioEvents {
       notify: (msg, lvl) => this.notify(msg, lvl),
     });
 
+    const exports = options?.exports ?? unavailableExports;
     this.exportService = new ExportService({
+      exportPng: doc => exports.exportPng(doc),
+      exportZip: doc => exports.exportZip(doc),
+      exportMaskPng: (doc, scale) => exports.exportMaskPng(doc, scale),
       isLoaded: () => !this._isDisposed && this.session.isLoaded,
       hasHairDraft: () => this.hasHairDraft(),
       hairDraftName: () => this.hairDraftName(),
@@ -363,7 +324,11 @@ export class ViewModel implements StudioEvents {
     }
   }
 
-  /** 从 localStorage 恢复暂存进度 */
+  hasSavedProject(): boolean {
+    return !this._isDisposed && this.autosave.hasSaved();
+  }
+
+  /** 从注入的存储恢复暂存进度 */
   restoreFromStorage(): void {
     if (this._isDisposed) return;
     const data = this.autosave.load();
@@ -375,10 +340,18 @@ export class ViewModel implements StudioEvents {
     this.notify('🎉 已成功从本地缓存恢复上次编辑进度！', 'success');
   }
 
-  /** 导入普通图片 (委托给 ImageImportPipeline) */
+  /** 纯算法处理解码像素，再应用新文档及提示 */
   importImage(image: DecodedImage): void {
     if (this._isDisposed) return;
-    this.importPipeline.importImage(image);
+    const result = processDecodedImage(image, this.doc.palette);
+    this.replaceDocument(result.document, {
+      visibleMaskZones: [], showMaskOverlay: false, activeMode: 'pixel',
+      activeZone: SemanticZone.Background, lockedMaskZones: [], activeMaskTool: 'pen',
+      maskBrushSize: 1, maskMatchInitialized: false, isLoaded: true,
+      selection: null, hairDraftPreset: null,
+    });
+    for (const warning of result.warnings) this.notify(warning, 'warning');
+    this.notify(result.importInfo.message, 'success');
   }
 
   /** 清空画布与本地缓存；已载入头像时先确认 */

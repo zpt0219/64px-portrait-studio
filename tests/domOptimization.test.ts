@@ -1,9 +1,9 @@
+import { createTestViewModel } from './helpers/viewModelFixture';
 import { describe, it, expect, vi } from 'vitest';
 import { SelectionStatsPanel } from '../src/panels/canvas/SelectionStatsPanel';
 import { HoverInfoBar } from '../src/panels/canvas/HoverInfoBar';
 import { StrokeCommand, StrokeParams } from '../src/command/pixelCommands';
 import { CommandContext } from '../src/command/command';
-import { ViewModel } from '../src/app/viewModel';
 import { SemanticZone } from '../src/types';
 import { TRANSPARENT_INDEX } from '../src/data/palette';
 import { createValidDocument } from './helpers/documentFixture';
@@ -262,7 +262,7 @@ describe('DOM Refresh & Event Optimization (T10)', () => {
 
   describe('assignColorToZone Transparent Protection', () => {
     it('rejects assigning TRANSPARENT_INDEX to non-background zones and notifies error', () => {
-      const vm = new ViewModel();
+      const vm = createTestViewModel();
       const notifySpy = vi.fn();
       vm.registerListener({ onNotify: notifySpy });
 

@@ -1,5 +1,6 @@
+import { downloadBlob } from '../src/app/utils/download';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { downloadBlob, canvasToBlob, exportProjectPng, exportMaskPng } from '../src/core/zipExporter';
+import { canvasToBlob, exportProjectPng, exportProjectZip, exportMaskPng } from '../src/app/browser/projectArchive';
 import { ExportService, ExportPorts } from '../src/app/controllers/ExportService';
 import { createValidDocument } from './helpers/documentFixture';
 import { SemanticZone } from '../src/types';
@@ -168,6 +169,7 @@ describe('PNG Export & Blob Safety (T06 / B6)', () => {
       const notifications: Array<{ message: string; type: string }> = [];
 
       const ports: ExportPorts = {
+        exportPng: exportProjectPng, exportZip: exportProjectZip, exportMaskPng,
         isLoaded: () => options?.isLoaded ?? true,
         hasHairDraft: () => (options?.hairDraftPreset ?? null) !== null,
         hairDraftName: () => '红发预设',

@@ -1,6 +1,6 @@
+import { createTestViewModel } from './helpers/viewModelFixture';
 import { describe, it, expect, vi } from 'vitest';
 import { ImportCoordinator, ImportCoordinatorHost, ImportLoaders } from '../src/app/controllers/ImportCoordinator';
-import { ViewModel } from '../src/app/viewModel';
 import { SemanticZone } from '../src/types';
 import { VALID_HAIR_PRESET_KEYS } from './helpers/documentFixture';
 
@@ -133,7 +133,7 @@ describe('ImportCoordinator & Mode Cancellation Atomicity (T08)', () => {
 
   describe('Mode cancellation atomicity on hiding last mask zone (T08)', () => {
     it('preserves full session state and mask visibility if user cancels hair draft confirmation', () => {
-      const vm = new ViewModel();
+      const vm = createTestViewModel();
       const presetKey = VALID_HAIR_PRESET_KEYS[0];
 
       // Setup document with hair pixels
@@ -178,7 +178,7 @@ describe('ImportCoordinator & Mode Cancellation Atomicity (T08)', () => {
     });
 
     it('switches mode and hides masks atomically if user confirms hair draft', () => {
-      const vm = new ViewModel();
+      const vm = createTestViewModel();
       const presetKey = VALID_HAIR_PRESET_KEYS[0];
 
       vm.patchSession({ isLoaded: true });

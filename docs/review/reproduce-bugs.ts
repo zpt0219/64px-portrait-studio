@@ -7,14 +7,19 @@
 import { ViewModel } from '../../src/app/viewModel';
 import { SemanticZone } from '../../src/types';
 import { createEmptyDocument } from '../../src/model/document';
-import { setStorageAdapter, saveProjectDebounced, clearProjectStorage } from '../../src/core/storage';
+import { AutosaveService } from '../../src/app/services/AutosaveService';
 import { validateProjectData, base64ToUint8Array, documentToProjectData, projectDataToDocument } from '../../src/core/projectData';
-import { generateProjectZipBlob } from '../../src/core/zipExporter';
+import { generateProjectZipBlob, exportProjectPng, exportProjectZip, exportMaskPng } from '../../src/app/browser/projectArchive';
 import JSZip from 'jszip';
 import { hexToRgb } from '../../src/core/colorUtils';
 const report = (id: string, value: unknown) => console.log(id, JSON.stringify(value));
-function loaded() { const vm = new ViewModel(); vm.session.isLoaded = true; vm.doc.pixelIndices[0] = 5; vm.doc.semanticMask[0] = SemanticZone.Hair; return vm; }
-setStorageAdapter({ getItem: () => null, setItem: () => {}, removeItem: () => {} });
+const instances: ViewModel[] = [];
+function makeVm() {
+ const vm = new ViewModel({autosave:new AutosaveService({getItem:()=>null,setItem:()=>{},removeItem:()=>{}}),exports:{exportPng:exportProjectPng,exportZip:exportProjectZip,exportMaskPng}});
+ instances.push(vm); return vm;
+}
+function loaded() { const vm = makeVm(); vm.session.isLoaded = true; vm.doc.pixelIndices[0] = 5; vm.doc.semanticMask[0] = SemanticZone.Hair; return vm; }
+
 {
  const vm = loaded(); vm.selectPaletteIndex(255); vm.beginStroke(0, false); vm.strokeAt(0,0); vm.endStroke();
  const restored = projectDataToDocument(documentToProjectData(vm.doc)).document;
@@ -32,7 +37,7 @@ setStorageAdapter({ getItem: () => null, setItem: () => {}, removeItem: () => {}
  report('B2-locked-target', {pen,box,assign:vm.doc.semanticMask[0]});
 }
 {
- const vm = new ViewModel(); vm.session.isLoaded=true; vm.selectPaletteIndex(1); vm.beginStroke(0,false); vm.strokeAt(0,0); vm.endStroke();
+ const vm = makeVm(); vm.session.isLoaded=true; vm.selectPaletteIndex(1); vm.beginStroke(0,false); vm.strokeAt(0,0); vm.endStroke();
  vm.selectPaletteIndex(2); vm.beginStroke(0,false); vm.strokeAt(1,0); vm.undo(); const afterUndo = Array.from(vm.doc.pixelIndices.slice(0,3));
  vm.strokeAt(2,0); vm.endStroke(); vm.undo(); const afterUndoStroke = Array.from(vm.doc.pixelIndices.slice(0,3));
  report('B3-undo-during-stroke', {afterUndo,afterUndoStroke});
@@ -43,11 +48,11 @@ setStorageAdapter({ getItem: () => null, setItem: () => {}, removeItem: () => {}
  report('B3-document-replaced-during-stroke', {canUndo,firstPixelAfterUndo:vm.doc.pixelIndices[0]});
 }
 {
- clearProjectStorage(); const warnings: unknown[]=[]; const original=console.warn; console.warn=(...args)=>warnings.push(String(args[0]));
- setStorageAdapter({getItem:()=>null,setItem:()=>{throw new Error('quota exceeded');},removeItem:()=>{}});
- let onSaved=false; saveProjectDebounced(createEmptyDocument(),(result)=>onSaved=result.success); await new Promise(r=>setTimeout(r,320)); console.warn=original;
+ const warnings: unknown[]=[]; const original=console.warn; console.warn=(...args)=>warnings.push(String(args[0]));
+ const service = new AutosaveService({getItem:()=>null,setItem:()=>{throw new Error('quota exceeded');},removeItem:()=>{}});
+ let onSaved=false; service.saveDebounced(createEmptyDocument(),(result)=>onSaved=result.success); await new Promise(r=>setTimeout(r,320)); console.warn=original;
  report('B4-save-failure-reported-success', {onSaved,warnings});
- setStorageAdapter({getItem:()=>null,setItem:()=>{},removeItem:()=>{}});
+ service.dispose();
 }
 {
  const data = documentToProjectData(createEmptyDocument()); data.hairPreset='not-a-preset';
@@ -75,4 +80,4 @@ setStorageAdapter({ getItem: () => null, setItem: () => {}, removeItem: () => {}
  const renderFirst=JSON.parse(await zip.file('renders/avatar_64x64_1x.png')!.async('string'));
  report('B7-zip-mixed-revisions',{jsonPixelIndex:base64ToUint8Array(saved.pixels)[0],renderFirst,expectedSavedRgba:[...hexToRgb(saved.palette[1]),255]});
 }
-clearProjectStorage();
+for (const vm of instances) vm.dispose();

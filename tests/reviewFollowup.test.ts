@@ -1,19 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ViewModel, PromptOptions } from '../src/app/viewModel';
-import { AutosaveService, KeyValueStore, STORAGE_KEY, resetStorageAdapter, saveProjectImmediate, setStorageAdapter } from '../src/core/storage';
+import { ViewModel } from '../src/app/viewModel';
+import { PromptOptions } from '../src/app/ports';
+import { createBrowserStorage } from '../src/app/adapters/BrowserStorage';
+import { AutosaveService, KeyValueStore, STORAGE_KEY } from '../src/app/services/AutosaveService';
 import { createValidDocument } from './helpers/documentFixture';
 import { documentToProjectData } from '../src/core/projectData';
-import { exportProjectPng, exportProjectZip, exportMaskPng } from '../src/core/zipExporter';
 import { SemanticZone } from '../src/types';
 import { App } from '../src/app/app';
 import { CanvasPanel } from '../src/panels/canvas/CanvasPanel';
 import { SelectionInteraction } from '../src/panels/canvas/SelectionInteraction';
 
-vi.mock('../src/core/zipExporter', () => ({
-  exportProjectPng: vi.fn().mockResolvedValue(undefined),
-  exportProjectZip: vi.fn().mockResolvedValue(undefined),
-  exportMaskPng: vi.fn().mockResolvedValue(undefined),
-}));
+const exportProjectPng = vi.fn().mockResolvedValue(undefined);
+const exportProjectZip = vi.fn().mockResolvedValue(undefined);
+const exportMaskPng = vi.fn().mockResolvedValue(undefined);
 
 function memoryStore(): KeyValueStore & { map: Map<string, string> } {
   const map = new Map<string, string>();
@@ -24,7 +23,6 @@ describe('Follow-up review: persistence, gestures and stale requests', () => {
   const instances: ViewModel[] = [];
   beforeEach(() => {
     vi.useFakeTimers();
-    setStorageAdapter(memoryStore());
     vi.clearAllMocks();
   });
   afterEach(() => {
@@ -32,11 +30,10 @@ describe('Follow-up review: persistence, gestures and stale requests', () => {
     vi.clearAllTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
-    resetStorageAdapter();
     vi.useRealTimers();
   });
-  function loaded(): ViewModel {
-    const vm = new ViewModel();
+  function loaded(store: KeyValueStore = memoryStore()): ViewModel {
+    const vm = new ViewModel({ autosave: new AutosaveService(store), exports: { exportPng: exportProjectPng, exportZip: exportProjectZip, exportMaskPng } });
     instances.push(vm);
     vm.loadProject(documentToProjectData(createValidDocument({ pixels: set => set(0, 0, 5, SemanticZone.Hair) })));
     return vm;
@@ -55,18 +52,16 @@ describe('Follow-up review: persistence, gestures and stale requests', () => {
 
   it('reports failure from the real default browser adapter when quota is exceeded', () => {
     vi.stubGlobal('localStorage', { setItem: () => { throw new DOMException('Quota exceeded', 'QuotaExceededError'); } });
-    resetStorageAdapter();
-    expect(saveProjectImmediate(createValidDocument())).toMatchObject({ success: false, error: '配额超限' });
+    expect(new AutosaveService(createBrowserStorage(() => localStorage)).saveImmediate(createValidDocument())).toMatchObject({ success: false, error: '配额超限' });
   });
   it('does not report success when browser storage is unavailable', () => {
     vi.stubGlobal('localStorage', undefined);
-    resetStorageAdapter();
-    expect(saveProjectImmediate(createValidDocument()).success).toBe(false);
+    expect(new AutosaveService(createBrowserStorage(() => localStorage)).saveImmediate(createValidDocument()).success).toBe(false);
   });
   it('clear returns a failure result and cancels delayed writes when removeItem fails', () => {
     const store = memoryStore();
     store.removeItem = () => { throw new DOMException('Blocked', 'SecurityError'); };
-    const service = new AutosaveService(() => store);
+    const service = new AutosaveService(store);
     service.saveDebounced(createValidDocument());
     expect(service.clear()).toMatchObject({ success: false, error: '存储受限' });
     vi.advanceTimersByTime(300);
@@ -76,8 +71,7 @@ describe('Follow-up review: persistence, gestures and stale requests', () => {
   it('reset does not claim the cache was cleared when removal failed', () => {
     const store = memoryStore();
     store.removeItem = () => { throw new Error('cannot remove'); };
-    setStorageAdapter(store);
-    const vm = loaded();
+    const vm = loaded(store);
     const notices: string[] = [];
     vm.registerListener({ onNotify: msg => notices.push(msg) });
     const { prompts } = capturePrompts(vm);
@@ -87,12 +81,10 @@ describe('Follow-up review: persistence, gestures and stale requests', () => {
     expect(notices.some(n => n.includes('未能清除'))).toBe(true);
     expect(notices).not.toContain('已重置画布并清除本地暂存');
   });
-  it('captures each instance store instead of following a later global adapter change', () => {
+  it('keeps each instance on its explicitly injected store', () => {
     const a = memoryStore(), b = memoryStore();
-    setStorageAdapter(a);
-    const vmA = loaded();
-    setStorageAdapter(b);
-    const vmB = loaded();
+    const vmA = loaded(a);
+    const vmB = loaded(b);
     vmA.setPaletteColor(0, '#111111');
     vmB.setPaletteColor(0, '#222222');
     vmA.flushAutosave();

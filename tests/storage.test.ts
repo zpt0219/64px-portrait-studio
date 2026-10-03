@@ -1,14 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import {
-  saveProjectImmediate,
-  saveProjectDebounced,
-  setStorageAdapter,
-  resetStorageAdapter,
-  KeyValueStore,
-  hasSavedProject,
-  loadProjectFromStorage,
-  clearProjectStorage,
-} from '../src/core/storage';
+import { AutosaveService, KeyValueStore } from '../src/app/services/AutosaveService';
 import { ViewModel } from '../src/app/viewModel';
 import { createValidDocument } from './helpers/documentFixture';
 
@@ -18,7 +9,6 @@ describe('Storage Error Handling and Graceful Degradation (T04 - B4)', () => {
   });
 
   afterEach(() => {
-    resetStorageAdapter();
     vi.useRealTimers();
   });
 
@@ -34,15 +24,15 @@ describe('Storage Error Handling and Graceful Degradation (T04 - B4)', () => {
 
   it('saveProjectImmediate returns success: true with working store adapter', () => {
     const store = createMemoryStore();
-    setStorageAdapter(store);
+    const service = new AutosaveService(store);
 
     const doc = createValidDocument();
-    const result = saveProjectImmediate(doc);
+    const result = service.saveImmediate(doc);
 
     expect(result.success).toBe(true);
     expect(result.error).toBeUndefined();
-    expect(hasSavedProject()).toBe(true);
-    expect(loadProjectFromStorage()).not.toBeNull();
+    expect(service.hasSaved()).toBe(true);
+    expect(service.load()).not.toBeNull();
   });
 
   it('saveProjectImmediate returns success: false and quota error on QuotaExceededError', () => {
@@ -56,10 +46,10 @@ describe('Storage Error Handling and Graceful Degradation (T04 - B4)', () => {
       },
       removeItem: () => {},
     };
-    setStorageAdapter(failingStore);
+    const service = new AutosaveService(failingStore);
 
     const doc = createValidDocument();
-    const result = saveProjectImmediate(doc);
+    const result = service.saveImmediate(doc);
 
     expect(result.success).toBe(false);
     expect(result.error).toBe('配额超限');
@@ -76,10 +66,10 @@ describe('Storage Error Handling and Graceful Degradation (T04 - B4)', () => {
       },
       removeItem: () => {},
     };
-    setStorageAdapter(failingStore);
+    const service = new AutosaveService(failingStore);
 
     const doc = createValidDocument();
-    const result = saveProjectImmediate(doc);
+    const result = service.saveImmediate(doc);
 
     expect(result.success).toBe(false);
     expect(result.error).toBe('存储受限');
@@ -87,12 +77,12 @@ describe('Storage Error Handling and Graceful Degradation (T04 - B4)', () => {
 
   it('saveProjectDebounced triggers onComplete with result after 300ms', () => {
     const store = createMemoryStore();
-    setStorageAdapter(store);
+    const service = new AutosaveService(store);
 
     const doc = createValidDocument();
     let callbackResult: { success: boolean; error?: string } | null = null;
 
-    saveProjectDebounced(doc, (res) => {
+    service.saveDebounced(doc, (res) => {
       callbackResult = res;
     });
 
@@ -110,7 +100,7 @@ describe('Storage Error Handling and Graceful Degradation (T04 - B4)', () => {
     const quotaError = new Error('The quota has been exceeded');
     quotaError.name = 'QuotaExceededError';
 
-    setStorageAdapter({
+    const service = new AutosaveService({
       getItem: () => null,
       setItem: () => {
         throw quotaError;
@@ -121,7 +111,7 @@ describe('Storage Error Handling and Graceful Degradation (T04 - B4)', () => {
     const doc = createValidDocument();
     let callbackResult: { success: boolean; error?: string } | null = null;
 
-    saveProjectDebounced(doc, (res) => {
+    service.saveDebounced(doc, (res) => {
       callbackResult = res;
     });
 
@@ -136,7 +126,7 @@ describe('Storage Error Handling and Graceful Degradation (T04 - B4)', () => {
     const quotaError = new Error('Quota exceeded');
     quotaError.name = 'QuotaExceededError';
 
-    setStorageAdapter({
+    const service = new AutosaveService({
       getItem: () => null,
       setItem: () => {
         throw quotaError;
@@ -144,7 +134,7 @@ describe('Storage Error Handling and Graceful Degradation (T04 - B4)', () => {
       removeItem: () => {},
     });
 
-    const vm = new ViewModel();
+    const vm = new ViewModel({ autosave: service });
     vm.patchSession({ isLoaded: true });
 
     const notifications: { msg: string; level: string }[] = [];
@@ -180,13 +170,13 @@ describe('Storage Error Handling and Graceful Degradation (T04 - B4)', () => {
 
   it('clearProjectStorage removes item and clears pending debounce timer', () => {
     const store = createMemoryStore();
-    setStorageAdapter(store);
+    const service = new AutosaveService(store);
 
     const doc = createValidDocument();
-    saveProjectImmediate(doc);
-    expect(hasSavedProject()).toBe(true);
+    service.saveImmediate(doc);
+    expect(service.hasSaved()).toBe(true);
 
-    clearProjectStorage();
-    expect(hasSavedProject()).toBe(false);
+    service.clear();
+    expect(service.hasSaved()).toBe(false);
   });
 });

@@ -1,3 +1,4 @@
+import { createTestViewModel } from './helpers/viewModelFixture';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Panel, flushDirtyPanelsForTest, getDirtyPanelsCountForTest, clearDirtyPanelsForTest } from '../src/panels/Panel';
 import { ViewModel } from '../src/app/viewModel';
@@ -7,7 +8,6 @@ import { ConfirmModal } from '../src/panels/modals/ConfirmModal';
 import { ReplaceColorModal } from '../src/panels/modals/ReplaceColorModal';
 import { createValidDocument } from './helpers/documentFixture';
 import { documentToProjectData } from '../src/core/projectData';
-import { resetStorageAdapter } from '../src/core/storage';
 
 class TestPanel extends Panel {
   renderCount = 0;
@@ -30,9 +30,8 @@ describe('Lifecycle & Dispose Management (T09)', () => {
   let vm: ViewModel;
 
   beforeEach(() => {
-    resetStorageAdapter();
     clearDirtyPanelsForTest();
-    vm = new ViewModel();
+    vm = createTestViewModel();
   });
 
   afterEach(() => {

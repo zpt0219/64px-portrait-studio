@@ -69,9 +69,46 @@ def verify(path, reference=None):
     return {"zip": str(path), "result": "all pixels match project JSON", "verifiedImages": checked}
 
 
+def compare_exports(before, after):
+    """Compare logical archive contents; only project timestamps may differ."""
+    pngs = []
+    identical_files = []
+    with zipfile.ZipFile(before) as original, zipfile.ZipFile(after) as migrated:
+        assert sorted(original.namelist()) == sorted(migrated.namelist()), "Archive file list changed"
+        for name in original.namelist():
+            a, b = original.read(name), migrated.read(name)
+            if name.endswith(".png"):
+                with Image.open(io.BytesIO(a)) as source:
+                    old_image = source.convert("RGBA")
+                with Image.open(io.BytesIO(b)) as source:
+                    new_image = source.convert("RGBA")
+                assert old_image.size == new_image.size, f"Image dimensions changed: {name}"
+                assert old_image.tobytes() == new_image.tobytes(), f"Image pixels changed: {name}"
+                pngs.append(name)
+            elif name == "imagegem_project.json":
+                old_project, new_project = json.loads(a), json.loads(b)
+                old_project.pop("ts", None)
+                new_project.pop("ts", None)
+                assert old_project == new_project, "Project changed beyond timestamp"
+            elif name == "README.txt":
+                # Export-time human-readable date is intentionally variable.
+                old_lines = [line for line in a.decode().splitlines() if not line.startswith("导出时间:")]
+                new_lines = [line for line in b.decode().splitlines() if not line.startswith("导出时间:")]
+                assert old_lines == new_lines, "README changed beyond export time"
+            else:
+                assert a == b, f"Archive entry changed: {name}"
+                if not name.endswith("/"):
+                    identical_files.append(name)
+    return {"result": "archive contents match except timestamps", "identicalPngPixels": pngs, "identicalFiles": identical_files}
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("zip")
     parser.add_argument("--reference", help="Optional original fixture ZIP")
+    parser.add_argument("--compare-export", help="Compare all PNGs and logical archive contents with a prior export")
     args = parser.parse_args()
-    print(json.dumps(verify(args.zip, args.reference), ensure_ascii=False, indent=2))
+    result = verify(args.zip, args.reference)
+    if args.compare_export:
+        result["comparison"] = compare_exports(args.compare_export, args.zip)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
