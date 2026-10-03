@@ -6,9 +6,7 @@
 
 import { SemanticZone, ZONE_CONFIG, RectSelection } from '../../types';
 import { TRANSPARENT_INDEX } from '../../data/palette';
-import { Patch, extractPatch } from '../../core/editOps';
 import { hasSavedProject } from '../../core/storage';
-import { layersOf } from '../../model/document';
 import { EditorSession, clampToCanvas, isInRect } from '../../model/session';
 import { ViewModel } from '../../app/viewModel';
 import { EditorContext } from '../../app/editorContext';
@@ -18,6 +16,8 @@ import { CanvasRenderer } from './CanvasRenderer';
 import { CanvasToolbar } from './CanvasToolbar';
 import { ContextBar } from './ContextBar';
 import { SelectionStatsPanel } from './SelectionStatsPanel';
+import { HoverInfoBar } from './HoverInfoBar';
+import { SelectionInteraction } from './SelectionInteraction';
 
 /** 鼠标事件与空格键模拟左键共用的输入字段 */
 type PointerInput = Pick<MouseEvent, 'clientX' | 'clientY' | 'button' | 'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey'>;
@@ -33,11 +33,12 @@ export interface CanvasHooks {
 export class CanvasPanel extends Panel {
   private displayCanvas!: HTMLCanvasElement;
   private viewport!: HTMLElement;
-  private hoverInfoEl!: HTMLElement;
   private emptyStateEl!: HTMLElement;
   private renderer!: CanvasRenderer;
   private contextBar!: ContextBar;
   private selectionStats!: SelectionStatsPanel;
+  private hoverInfoBar!: HoverInfoBar;
+  private selection = new SelectionInteraction();
 
   /** 下一次 render 需要刷新工具条 / 空状态 / 光标 (走马灯动画帧只重画画布) */
   private uiDirty = true;
@@ -47,6 +48,7 @@ export class CanvasPanel extends Panel {
   private isMouseDown = false;
   private currentMouseButton: 0 | 2 = 0; // 0 左键 (前景色)，2 右键 (背景色)
   private currentIsAlt = false;          // 按住 Alt：吸管快速取色
+  private isAltHeld = false;             // 按住 Alt：智能框选减法删除匹配色
   private isShiftHeld = false;           // 悬停时按住 Shift：高亮全图与指向像素同色的像素
   private spacePress = false;            // 当前按下来自空格键 (等同左键)，由 keyup 而非 mouseup 结束
   private pointer: { clientX: number; clientY: number } | null = null; // 最近一次鼠标位置，供空格键定位
@@ -55,23 +57,8 @@ export class CanvasPanel extends Panel {
   private lastY = -1;
   private hover: { x: number; y: number } | null = null;
 
-  // 矩形框选 (像素模式选区 / 遮罩模式智能框选共用)
-  private boxSelect: { start: [number, number]; rect: RectSelection; maskAction: 'add' | 'remove' | null } | null = null;
-
-  // 拖动选区 (Aseprite 规范：平移时原位置透明，按住 Ctrl/Alt 复制)
-  private moving: {
-    start: [number, number];
-    offset: [number, number];
-    floating: { origX: number; origY: number; patch: Patch };
-  } | null = null;
-  private isCopyMode = false;
-  private wasCopyTriggered = false;
-
   /** 本面板自己修改选区时置位，用来区分外部清除选区 (Esc、切换模式) */
   private ownSelectionChange = false;
-
-  private antsTimer: number | null = null;
-  private antsOffset = 0;
 
   constructor(
     private readonly container: HTMLElement,
@@ -112,22 +99,16 @@ export class CanvasPanel extends Panel {
     if (keys.includes('selection') && !s.selection) {
       // 选区统计面板随之消失，它的悬停高亮一并清除
       this.ctx.setHighlightedPaletteIndex(null);
-      if (!this.ownSelectionChange) this.cancelSelectionInteraction();
+      if (!this.ownSelectionChange) this.selection.cancel();
     }
     this.cursorDirty = true;
     this.invalidate();
   }
 
-  private setSelection(selection: RectSelection | null): void {
+  private setSelection(sel: RectSelection | null): void {
     this.ownSelectionChange = true;
-    this.vm.setSelection(selection);
+    this.vm.setSelection(sel);
     this.ownSelectionChange = false;
-  }
-
-  /** 外部取消选区时，中止进行中的框选 / 拖动 */
-  private cancelSelectionInteraction(): void {
-    if (this.boxSelect?.maskAction === null) this.boxSelect = null;
-    this.moving = null;
   }
 
   getViewportElement(): HTMLElement {
@@ -161,8 +142,6 @@ export class CanvasPanel extends Panel {
 
           <div class="canvas-coords-bar" id="hover-coords-bar">
             <span>X: -- Y: --</span>
-            <span class="hover-color-chip" style="display:none;"></span>
-            <span class="hover-zone-chip" style="display:none;"></span>
           </div>
         </div>
 
@@ -197,9 +176,9 @@ export class CanvasPanel extends Panel {
     const q = <T extends Element>(sel: string) => this.container.querySelector(sel) as T;
     this.displayCanvas = q<HTMLCanvasElement>('#main-display-canvas');
     this.viewport = q<HTMLElement>('#canvas-viewport');
-    this.hoverInfoEl = q<HTMLElement>('#hover-coords-bar');
     this.emptyStateEl = q<HTMLElement>('#empty-dropzone');
     this.renderer = new CanvasRenderer(this.displayCanvas);
+    this.hoverInfoBar = new HoverInfoBar(q<HTMLElement>('#hover-coords-bar'));
 
     new CanvasToolbar(q<HTMLElement>('.canvas-toolbar'), this.vm, this.ctx, this.hooks.onTogglePreview);
 
@@ -237,21 +216,24 @@ export class CanvasPanel extends Panel {
     }
     if (!s.isLoaded) return;
 
-    const moving = this.moving;
+    const moving = this.selection.moving;
+    const boxSelect = this.selection.boxSelect;
     this.renderer.draw(this.vm, {
       floating: moving
-        ? { ...moving.floating, dx: moving.offset[0], dy: moving.offset[1], copy: this.isCopyMode || this.wasCopyTriggered }
+        ? { ...moving.floating, dx: moving.offset[0], dy: moving.offset[1], copy: this.selection.isCopy }
         : null,
-      boxSelect: this.boxSelect ? { rect: this.boxSelect.rect, maskAction: this.boxSelect.maskAction } : null,
+      boxSelect: boxSelect ? { rect: boxSelect.rect, maskAction: boxSelect.maskAction } : null,
       hover: this.hover && !this.isMouseDown ? { ...this.hover, alt: this.currentIsAlt, shift: this.isShiftHeld } : null,
       highlightedPaletteIndex: this.ctx.highlightedPaletteIndex ?? this.shiftProbeIndex(),
-      antsOffset: this.antsOffset,
+      antsOffset: this.selection.antsOffset,
     });
   }
 
   /** 悬停时按住 Shift：指向像素的色板索引 (与色板悬停的颜色探针同一种高亮) */
   private shiftProbeIndex(): number | null {
-    if (!this.isShiftHeld || !this.hover || this.isMouseDown || this.vm.session.activeMode !== 'pixel') return null;
+    if (!this.isShiftHeld || !this.hover || this.isMouseDown) return null;
+    const s = this.vm.session;
+    if (s.activeMode !== 'pixel' && !(s.activeMode === 'mask' && s.activeMaskTool === 'bucket')) return null;
     return this.vm.doc.pixelIndices[this.hover.y * 64 + this.hover.x];
   }
 
@@ -268,7 +250,9 @@ export class CanvasPanel extends Panel {
   /** 刷新依赖选区的浮动工具条与颜色统计面板 */
   private updateSelectionToolbar(): void {
     const { doc, session } = this.vm;
-    const boxSelecting = this.boxSelect && this.boxSelect.maskAction === null ? this.boxSelect.rect : null;
+    const boxSelecting = this.selection.boxSelect && this.selection.boxSelect.maskAction === null
+      ? this.selection.boxSelect.rect
+      : null;
     this.contextBar.update(session, session.selection, boxSelecting);
     const showStats = session.isLoaded && session.activeMode === 'pixel' && session.selection !== null;
     this.selectionStats.update(doc, session, showStats ? session.selection : null);
@@ -276,16 +260,8 @@ export class CanvasPanel extends Panel {
 
   private manageMarchingAnts(): void {
     const s = this.vm.session;
-    const active = s.isLoaded && s.activeMode === 'pixel' && (s.selection !== null || this.boxSelect !== null || this.moving !== null);
-    if (active && this.antsTimer === null) {
-      this.antsTimer = window.setInterval(() => {
-        this.antsOffset = (this.antsOffset + 1) % 8;
-        this.markDirty();
-      }, 120);
-    } else if (!active && this.antsTimer !== null) {
-      clearInterval(this.antsTimer);
-      this.antsTimer = null;
-    }
+    const active = s.isLoaded && s.activeMode === 'pixel' && (s.selection !== null || this.selection.boxSelect !== null || this.selection.moving !== null);
+    this.selection.manageMarchingAnts(active, () => this.markDirty());
   }
 
   // ===================== 输入 =====================
@@ -369,14 +345,12 @@ export class CanvasPanel extends Panel {
     window.addEventListener('keydown', (e: KeyboardEvent) => {
       if (e.code === 'Space') this.onSpaceDown(e);
       if (e.key === 'Shift') this.setShiftHeld(true);
-      if (e.key === 'Alt' && !this.isMouseDown) {
-        this.currentIsAlt = true;
-        this.markDirty();
+      if (e.key === 'Alt') {
+        this.setAltHeld(true);
       }
       if (e.key === 'Alt' || e.key === 'Control' || e.key === 'Meta') {
-        if (this.moving) {
-          this.isCopyMode = true;
-          this.wasCopyTriggered = true;
+        if (this.selection.moving) {
+          this.selection.setCopyMode(true);
           canvas.style.cursor = 'copy';
           this.markDirty();
         } else if (e.key === 'Alt') {
@@ -395,19 +369,14 @@ export class CanvasPanel extends Panel {
       }
       if (e.key === 'Shift') this.setShiftHeld(false);
       if (e.key === 'Alt') {
-        if (!this.isMouseDown) {
-          this.currentIsAlt = false;
-          this.markDirty();
-        }
+        this.setAltHeld(false);
         this.updateCanvasCursor({ altKey: false });
       }
       if (e.key === 'Control' || e.key === 'Meta' || e.key === 'Alt') {
-        // 拖动选区过程中不重置复制锁存：避免松开鼠标前先松开 Ctrl 被误判为剪切移动
-        if (!this.isMouseDown && !this.moving) {
-          this.isCopyMode = false;
-          this.wasCopyTriggered = false;
+        if (!this.isMouseDown && !this.selection.moving) {
+          this.selection.resetCopyLatch();
         }
-        if (!this.moving && this.pointerInSelection()) canvas.style.cursor = 'move';
+        if (!this.selection.moving && this.pointerInSelection()) canvas.style.cursor = 'move';
       }
     });
 
@@ -418,10 +387,10 @@ export class CanvasPanel extends Panel {
         this.onMouseUp({ clientX: 0, clientY: 0, button: 0, altKey: false, ctrlKey: false, metaKey: false, shiftKey: false });
       }
       this.currentIsAlt = false;
+      this.setAltHeld(false);
       this.setShiftHeld(false);
-      if (!this.isMouseDown && !this.moving) {
-        this.isCopyMode = false;
-        this.wasCopyTriggered = false;
+      if (!this.isMouseDown && !this.selection.moving) {
+        this.selection.resetCopyLatch();
       }
       if (!this.isPanning) viewport.style.cursor = '';
       this.updateCanvasCursor();
@@ -460,14 +429,54 @@ export class CanvasPanel extends Panel {
     if (this.isMouseDown) this.spacePress = true;
   }
 
+  private getMaskBoxSelectAction(button: 0 | 2, e?: { altKey?: boolean; shiftKey?: boolean }): 'add' | 'remove' | 'subtract' | 'clear' {
+    if (button === 2) return 'clear';
+    const isAlt = e?.altKey || this.isAltHeld;
+    const isShift = e?.shiftKey || this.isShiftHeld;
+    if (isAlt) return 'remove';
+    if (isShift) return 'subtract';
+    return 'add';
+  }
+
+  private syncMaskBoxSelectAction(): void {
+    const s = this.vm.session;
+    if (this.selection.boxSelect && s.activeMode === 'mask' && s.activeMaskTool === 'box_select') {
+      this.selection.updateBoxSelect(this.lastX, this.lastY, this.getMaskBoxSelectAction(this.currentMouseButton));
+      this.invalidate();
+    }
+  }
+
   private setShiftHeld(held: boolean): void {
     if (this.isShiftHeld === held) return;
     this.isShiftHeld = held;
-    if (held && this.hover && !this.isMouseDown && this.vm.session.activeMode === 'pixel') {
+    const s = this.vm.session;
+    const isProbeActive = s.activeMode === 'pixel' || (s.activeMode === 'mask' && s.activeMaskTool === 'bucket');
+    if (held && this.hover && !this.isMouseDown && isProbeActive) {
       const probeIdx = this.vm.doc.pixelIndices[this.hover.y * 64 + this.hover.x];
       this.ctx.setHighlightedPaletteIndex(probeIdx);
-    } else if (!held && this.vm.session.activeMode === 'pixel' && this.ctx.highlightedPaletteIndex !== null) {
+    } else if (!held && this.ctx.highlightedPaletteIndex !== null) {
       this.ctx.setHighlightedPaletteIndex(null);
+    }
+
+    this.syncMaskBoxSelectAction();
+
+    if (this.hover) {
+      this.updateHoverInfo(this.hover.x, this.hover.y);
+    }
+
+    this.markDirty();
+  }
+
+  private setAltHeld(held: boolean): void {
+    if (this.isAltHeld === held) return;
+    this.isAltHeld = held;
+    const s = this.vm.session;
+    if (!this.isMouseDown && s.activeMode === 'pixel') {
+      this.currentIsAlt = held;
+    }
+    this.syncMaskBoxSelectAction();
+    if (this.hover) {
+      this.updateHoverInfo(this.hover.x, this.hover.y);
     }
     this.markDirty();
   }
@@ -508,13 +517,7 @@ export class CanvasPanel extends Panel {
       if (selection && isInRect(x, y, selection)) {
         // 选区内按下：开始移动 / 复制选区
         const isModifier = e.ctrlKey || e.metaKey || e.altKey;
-        this.isCopyMode = isModifier;
-        this.wasCopyTriggered = isModifier;
-        this.moving = {
-          start: [x, y],
-          offset: [0, 0],
-          floating: { origX: selection.x, origY: selection.y, patch: extractPatch(layersOf(this.vm.doc, []), selection) },
-        };
+        this.selection.startMoving(x, y, selection, this.vm.doc, isModifier);
         this.displayCanvas.style.cursor = isModifier ? 'copy' : 'grabbing';
         this.invalidate();
       } else {
@@ -524,10 +527,12 @@ export class CanvasPanel extends Panel {
       return;
     }
 
-    // 遮罩模式智能框选 (左键划入，右键剔除)
+    // 遮罩模式智能框选 (左键加匹配色；Shift+左键去杂色；Alt+左键去匹配色；右键去所有颜色)
     if (s.activeMode === 'mask' && s.activeMaskTool === 'box_select') {
       this.isMouseDown = true;
-      this.startBoxSelect(x, y, e.button === 0 ? 'add' : 'remove');
+      this.currentMouseButton = e.button as 0 | 2;
+      const maskAction = this.getMaskBoxSelectAction(this.currentMouseButton, e);
+      this.startBoxSelect(x, y, maskAction);
       return;
     }
 
@@ -538,9 +543,8 @@ export class CanvasPanel extends Panel {
     this.applyToolAt(x, y);
   }
 
-  private startBoxSelect(x: number, y: number, maskAction: 'add' | 'remove' | null): void {
-    this.moving = null;
-    this.boxSelect = { start: [x, y], rect: { x, y, w: 1, h: 1 }, maskAction };
+  private startBoxSelect(x: number, y: number, maskAction: 'add' | 'remove' | 'subtract' | 'clear' | null): void {
+    this.selection.startBoxSelect(x, y, maskAction);
     if (maskAction === null) this.setSelection(null);
     this.invalidate();
   }
@@ -550,6 +554,7 @@ export class CanvasPanel extends Panel {
     const rect = this.displayCanvas.getBoundingClientRect();
     const inCanvas = e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
     this.setShiftHeld(e.shiftKey);
+    this.setAltHeld(e.altKey);
 
     if (!this.isMouseDown) {
       // 悬停反馈
@@ -559,7 +564,9 @@ export class CanvasPanel extends Panel {
         this.updateHoverInfo(x, y);
         this.updateCanvasCursor({ altKey: e.altKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey, x, y });
         this.hover = { x, y };
-        if (this.isShiftHeld && this.vm.session.activeMode === 'pixel') {
+        const s = this.vm.session;
+        const isProbeActive = s.activeMode === 'pixel' || (s.activeMode === 'mask' && s.activeMaskTool === 'bucket');
+        if (this.isShiftHeld && isProbeActive) {
           const probeIdx = this.vm.doc.pixelIndices[y * 64 + x];
           if (this.ctx.highlightedPaletteIndex !== probeIdx) {
             this.ctx.setHighlightedPaletteIndex(probeIdx);
@@ -578,14 +585,10 @@ export class CanvasPanel extends Panel {
     this.currentIsAlt = e.altKey;
 
     // 1. 拖动已有选区 (移出画布也持续追踪)
-    if (this.moving) {
+    if (this.selection.moving) {
       const [rawX, rawY] = this.getPixelCoordsRaw(e);
-      this.moving.offset = [rawX - this.moving.start[0], rawY - this.moving.start[1]];
-      if (e.ctrlKey || e.metaKey || e.altKey) {
-        this.isCopyMode = true;
-        this.wasCopyTriggered = true;
-      }
-      this.displayCanvas.style.cursor = this.isCopyMode || this.wasCopyTriggered ? 'copy' : 'grabbing';
+      this.selection.updateMoving(rawX, rawY, e.ctrlKey || e.metaKey || e.altKey);
+      this.displayCanvas.style.cursor = this.selection.isCopy ? 'copy' : 'grabbing';
       this.lastX = rawX;
       this.lastY = rawY;
       this.updateHoverInfo(rawX, rawY);
@@ -594,12 +597,13 @@ export class CanvasPanel extends Panel {
     }
 
     // 2. 框选 (移出画布也持续框选)
-    if (this.boxSelect) {
+    if (this.selection.boxSelect) {
+      const s = this.vm.session;
+      const maskAction = s.activeMode === 'mask' && s.activeMaskTool === 'box_select'
+        ? this.getMaskBoxSelectAction(this.currentMouseButton, e)
+        : undefined;
       const [rawX, rawY] = this.getPixelCoordsRaw(e);
-      const [sx, sy] = this.boxSelect.start;
-      const x0 = Math.min(sx, rawX);
-      const y0 = Math.min(sy, rawY);
-      this.boxSelect.rect = { x: x0, y: y0, w: Math.max(sx, rawX) - x0 + 1, h: Math.max(sy, rawY) - y0 + 1 };
+      this.selection.updateBoxSelect(rawX, rawY, maskAction);
       this.lastX = rawX;
       this.lastY = rawY;
       this.updateHoverInfo(rawX, rawY);
@@ -624,26 +628,23 @@ export class CanvasPanel extends Panel {
     this.lastX = -1;
     this.lastY = -1;
 
-    if (this.moving) {
-      const { offset, floating } = this.moving;
-      this.moving = null;
+    if (this.selection.moving) {
+      const { offset, floating } = this.selection.moving;
+      const copy = this.selection.isCopy || e.ctrlKey || e.metaKey || e.altKey;
+      this.selection.cancel();
       const [dx, dy] = offset;
       if (dx !== 0 || dy !== 0) {
         const { origX, origY, patch } = floating;
-        // 当前标记、锁存标记或松开时的修饰键任意一个为 true 即视为复制
-        const copy = this.isCopyMode || this.wasCopyTriggered || e.ctrlKey || e.metaKey || e.altKey;
         this.vm.moveSelection(patch, { x: origX, y: origY, w: patch.w, h: patch.h }, origX + dx, origY + dy, copy);
       }
-      this.isCopyMode = false;
-      this.wasCopyTriggered = false;
       this.updateCanvasCursor({ ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey });
       this.invalidate();
       return;
     }
 
-    if (this.boxSelect) {
-      const { start, rect, maskAction } = this.boxSelect;
-      this.boxSelect = null;
+    if (this.selection.boxSelect) {
+      const { start, rect, maskAction } = this.selection.boxSelect;
+      this.selection.cancelAll();
       const clamped = clampToCanvas(rect);
       if (maskAction) {
         if (clamped) this.vm.maskBoxSelect(clamped, maskAction);
@@ -718,7 +719,8 @@ export class CanvasPanel extends Panel {
   private pointerInSelection(): boolean {
     const s = this.vm.session;
     const p = this.pointerPixel();
-    return s.activeMode === 'pixel' && s.activeTool === 'select' && s.selection !== null && p !== null && isInRect(p[0], p[1], s.selection);
+    return s.activeMode === 'pixel' && s.activeTool === 'select' && s.selection !== null && p !== null &&
+      this.selection.isPointerInSelection(p[0], p[1], s.selection);
   }
 
   /** 解除滑杆、按钮等控件焦点，避免键盘焦点滞留导致全局快捷键受阻 */
@@ -732,24 +734,14 @@ export class CanvasPanel extends Panel {
   private updateHoverInfo(x: number, y: number): void {
     const { doc, session } = this.vm;
 
-    if (this.moving) {
-      const [dx, dy] = this.moving.offset;
-      const isCopy = this.isCopyMode || this.wasCopyTriggered;
-      const modeText = isCopy ? '📋 复制模式 (+Ctrl 原位保留)' : '✂️ 平移模式 (原位透明)';
-      this.hoverInfoEl.innerHTML = `
-        <span class="coord-tag">偏移: <b>ΔX:${dx >= 0 ? '+' + dx : dx} ΔY:${dy >= 0 ? '+' + dy : dy}</b></span>
-        <span class="hover-text" style="color: ${isCopy ? '#10B981' : '#00E5FF'}; font-weight: 600;">${modeText}</span>
-        <span style="opacity: 0.6; font-size: 11px;">[按住 Ctrl/Alt 切换复制]</span>
-      `;
+    if (this.selection.moving) {
+      this.hoverInfoBar.showMoving(this.selection.moving.offset, this.selection.isCopy);
       return;
     }
 
-    if (this.boxSelect) {
-      const r = this.boxSelect.rect;
-      this.hoverInfoEl.innerHTML = `
-        <span class="coord-tag">框选: <b>(${r.x}, ${r.y})</b></span>
-        <span class="hover-text" style="color: #C084FC; font-weight: 600;">尺寸: ${r.w}×${r.h}</span>
-      `;
+    if (this.selection.boxSelect) {
+      const zoneColor = ZONE_CONFIG[session.activeZone]?.color || '#38bdf8';
+      this.hoverInfoBar.showBoxSelect(this.selection.boxSelect.rect, this.selection.boxSelect.maskAction, zoneColor);
       return;
     }
 
@@ -764,27 +756,22 @@ export class CanvasPanel extends Panel {
     const colorHex = isTrans ? '透明' : doc.palette[colorIdx] || '#000000';
     const zoneMeta = ZONE_CONFIG[doc.semanticMask[offset] as SemanticZone] || ZONE_CONFIG[SemanticZone.Background];
 
+    const isMaskBoxSelect = session.activeMode === 'mask' && session.activeMaskTool === 'box_select';
     const selectionExtra = session.selection && isInRect(x, y, session.selection)
       ? `<span class="coord-tag" style="background: rgba(168, 85, 247, 0.25); color: #C084FC;">选区内 (拖拽平移)</span>`
+      : isMaskBoxSelect && this.isAltHeld
+      ? `<span class="coord-tag" style="background: rgba(239, 68, 68, 0.25); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.45);">✂️ 去匹配色就绪 (Alt+左键拖拽删除匹配色)</span>`
+      : isMaskBoxSelect && this.isShiftHeld
+      ? `<span class="coord-tag" style="background: rgba(239, 68, 68, 0.25); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.45);">⚡ 去杂色就绪 (Shift+左键拖拽删除非匹配色)</span>`
+      : isMaskBoxSelect
+      ? `<span class="coord-tag" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8;">[左键加匹配色 / Shift去杂色 / Alt去匹配色 / 右键去所有色]</span>`
       : '';
-    const colorChipHtml = isTrans
-      ? `<span class="hover-color-chip slot-transparent" style="width:12px; height:12px; border-radius:3px; display:inline-block;" title="透明/已删除像素"></span>`
-      : `<span class="hover-color-chip" style="background-color: ${colorHex};" title="${colorHex}"></span>`;
-    const colorTextHtml = isTrans
-      ? `<span class="hover-text" style="color: #38bdf8; font-weight: 600;">[透明/已删除]</span>`
-      : `<span class="hover-text">${colorHex} [#${colorIdx}]</span>`;
 
-    this.hoverInfoEl.innerHTML = `
-      <span class="coord-tag">X: <b>${x.toString().padStart(2, '0')}</b> Y: <b>${y.toString().padStart(2, '0')}</b></span>
-      ${colorChipHtml}
-      ${colorTextHtml}
-      <span class="hover-zone-chip" style="border-left: 4px solid ${zoneMeta.color};">${zoneMeta.name}</span>
-      ${selectionExtra}
-    `;
+    this.hoverInfoBar.showPixel(x, y, colorIdx, colorHex, isTrans, zoneMeta, selectionExtra);
   }
 
   private clearHoverInfo(): void {
-    this.hoverInfoEl.innerHTML = `<span>X: -- Y: --</span>`;
+    this.hoverInfoBar.clear();
     this.hover = null;
     if (this.isShiftHeld && this.ctx.highlightedPaletteIndex !== null) {
       this.ctx.setHighlightedPaletteIndex(null);
@@ -812,8 +799,8 @@ export class CanvasPanel extends Panel {
 
     if (s.activeTool === 'select') {
       const [px, py] = e?.x !== undefined && e?.y !== undefined ? [e.x, e.y] : this.pointerPixel() ?? [-1, -1];
-      const isCopy = this.isCopyMode || this.wasCopyTriggered || e?.ctrlKey || e?.metaKey || e?.altKey;
-      if (this.moving) {
+      const isCopy = this.selection.isCopy || e?.ctrlKey || e?.metaKey || e?.altKey;
+      if (this.selection.moving) {
         canvas.style.cursor = isCopy ? 'copy' : 'grabbing';
       } else if (s.selection && px !== -1 && py !== -1 && isInRect(px, py, s.selection)) {
         canvas.style.cursor = isCopy ? 'copy' : 'move';

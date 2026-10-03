@@ -58,7 +58,22 @@ function captureMemento({ doc, session }: CommandContext): DocumentMemento {
   };
 }
 
-const bytesEqual = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((v, i) => v === b[i]);
+function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function paletteEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
 const rectEqual = (a: RectSelection | null, b: RectSelection | null) =>
   a === b || (!!a && !!b && a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h);
 
@@ -66,7 +81,7 @@ const rectEqual = (a: RectSelection | null, b: RectSelection | null) =>
 function emitDiff(events: StudioEvents, a: DocumentMemento, b: DocumentMemento): boolean {
   const pixels = !bytesEqual(a.pixels, b.pixels);
   const mask = !bytesEqual(a.mask, b.mask);
-  const palette = a.palette.join() !== b.palette.join();
+  const palette = !paletteEqual(a.palette, b.palette);
   const hairPreset = a.hairPreset !== b.hairPreset;
   const selection = !rectEqual(a.selection, b.selection);
   if (pixels) events.onPixelsChanged?.();

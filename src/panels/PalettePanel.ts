@@ -13,6 +13,29 @@ import { TOOL_ICONS } from './canvas/cursors';
 export class PalettePanel extends Panel {
   private selectedHairRampKey: string = '01_black_黑';
 
+  // Cached DOM elements
+  private activeBadge!: HTMLElement | null;
+  private panelEl!: HTMLElement | null;
+  private toolButtons!: NodeListOf<HTMLElement>;
+  private bucketPanel!: HTMLElement | null;
+  private connTip!: HTMLElement | null;
+  private btnConn8!: HTMLElement | null;
+  private btnConn4!: HTMLElement | null;
+  private undoBtn!: HTMLButtonElement | null;
+  private redoBtn!: HTMLButtonElement | null;
+  private fgPreview!: HTMLElement | null;
+  private fgHexLabel!: HTMLElement | null;
+  private bgPreview!: HTMLElement | null;
+  private bgHexLabel!: HTMLElement | null;
+  private hairRampSelect!: HTMLSelectElement | null;
+  private btnHighlightHair!: HTMLButtonElement | null;
+  private familiesContainer!: HTMLElement | null;
+  private hairContainer!: HTMLElement | null;
+
+  // Cached chip elements
+  private paletteChipElements = new Map<number, { chip: HTMLElement; bgDot: HTMLElement }>();
+  private hairChipElements: { chip: HTMLElement; tierSpan: HTMLElement; indexSpan: HTMLElement; bgDot: HTMLElement }[] = [];
+
   constructor(private readonly container: HTMLElement, vm: ViewModel, private readonly ctx: EditorContext) {
     super(vm);
     this.build();
@@ -70,7 +93,7 @@ export class PalettePanel extends Panel {
               <span class="tool-btn-label">橡皮</span>
               <kbd class="tool-btn-kbd">E</kbd>
             </button>
-            <button class="tool-tab-btn" id="btn-tool-bucket" data-tool="bucket" title="油漆桶工具 (快捷键: B / F，单点填充同色相邻区域)">
+            <button class="tool-tab-btn" id="btn-tool-bucket" data-tool="bucket" title="油漆桶工具 (快捷键: B，单点填充同色相邻区域)">
               <span class="tool-btn-icon">${TOOL_ICONS.bucket}</span>
               <span class="tool-btn-label">油漆桶</span>
               <kbd class="tool-btn-kbd">B</kbd>
@@ -134,14 +157,19 @@ export class PalettePanel extends Panel {
                 <span class="hair-ramp-title">💇 发色卡</span>
                 <span class="hair-ramp-tier-hint">(5色阶)</span>
               </div>
-              <div class="hair-ramp-select-wrap">
-                <select id="hair-ramp-select" class="hair-ramp-select" title="切换发色系列 (与右栏 9 色系对齐)">
-                  ${rampOptions}
-                </select>
+              <div class="hair-ramp-actions">
+                <button type="button" class="hair-highlight-btn" id="btn-highlight-hair-ramp" title="全发色高亮探针 (快捷键: F，按住预览或短按切换锁定，在画布上高亮所有当前发色)">
+                  ✨ 发色高亮
+                </button>
+                <div class="hair-ramp-select-wrap">
+                  <select id="hair-ramp-select" class="hair-ramp-select" title="切换发色系列 (与右栏 9 色系对齐)">
+                    ${rampOptions}
+                  </select>
+                </div>
               </div>
             </div>
             <div class="hair-ramp-chips" id="hair-ramp-chips">
-              <!-- 5 个发色卡片动态注入 -->
+              <!-- 5 个发色卡片在 buildStaticChips 中初始化 -->
             </div>
           </div>
 
@@ -158,41 +186,133 @@ export class PalettePanel extends Panel {
 
           <!-- 36 色按色系分类栅格 (黑白基础双色独立首排，左键选前景色，右键选背景色) -->
           <div class="palette-families-container" id="palette-families-container">
-            <!-- 各色系行动态注入 -->
+            <!-- 各色系行在 buildStaticChips 中初始化 -->
           </div>
         </div>
       </aside>
     `;
 
+    this.cacheDomReferences();
+    this.buildStaticChips();
     this.setupEvents();
+  }
+
+  private cacheDomReferences(): void {
+    const q = <T extends HTMLElement>(sel: string) => this.container.querySelector<T>(sel);
+    this.activeBadge = q('#palette-active-badge');
+    this.panelEl = q('.palette-sidebar-inner');
+    this.toolButtons = this.container.querySelectorAll<HTMLElement>('[data-tool]');
+    this.bucketPanel = q('#bucket-connectivity-panel');
+    this.connTip = q('#connectivity-tip');
+    this.btnConn8 = q('#btn-conn-8');
+    this.btnConn4 = q('#btn-conn-4');
+    this.undoBtn = q('#btn-undo');
+    this.redoBtn = q('#btn-redo');
+    this.fgPreview = q('#fg-color-preview');
+    this.fgHexLabel = q('#fg-color-hex');
+    this.bgPreview = q('#bg-color-preview');
+    this.bgHexLabel = q('#bg-color-hex');
+    this.hairRampSelect = q('#hair-ramp-select');
+    this.btnHighlightHair = q('#btn-highlight-hair-ramp');
+    this.familiesContainer = q('#palette-families-container');
+    this.hairContainer = q('#hair-ramp-chips');
+  }
+
+  private buildStaticChips(): void {
+    // 1. 初始化 36 色 + 基础色板 DOM 树
+    if (this.familiesContainer) {
+      this.familiesContainer.innerHTML = '';
+      this.paletteChipElements.clear();
+
+      PALETTE_FAMILIES.forEach((family) => {
+        const row = document.createElement('div');
+        row.className = `palette-family-row ${family.id === 'base' ? 'palette-family-row-base' : ''}`;
+        row.setAttribute('data-family', family.id);
+
+        const chipsWrap = document.createElement('div');
+        chipsWrap.className = 'palette-family-chips';
+
+        family.indices.forEach((index) => {
+          const isTrans = index === TRANSPARENT_INDEX;
+          const isWhite = index === WHITE_PALETTE_INDEX;
+
+          const chip = document.createElement('div');
+          chip.className = `palette-chip ${isWhite ? 'chip-white' : ''} ${isTrans ? 'chip-transparent' : ''}`;
+          chip.setAttribute('data-index', String(index));
+
+          const indexSpan = document.createElement('span');
+          indexSpan.className = 'chip-index';
+          indexSpan.textContent = isTrans ? '透' : String(index);
+
+          const bgDot = document.createElement('span');
+          bgDot.className = 'chip-bg-dot';
+          bgDot.title = '当前背景色';
+          bgDot.style.display = 'none';
+
+          chip.appendChild(indexSpan);
+          chip.appendChild(bgDot);
+          chipsWrap.appendChild(chip);
+
+          this.paletteChipElements.set(index, { chip, bgDot });
+        });
+
+        row.appendChild(chipsWrap);
+        this.familiesContainer!.appendChild(row);
+      });
+    }
+
+    // 2. 初始化 5 阶独立发色卡 DOM 结构
+    if (this.hairContainer) {
+      this.hairContainer.innerHTML = '';
+      this.hairChipElements = [];
+
+      for (let i = 0; i < 5; i++) {
+        const chip = document.createElement('div');
+        chip.className = 'hair-chip';
+
+        const tierSpan = document.createElement('span');
+        tierSpan.className = 'hair-chip-tier';
+
+        const indexSpan = document.createElement('span');
+        indexSpan.className = 'hair-chip-index';
+
+        const bgDot = document.createElement('span');
+        bgDot.className = 'chip-bg-dot';
+        bgDot.title = '当前背景色';
+        bgDot.style.display = 'none';
+
+        chip.appendChild(tierSpan);
+        chip.appendChild(indexSpan);
+        chip.appendChild(bgDot);
+        this.hairContainer.appendChild(chip);
+
+        this.hairChipElements.push({ chip, tierSpan, indexSpan, bgDot });
+      }
+    }
   }
 
   private setupEvents(): void {
     // 工具按钮
-    this.container.querySelectorAll<HTMLElement>('[data-tool]').forEach((btn) => {
+    this.toolButtons.forEach((btn) => {
       btn.addEventListener('click', () => this.vm.setActiveTool(btn.dataset.tool as PixelTool));
     });
 
     // 油漆桶邻域连通性切换
-    const conn8Btn = this.container.querySelector('#btn-conn-8');
-    conn8Btn?.addEventListener('click', () => {
+    this.btnConn8?.addEventListener('click', () => {
       this.vm.setBucketConnectivity(8);
     });
-
-    const conn4Btn = this.container.querySelector('#btn-conn-4');
-    conn4Btn?.addEventListener('click', () => {
+    this.btnConn4?.addEventListener('click', () => {
       this.vm.setBucketConnectivity(4);
     });
 
     // 交换前景色与背景色
-    const swapBtn = this.container.querySelector('#btn-swap-fgbg');
-    swapBtn?.addEventListener('click', () => {
+    this.container.querySelector('#btn-swap-fgbg')?.addEventListener('click', () => {
       this.vm.swapFgBgColors();
     });
 
     // 撤销 / 重做
-    this.container.querySelector('#btn-undo')?.addEventListener('click', () => this.vm.undo());
-    this.container.querySelector('#btn-redo')?.addEventListener('click', () => this.vm.redo());
+    this.undoBtn?.addEventListener('click', () => this.vm.undo());
+    this.redoBtn?.addEventListener('click', () => this.vm.redo());
 
     // 颜色微调：一次打开取色器到 change 为一次拖动 (gesture)，其间的连续修改合并为一步撤销
     const colorPickerInput = this.container.querySelector('#palette-color-picker') as HTMLInputElement;
@@ -230,11 +350,29 @@ export class PalettePanel extends Panel {
     });
 
     // 发色系下拉菜单切换 (与右侧 9 大发色系对齐)
-    const hairRampSelect = this.container.querySelector('#hair-ramp-select') as HTMLSelectElement | null;
-    hairRampSelect?.addEventListener('change', () => {
-      this.selectedHairRampKey = hairRampSelect.value;
+    this.hairRampSelect?.addEventListener('change', () => {
+      if (!this.hairRampSelect) return;
+      this.selectedHairRampKey = this.hairRampSelect.value;
       this.vm.setHairPreset(this.selectedHairRampKey);
       this.renderHairRampChips();
+      if (this.ctx.isHairHighlightPinned) {
+        this.ctx.setHighlightedPaletteIndex(this.getHairRampIndices());
+      }
+    });
+
+    // 发色高亮按钮：鼠标移上全发色高亮，移开取消；点击可锁定高亮
+    this.btnHighlightHair?.addEventListener('mouseenter', () => {
+      this.ctx.setHighlightedPaletteIndex(this.getHairRampIndices());
+    });
+    this.btnHighlightHair?.addEventListener('mouseleave', () => {
+      if (!this.ctx.isHairHighlightPinned) {
+        this.ctx.setHighlightedPaletteIndex(null);
+      }
+    });
+    this.btnHighlightHair?.addEventListener('click', () => {
+      const willPin = !this.ctx.isHairHighlightPinned;
+      this.ctx.setHairHighlightPinned(willPin);
+      this.ctx.setHighlightedPaletteIndex(willPin ? this.getHairRampIndices() : null);
     });
 
     // 色块：左键选前景色、右键选背景色、悬停在画布上高亮该颜色 (36 色板与发色卡共用)
@@ -255,8 +393,20 @@ export class PalettePanel extends Panel {
         e.preventDefault();
         this.vm.selectBgPaletteIndex(idx);
       });
-      container?.addEventListener('mouseover', (e) => this.ctx.setHighlightedPaletteIndex(chipIndex(e)));
-      container?.addEventListener('mouseleave', () => this.ctx.setHighlightedPaletteIndex(null));
+      container?.addEventListener('mouseover', (e) => {
+        const idx = chipIndex(e);
+        if (idx !== null) {
+          if (this.ctx.isHairHighlightPinned) {
+            this.ctx.setHairHighlightPinned(false);
+          }
+          this.ctx.setHighlightedPaletteIndex(idx);
+        }
+      });
+      container?.addEventListener('mouseleave', () => {
+        if (!this.ctx.isHairHighlightPinned) {
+          this.ctx.setHighlightedPaletteIndex(null);
+        }
+      });
     }
   }
 
@@ -265,172 +415,134 @@ export class PalettePanel extends Panel {
 
     // 1. 活跃状态指示徽章
     const isPixelActive = state.activeMode === 'pixel';
-    const activeBadge = this.container.querySelector('#palette-active-badge') as HTMLElement;
-    if (activeBadge) {
-      activeBadge.style.display = isPixelActive ? 'inline-flex' : 'none';
+    if (this.activeBadge) {
+      this.activeBadge.style.display = isPixelActive ? 'inline-flex' : 'none';
     }
 
-    const panelEl = this.container.querySelector('.palette-sidebar-inner') as HTMLElement;
-    if (panelEl) {
-      if (isPixelActive) {
-        panelEl.classList.add('mode-active');
-      } else {
-        panelEl.classList.remove('mode-active');
-      }
+    if (this.panelEl) {
+      this.panelEl.classList.toggle('mode-active', isPixelActive);
     }
 
     // 2. 工具选择按钮高亮
-    this.container.querySelectorAll<HTMLElement>('[data-tool]').forEach((btn) => {
+    this.toolButtons.forEach((btn) => {
       btn.classList.toggle('active', isPixelActive && btn.dataset.tool === state.activeTool);
     });
 
     // 油漆桶邻域连通性面板展示与状态
-    const bucketPanel = this.container.querySelector('#bucket-connectivity-panel') as HTMLElement;
-    const connTip = this.container.querySelector('#connectivity-tip') as HTMLElement;
-    const btnConn8 = this.container.querySelector('#btn-conn-8');
-    const btnConn4 = this.container.querySelector('#btn-conn-4');
     const conn = state.bucketConnectivity;
-
-    if (bucketPanel) {
-      bucketPanel.style.display = (isPixelActive && state.activeTool === 'bucket') ? 'flex' : 'none';
+    if (this.bucketPanel) {
+      this.bucketPanel.style.display = isPixelActive && state.activeTool === 'bucket' ? 'flex' : 'none';
     }
-    if (connTip) {
-      connTip.textContent = conn === 8 ? '8 邻居 (含对角线)' : '4 邻居 (十字四向)';
+    if (this.connTip) {
+      this.connTip.textContent = conn === 8 ? '8 邻居 (含对角线)' : '4 邻居 (十字四向)';
     }
-    if (btnConn8) {
-      btnConn8.classList.toggle('active', conn === 8);
+    if (this.btnConn8) {
+      this.btnConn8.classList.toggle('active', conn === 8);
     }
-    if (btnConn4) {
-      btnConn4.classList.toggle('active', conn === 4);
+    if (this.btnConn4) {
+      this.btnConn4.classList.toggle('active', conn === 4);
     }
 
     // 3. 撤销 / 重做按钮禁用态
-    const undoBtn = this.container.querySelector('#btn-undo') as HTMLButtonElement;
-    const redoBtn = this.container.querySelector('#btn-redo') as HTMLButtonElement;
-    if (undoBtn) undoBtn.disabled = !this.vm.canUndo();
-    if (redoBtn) redoBtn.disabled = !this.vm.canRedo();
+    if (this.undoBtn) this.undoBtn.disabled = !this.vm.canUndo();
+    if (this.redoBtn) this.redoBtn.disabled = !this.vm.canRedo();
 
     // 4. 更新前景色与背景色预览和标签
     const fgIdx = state.activePaletteIndex;
     const bgIdx = state.bgPaletteIndex;
     const isFgTrans = fgIdx === TRANSPARENT_INDEX;
     const isBgTrans = bgIdx === TRANSPARENT_INDEX;
-    const fgHex = isFgTrans ? '透明' : (state.palette[fgIdx] || '#000000');
-    const bgHex = isBgTrans ? '透明' : (state.palette[bgIdx] || '#FFFFFF');
+    const fgHex = isFgTrans ? '透明' : state.palette[fgIdx] || '#000000';
+    const bgHex = isBgTrans ? '透明' : state.palette[bgIdx] || '#FFFFFF';
 
-    const fgPreview = this.container.querySelector('#fg-color-preview') as HTMLElement;
-    const fgHexLabel = this.container.querySelector('#fg-color-hex') as HTMLElement;
-    const bgPreview = this.container.querySelector('#bg-color-preview') as HTMLElement;
-    const bgHexLabel = this.container.querySelector('#bg-color-hex') as HTMLElement;
-
-    if (fgPreview) {
+    if (this.fgPreview) {
       if (isFgTrans) {
-        fgPreview.className = 'color-slot-preview slot-transparent';
-        fgPreview.style.backgroundColor = '';
+        this.fgPreview.className = 'color-slot-preview slot-transparent';
+        this.fgPreview.style.backgroundColor = '';
       } else {
-        fgPreview.className = 'color-slot-preview';
-        fgPreview.style.backgroundColor = fgHex;
+        this.fgPreview.className = 'color-slot-preview';
+        this.fgPreview.style.backgroundColor = fgHex;
       }
     }
-    if (fgHexLabel) {
-      fgHexLabel.textContent = isFgTrans ? '[透明/删除]' : `${fgHex} [#${fgIdx}]`;
+    if (this.fgHexLabel) {
+      this.fgHexLabel.textContent = isFgTrans ? '[透明/删除]' : `${fgHex} [#${fgIdx}]`;
     }
 
-    if (bgPreview) {
+    if (this.bgPreview) {
       if (isBgTrans) {
-        bgPreview.className = 'color-slot-preview slot-transparent';
-        bgPreview.style.backgroundColor = '';
+        this.bgPreview.className = 'color-slot-preview slot-transparent';
+        this.bgPreview.style.backgroundColor = '';
       } else {
-        bgPreview.className = 'color-slot-preview';
-        bgPreview.style.backgroundColor = bgHex;
+        this.bgPreview.className = 'color-slot-preview';
+        this.bgPreview.style.backgroundColor = bgHex;
       }
     }
-    if (bgHexLabel) {
-      bgHexLabel.textContent = isBgTrans ? '[透明/擦除]' : `${bgHex} [#${bgIdx}]`;
+    if (this.bgHexLabel) {
+      this.bgHexLabel.textContent = isBgTrans ? '[透明/擦除]' : `${bgHex} [#${bgIdx}]`;
     }
 
     // 4.5. 同步发色卡下拉选择与渲染 5 阶发色行 (与右侧 9 大发色系对齐)
     if (state.currentHairPreset && RAMPS_INFO[state.currentHairPreset]) {
       this.selectedHairRampKey = state.currentHairPreset;
     }
-    const hairRampSelect = this.container.querySelector('#hair-ramp-select') as HTMLSelectElement | null;
-    if (hairRampSelect && hairRampSelect.value !== this.selectedHairRampKey) {
-      hairRampSelect.value = this.selectedHairRampKey;
+    if (this.hairRampSelect && this.hairRampSelect.value !== this.selectedHairRampKey) {
+      this.hairRampSelect.value = this.selectedHairRampKey;
     }
     this.renderHairRampChips();
 
-    // 5. 渲染按色系分组的色板行 (基础色行含纯黑、纯白与透明，左键选前景色，右键选背景色)
-    const familiesContainer = this.container.querySelector('#palette-families-container');
-    if (familiesContainer) {
-      familiesContainer.innerHTML = '';
+    // 5. 原地修补按色系分组的色板行 (复用 DOM 节点，零 innerHTML 重建)
+    this.paletteChipElements.forEach(({ chip, bgDot }, index) => {
+      const isTrans = index === TRANSPARENT_INDEX;
+      const hex = isTrans ? '' : state.palette[index] || '#000000';
+      const isFg = index === fgIdx;
+      const isBg = index === bgIdx;
 
-      PALETTE_FAMILIES.forEach((family) => {
-        const row = document.createElement('div');
-        row.className = `palette-family-row ${family.id === 'base' ? 'palette-family-row-base' : ''}`;
-        row.setAttribute('data-family', family.id);
+      chip.classList.toggle('is-fg', isFg);
+      chip.classList.toggle('active', isFg);
+      chip.classList.toggle('is-bg', isBg);
+      bgDot.style.display = isBg ? 'block' : 'none';
 
-        const chipsWrap = document.createElement('div');
-        chipsWrap.className = 'palette-family-chips';
+      if (!isTrans) {
+        chip.style.backgroundColor = hex;
+      }
 
-        family.indices.forEach((index) => {
-          const isTrans = index === TRANSPARENT_INDEX;
-          const hex = isTrans ? '' : (state.palette[index] || '#000000');
-          const chip = document.createElement('div');
-          const isFg = index === fgIdx;
-          const isBg = index === bgIdx;
-          const isWhite = index === WHITE_PALETTE_INDEX;
+      let roleDesc = '';
+      if (index === 0) roleDesc = ' (纯黑/线稿)';
+      if (index === 1) roleDesc = ' (纯白/高光/眼白)';
+      if (isTrans) roleDesc = ' (原生透明/已删除)';
 
-          chip.className = `palette-chip ${isWhite ? 'chip-white' : ''} ${isTrans ? 'chip-transparent' : ''} ${isFg ? 'is-fg active' : ''} ${isBg ? 'is-bg' : ''}`;
-          chip.setAttribute('data-index', String(index));
-          if (!isTrans) {
-            chip.style.backgroundColor = hex;
-          }
-
-          let roleDesc = '';
-          if (index === 0) roleDesc = ' (纯黑/线稿)';
-          if (index === 1) roleDesc = ' (纯白/高光/眼白)';
-          if (isTrans) roleDesc = ' (原生透明/已删除)';
-
-          const indexText = isTrans ? '透' : String(index);
-          const tooltip = isTrans
-            ? `透明色: 原生透明删除 (左键: 前景，右键: 背景)`
-            : `#${index}: ${hex}${roleDesc} (左键: 前景，右键: 背景)`;
-
-          chip.title = tooltip;
-          chip.innerHTML = `
-            <span class="chip-index">${indexText}</span>
-            ${isBg ? '<span class="chip-bg-dot" title="当前背景色"></span>' : ''}
-          `;
-
-          chipsWrap.appendChild(chip);
-        });
-
-        row.appendChild(chipsWrap);
-        familiesContainer.appendChild(row);
-      });
-    }
+      const tooltip = isTrans
+        ? `透明色: 原生透明删除 (左键: 前景，右键: 背景)`
+        : `#${index}: ${hex}${roleDesc} (左键: 前景，右键: 背景)`;
+      chip.title = tooltip;
+    });
 
     this.applyHighlightClasses(this.ctx.highlightedPaletteIndex);
   }
 
   /**
-   * 渲染独立发色卡 5 阶颜色行
+   * 获取当前选中发色卡的全部 5 阶颜色在色板中的索引列表
+   */
+  private getHairRampIndices(): number[] {
+    return this.vm.getHairRampIndices(this.selectedHairRampKey);
+  }
+
+  /**
+   * 原地修补独立发色卡 5 阶颜色行 (复用 DOM 节点)
    */
   private renderHairRampChips(): void {
-    const container = this.container.querySelector('#hair-ramp-chips');
-    if (!container) return;
-
     const rampInfo = RAMPS_INFO[this.selectedHairRampKey];
-    if (!rampInfo) return;
+    if (!rampInfo || this.hairChipElements.length === 0) return;
 
     const fgIdx = this.vm.session.activePaletteIndex;
     const bgIdx = this.vm.session.bgPaletteIndex;
     const palette = this.vm.doc.palette;
-
-    container.innerHTML = '';
     const tierShortNames = ['暗', '深', '中', '主', '光'];
 
     rampInfo.hexes.forEach((hex, tierIdx) => {
+      const cached = this.hairChipElements[tierIdx];
+      if (!cached) return;
+
       let paletteIdx = palette.findIndex((c) => c.toLowerCase() === hex.toLowerCase());
       if (paletteIdx === -1) {
         const nearest = findNearestColor(hex, palette);
@@ -444,30 +556,25 @@ export class PalettePanel extends Panel {
       const tierName = TIER_NAMES[tierIdx] || `第${tierIdx + 1}阶`;
       const shortTier = tierShortNames[tierIdx] || `${tierIdx + 1}`;
 
-      const chip = document.createElement('div');
-      chip.className = `hair-chip ${isFg ? 'is-fg active' : ''} ${isBg ? 'is-bg' : ''}`;
-      chip.setAttribute('data-index', String(paletteIdx));
-      chip.style.backgroundColor = actualHex;
+      cached.chip.className = `hair-chip ${isFg ? 'is-fg active' : ''} ${isBg ? 'is-bg' : ''}`;
+      cached.chip.setAttribute('data-index', String(paletteIdx));
+      cached.chip.style.backgroundColor = actualHex;
+      cached.chip.title = `【${rampInfo.name}】${tierName} (${actualHex}) [#${paletteIdx}]\n左键选为前景色，右键选为背景色`;
 
-      chip.title = `【${rampInfo.name}】${tierName} (${actualHex}) [#${paletteIdx}]\n左键选为前景色，右键选为背景色`;
-
-      chip.innerHTML = `
-        <span class="hair-chip-tier">${shortTier}</span>
-        <span class="hair-chip-index">${paletteIdx}</span>
-        ${isBg ? '<span class="chip-bg-dot" title="当前背景色"></span>' : ''}
-      `;
-
-      container.appendChild(chip);
+      cached.tierSpan.textContent = shortTier;
+      cached.indexSpan.textContent = String(paletteIdx);
+      cached.bgDot.style.display = isBg ? 'block' : 'none';
     });
   }
 
   /**
    * 探针联动：设置/清除左侧 36 色色板与独立发色卡中对应的高亮色块
-   * @param index 调色板索引 (0~35 或 255 代表透明色)；传入 null 则清除高亮
+   * @param index 调色板索引 (0~35 或 255 代表透明色) 或索引列表；传入 null 则清除高亮
    */
-  private applyHighlightClasses(index: number | null): void {
-    const familiesContainer = this.container.querySelector('#palette-families-container');
-    const hairContainer = this.container.querySelector('#hair-ramp-chips');
+  private applyHighlightClasses(index: number | number[] | null): void {
+    if (typeof index === 'number') {
+      this.ctx.setHairHighlightPinned(false);
+    }
 
     // 清除旧高亮
     this.container.querySelectorAll('.palette-chip.is-probed, .hair-chip.is-probed').forEach((el) => {
@@ -475,18 +582,25 @@ export class PalettePanel extends Panel {
     });
 
     if (index !== null) {
-      familiesContainer?.classList.add('has-probed-color');
-      hairContainer?.classList.add('has-probed-color');
+      this.familiesContainer?.classList.add('has-probed-color');
+      this.hairContainer?.classList.add('has-probed-color');
 
-      const matchingChips = this.container.querySelectorAll(
-        `.palette-chip[data-index="${index}"], .hair-chip[data-index="${index}"]`
-      );
-      matchingChips.forEach((chip) => {
-        chip.classList.add('is-probed');
+      const indices = Array.isArray(index) ? index : [index];
+      indices.forEach((idx) => {
+        const matchingChips = this.container.querySelectorAll(
+          `.palette-chip[data-index="${idx}"], .hair-chip[data-index="${idx}"]`
+        );
+        matchingChips.forEach((chip) => {
+          chip.classList.add('is-probed');
+        });
       });
     } else {
-      familiesContainer?.classList.remove('has-probed-color');
-      hairContainer?.classList.remove('has-probed-color');
+      this.familiesContainer?.classList.remove('has-probed-color');
+      this.hairContainer?.classList.remove('has-probed-color');
+    }
+
+    if (this.btnHighlightHair) {
+      this.btnHighlightHair.classList.toggle('active', this.ctx.isHairHighlightPinned);
     }
   }
 }

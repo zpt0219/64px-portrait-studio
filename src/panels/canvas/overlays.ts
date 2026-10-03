@@ -65,19 +65,44 @@ export function drawPatchPixels(
   ctx.restore();
 }
 
-/** 框选预览：框内属于匹配色组的像素着色 */
+/** 框选预览：框内像素着色 (add加匹配色，subtract去杂色，remove去匹配色，clear去所有色) */
 export function drawMatchPreview(
   ctx: CanvasRenderingContext2D,
   pixels: Uint8Array,
+  mask: Uint8Array,
+  activeZone: SemanticZone,
   rect: RectSelection,
   matchColors: Set<number>,
   fillStyle: string,
-  zoom: number
+  zoom: number,
+  mode: 'add' | 'remove' | 'subtract' | 'clear' = 'add'
 ): void {
   ctx.save();
   ctx.fillStyle = fillStyle;
   forEachCell(rect, (_, x, y) => {
-    if (matchColors.has(pixels[y * W + x])) ctx.fillRect(x * zoom, y * zoom, zoom, zoom);
+    const offset = y * W + x;
+    const isMatch = matchColors.has(pixels[offset]);
+    if (mode === 'clear') {
+      // 右键清空：框内所有属于 activeZone 的像素高亮
+      if (mask[offset] === activeZone) {
+        ctx.fillRect(x * zoom, y * zoom, zoom, zoom);
+      }
+    } else if (mode === 'subtract') {
+      // Shift 去杂色：框内属于 activeZone 且不是匹配色的像素高亮
+      if (!isMatch && mask[offset] === activeZone) {
+        ctx.fillRect(x * zoom, y * zoom, zoom, zoom);
+      }
+    } else if (mode === 'remove') {
+      // Alt 去匹配色：框内属于 activeZone 且是匹配色的像素高亮
+      if (isMatch && mask[offset] === activeZone) {
+        ctx.fillRect(x * zoom, y * zoom, zoom, zoom);
+      }
+    } else {
+      // 左键 加匹配色：关键防护：add 模式下透明像素不入遮罩，预览时亦不着色
+      if (isMatch && pixels[offset] !== TRANSPARENT_INDEX) {
+        ctx.fillRect(x * zoom, y * zoom, zoom, zoom);
+      }
+    }
   });
   ctx.restore();
 }
@@ -100,44 +125,68 @@ export function drawGrid(ctx: CanvasRenderingContext2D, zoom: number): void {
 }
 
 /**
- * 颜色探针：压暗所有非目标颜色像素，并给目标像素描边提亮
+ * 颜色探针：压暗所有非目标颜色像素，并给目标像素描边提亮 (支持单色或多色集合，如全发色高亮)
  */
 export function drawColorHighlight(
   ctx: CanvasRenderingContext2D,
   pixels: Uint8Array,
-  targetIdx: number,
+  targetIdx: number | number[] | Set<number>,
   zoom: number
 ): void {
-  const isTransparent = targetIdx === TRANSPARENT_INDEX;
-  const isWhite = targetIdx === WHITE_PALETTE_INDEX;
+  const isSet = targetIdx instanceof Set ? targetIdx : Array.isArray(targetIdx) ? new Set(targetIdx) : null;
+  const isMatch = (color: number) => (isSet ? isSet.has(color) : color === targetIdx);
+  const isTransparent = isSet ? isSet.has(TRANSPARENT_INDEX) : targetIdx === TRANSPARENT_INDEX;
+  const isWhite = isSet ? isSet.has(WHITE_PALETTE_INDEX) : targetIdx === WHITE_PALETTE_INDEX;
 
-  ctx.save();
-  ctx.beginPath();
-  forEachCell(FULL, (i, x, y) => {
-    if (pixels[i] !== targetIdx) ctx.rect(x * zoom, y * zoom, zoom, zoom);
-  });
-  ctx.fillStyle = 'rgba(10, 12, 22, 0.72)';
-  ctx.fill();
-  ctx.restore();
+  const darkPath = new Path2D();
+  const matchPath = new Path2D();
+  const matches: [number, number][] = [];
 
-  ctx.save();
-  ctx.beginPath();
-  let matchCount = 0;
   forEachCell(FULL, (i, x, y) => {
-    if (pixels[i] === targetIdx) {
-      matchCount++;
-      ctx.rect(x * zoom + 0.5, y * zoom + 0.5, zoom - 1, zoom - 1);
+    if (isMatch(pixels[i])) {
+      matches.push([x, y]);
+      matchPath.rect(x * zoom + 0.5, y * zoom + 0.5, zoom - 1, zoom - 1);
+    } else {
+      darkPath.rect(x * zoom, y * zoom, zoom, zoom);
     }
   });
-  if (matchCount > 0) {
-    // 白色与透明色用青色描边，其余用白色
+
+  // 1. 压暗所有非目标颜色像素
+  ctx.save();
+  ctx.fillStyle = 'rgba(10, 12, 22, 0.72)';
+  ctx.fill(darkPath);
+  ctx.restore();
+
+  if (matches.length > 0) {
+    ctx.save();
+    // 2. 像素边框描边与微高光 (白色与透明色用青色描边，其余用纯白)
     ctx.strokeStyle = isWhite || isTransparent ? '#38bdf8' : '#ffffff';
     ctx.lineWidth = 1;
-    ctx.stroke();
+    ctx.stroke(matchPath);
     ctx.fillStyle = isTransparent ? 'rgba(56, 189, 248, 0.22)' : 'rgba(255, 255, 255, 0.18)';
-    ctx.fill();
+    ctx.fill(matchPath);
+
+    // 3. 像素中心实心小圆点：一眼辨识精确命中的像素与相邻近似色
+    const dotRadius = Math.max(1.2, Math.min(zoom * 0.22, 5));
+    const dotPath = new Path2D();
+    for (let k = 0; k < matches.length; k++) {
+      const [x, y] = matches[k];
+      const cx = (x + 0.5) * zoom;
+      const cy = (y + 0.5) * zoom;
+      dotPath.moveTo(cx + dotRadius, cy);
+      dotPath.arc(cx, cy, dotRadius, 0, Math.PI * 2);
+    }
+    // 纯白像素下用青蓝实心点，透明像素用天蓝，其余颜色一律用纯白实心点，外加深色描边保证任何底色均清晰可见
+    ctx.fillStyle = isWhite ? '#0284c7' : isTransparent ? '#38bdf8' : '#ffffff';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.95)';
+    ctx.shadowBlur = Math.max(2, zoom * 0.25);
+    ctx.fill(dotPath);
+    ctx.shadowColor = 'transparent';
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+    ctx.lineWidth = Math.max(0.6, Math.min(1.2, zoom * 0.08));
+    ctx.stroke(dotPath);
+    ctx.restore();
   }
-  ctx.restore();
 }
 
 /**

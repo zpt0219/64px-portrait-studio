@@ -9,6 +9,41 @@ import { ViewModel } from '../app/viewModel';
 import { Panel } from './Panel';
 
 export class MaskPanel extends Panel {
+  // Cached DOM elements
+  private activeBadge!: HTMLElement | null;
+  private panelEl!: HTMLElement | null;
+  private opacitySlider!: HTMLInputElement | null;
+  private opacityText!: HTMLElement | null;
+  private actionBox!: HTMLElement | null;
+  private zoneListEl!: HTMLElement | null;
+  private hairGridEl!: HTMLElement | null;
+
+  // Cached cards
+  private zoneCardElements = new Map<
+    SemanticZone,
+    {
+      card: HTMLElement;
+      checkbox: HTMLInputElement;
+      checkmark: HTMLElement;
+      checkSvg: HTMLElement;
+      countEl: HTMLElement;
+      lockBtn: HTMLButtonElement | null;
+      checkColor: string;
+      metaColor: string;
+      metaName: string;
+    }
+  >();
+
+  private hairPresetCardElements = new Map<
+    string,
+    {
+      card: HTMLElement;
+      badgeWrap: HTMLElement;
+      name: string;
+    }
+  >();
+  private hairSectionEl: HTMLElement | null = null;
+
   constructor(private readonly container: HTMLElement, vm: ViewModel) {
     super(vm);
     this.build();
@@ -66,7 +101,7 @@ export class MaskPanel extends Panel {
             </div>
           </div>
           <div class="zone-selector-list" id="zone-list">
-            <!-- 5 分区项动态注入 -->
+            <!-- 5 分区项在 buildStaticCards 中初始化 -->
           </div>
 
           <!-- 语义智能重识别 -->
@@ -77,52 +112,162 @@ export class MaskPanel extends Panel {
             <div class="help-text">在像素修图后，可点击一键重新提取 5 分区语义遮罩（不影响画面已有像素）</div>
           </div>
 
-          <div class="panel-divider"></div>
+          <!-- 9 大经典二次元发色预设置换 (默认隐藏，仅当选了头发mask时显示) -->
+          <div class="hair-recolor-section" id="hair-recolor-section" style="display: none;">
+            <div class="panel-divider"></div>
 
-          <!-- 9 大经典二次元发色预设置换 -->
-          <div class="section-header">
-            <span class="section-title">💇 头发 9 大预设发色置换</span>
-          </div>
-          <div class="help-text">仅针对 Hair 分区像素，根据相对明暗保留立体光影与褶皱高光。</div>
+            <div class="section-header">
+              <span class="section-title">💇 头发 9 大预设发色置换</span>
+            </div>
+            <div class="help-text">仅针对 Hair 分区像素，根据相对明暗保留立体光影与褶皱高光。</div>
 
-          <div class="hair-presets-grid" id="hair-presets-grid">
-            <!-- 9 发色卡片动态注入 -->
-          </div>
+            <div class="hair-presets-grid" id="hair-presets-grid">
+              <!-- 9 发色卡片在 buildStaticCards 中初始化 -->
+            </div>
 
-          <!-- 发色预览操作入口：有未固化试色预览时显示，点击唤起居中弹窗确认 -->
-          <div class="hair-action-box" id="hair-action-box" style="margin-top: 10px; display: none;">
-            <button class="btn btn-primary btn-block" id="btn-hair-open-modal" title="弹出窗口固化或还原发色">
-              ✨ 固化 / 还原当前发色...
-            </button>
+            <!-- 发色预览操作入口：有未固化试色预览时显示，点击唤起居中弹窗确认 -->
+            <div class="hair-action-box" id="hair-action-box" style="margin-top: 10px; display: none;">
+              <button class="btn btn-primary btn-block" id="btn-hair-open-modal" title="弹出窗口固化或还原发色">
+                ✨ 固化 / 还原当前发色...
+              </button>
+            </div>
           </div>
         </div>
       </aside>
     `;
 
+    this.cacheDomReferences();
+    this.buildStaticCards();
     this.setupEvents();
+  }
+
+  private cacheDomReferences(): void {
+    const q = <T extends HTMLElement>(sel: string) => this.container.querySelector<T>(sel);
+    this.activeBadge = q('#mask-active-badge');
+    this.panelEl = q('.mask-sidebar-inner');
+    this.opacitySlider = q<HTMLInputElement>('#slider-mask-opacity');
+    this.opacityText = q('#mask-opacity-text');
+    this.actionBox = q('#hair-action-box');
+    this.zoneListEl = q('#zone-list');
+    this.hairGridEl = q('#hair-presets-grid');
+    this.hairSectionEl = q('#hair-recolor-section');
+  }
+
+  private buildStaticCards(): void {
+    // 1. 初始化 5 分区静态卡片
+    if (this.zoneListEl) {
+      this.zoneListEl.innerHTML = '';
+      this.zoneCardElements.clear();
+
+      ALL_ZONES.forEach((zone) => {
+        const meta = ZONE_CONFIG[zone];
+        const isLightZone = zone === SemanticZone.Clothes || zone === SemanticZone.Hair;
+        const checkColor = isLightZone ? '#000000' : '#FFFFFF';
+
+        const card = document.createElement('div');
+        card.className = 'zone-card';
+        card.dataset.zone = String(zone);
+        card.style.borderLeftColor = meta.color;
+
+        card.innerHTML = `
+          <label class="zone-checkbox-wrap" title="多选：勾选以在画布上显示此遮罩">
+            <input type="checkbox" class="zone-checkbox" checked />
+            <span class="zone-checkmark">
+              <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="${checkColor}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 8.5 6.5 12 13 4.5"></polyline>
+              </svg>
+            </span>
+          </label>
+          <div class="zone-card-main">
+            <span class="zone-color-indicator" style="background-color: ${meta.color};"></span>
+            <span class="zone-name">${meta.name}</span>
+            <span class="zone-hotkey">[${meta.hotkey}]</span>
+          </div>
+          <div class="zone-card-right">
+            <span class="zone-stat"><b class="zone-count-val">0</b> px</span>
+            ${zone !== SemanticZone.Background ? `
+            <button class="zone-action-btn zone-lock-btn">
+              🔓
+            </button>` : ''}
+          </div>
+        `;
+
+        this.zoneListEl!.appendChild(card);
+
+        const checkbox = card.querySelector<HTMLInputElement>('.zone-checkbox')!;
+        const checkmark = card.querySelector<HTMLElement>('.zone-checkmark')!;
+        const checkSvg = card.querySelector<HTMLElement>('svg')!;
+        const countEl = card.querySelector<HTMLElement>('.zone-count-val')!;
+        const lockBtn = card.querySelector<HTMLButtonElement>('.zone-lock-btn');
+
+        this.zoneCardElements.set(zone, {
+          card,
+          checkbox,
+          checkmark,
+          checkSvg,
+          countEl,
+          lockBtn,
+          checkColor,
+          metaColor: meta.color,
+          metaName: meta.name,
+        });
+      });
+    }
+
+    // 2. 初始化 9 大发色预设卡片
+    if (this.hairGridEl) {
+      this.hairGridEl.innerHTML = '';
+      this.hairPresetCardElements.clear();
+
+      Object.entries(RAMPS_INFO).forEach(([key, info]) => {
+        const card = document.createElement('div');
+        card.className = 'hair-preset-card';
+        card.dataset.preset = key;
+
+        const rampChips = info.hexes
+          .map((h) => `<span class="ramp-chip" style="background-color: ${h};"></span>`)
+          .join('');
+
+        card.innerHTML = `
+          <div class="preset-header">
+            <span class="preset-icon">${info.icon}</span>
+            <span class="preset-name">${info.name}</span>
+            <span class="preset-badge-wrap"></span>
+          </div>
+          <div class="preset-ramp-row">
+            ${rampChips}
+          </div>
+        `;
+
+        this.hairGridEl!.appendChild(card);
+
+        const badgeWrap = card.querySelector<HTMLElement>('.preset-badge-wrap')!;
+        this.hairPresetCardElements.set(key, {
+          card,
+          badgeWrap,
+          name: info.name,
+        });
+      });
+    }
   }
 
   private setupEvents(): void {
     // 遮罩透明度滑杆
-    const opacitySlider = this.container.querySelector('#slider-mask-opacity') as HTMLInputElement;
-    opacitySlider?.addEventListener('input', (e) => {
+    this.opacitySlider?.addEventListener('input', (e) => {
       const val = parseInt((e.target as HTMLInputElement).value, 10);
-      const opacityText = this.container.querySelector('#mask-opacity-text');
-      if (opacityText) opacityText.textContent = `${val}%`;
+      if (this.opacityText) this.opacityText.textContent = `${val}%`;
       this.vm.setMaskOpacity(val / 100);
     });
-    opacitySlider?.addEventListener('change', () => {
-      opacitySlider.blur();
+    this.opacitySlider?.addEventListener('change', () => {
+      this.opacitySlider?.blur();
     });
 
     // 全选 / 清空遮罩显隐
-    const btnSelectAll = this.container.querySelector('#btn-mask-select-all');
-    btnSelectAll?.addEventListener('click', () => {
+    this.container.querySelector('#btn-mask-select-all')?.addEventListener('click', () => {
       this.vm.setAllZonesVisibility(true);
     });
 
-    const btnSelectNone = this.container.querySelector('#btn-mask-select-none');
-    btnSelectNone?.addEventListener('click', () => {
+    this.container.querySelector('#btn-mask-select-none')?.addEventListener('click', () => {
       this.vm.setAllZonesVisibility(false);
     });
 
@@ -132,7 +277,7 @@ export class MaskPanel extends Panel {
     });
 
     // 分区卡片：勾选框控制显隐，锁按钮切换锁定，点击卡片其余部分选择画刷
-    const zoneList = this.container.querySelector('#zone-list');
+    const zoneList = this.zoneListEl;
     const cardZone = (e: Event) => {
       const card = (e.target as HTMLElement).closest<HTMLElement>('.zone-card');
       return card ? (Number(card.dataset.zone) as SemanticZone) : null;
@@ -142,6 +287,9 @@ export class MaskPanel extends Panel {
       const checkbox = e.target as HTMLInputElement;
       if (zone !== null && checkbox.classList.contains('zone-checkbox')) {
         this.vm.toggleZoneVisibility(zone, checkbox.checked);
+        if (checkbox.checked) {
+          this.vm.setActiveZone(zone);
+        }
       }
     });
     zoneList?.addEventListener('click', (e) => {
@@ -151,13 +299,12 @@ export class MaskPanel extends Panel {
       if (target.closest('.zone-lock-btn')) {
         this.vm.toggleLockZone(zone);
       } else {
-        this.vm.setMode('mask');
         this.vm.setActiveZone(zone);
       }
     });
 
     // 发色预设卡片：点击预览；点击正在预览的卡片则打开固化/还原弹窗
-    this.container.querySelector('#hair-presets-grid')?.addEventListener('click', (e) => {
+    this.hairGridEl?.addEventListener('click', (e) => {
       const key = (e.target as HTMLElement).closest<HTMLElement>('.hair-preset-card')?.dataset.preset;
       if (!key) return;
       if (key === this.vm.session.hairDraftPreset) this.vm.openHairRecolorPrompt();
@@ -176,29 +323,21 @@ export class MaskPanel extends Panel {
 
     // 1. 活跃状态指示徽章
     const isMaskActive = state.activeMode === 'mask';
-    const activeBadge = this.container.querySelector('#mask-active-badge') as HTMLElement;
-    if (activeBadge) {
-      activeBadge.style.display = isMaskActive ? 'inline-flex' : 'none';
+    if (this.activeBadge) {
+      this.activeBadge.style.display = isMaskActive ? 'inline-flex' : 'none';
     }
 
-    const panelEl = this.container.querySelector('.mask-sidebar-inner') as HTMLElement;
-    if (panelEl) {
-      if (isMaskActive) {
-        panelEl.classList.add('mode-active');
-      } else {
-        panelEl.classList.remove('mode-active');
-      }
+    if (this.panelEl) {
+      this.panelEl.classList.toggle('mode-active', isMaskActive);
     }
 
     // 3. 更新透明度滑杆显示
-    const opacitySlider = this.container.querySelector('#slider-mask-opacity') as HTMLInputElement;
-    const opacityText = this.container.querySelector('#mask-opacity-text');
     const opacityPct = Math.round(state.maskOpacity * 100);
-    if (opacitySlider && parseInt(opacitySlider.value, 10) !== opacityPct) {
-      opacitySlider.value = opacityPct.toString();
+    if (this.opacitySlider && parseInt(this.opacitySlider.value, 10) !== opacityPct) {
+      this.opacitySlider.value = opacityPct.toString();
     }
-    if (opacityText) {
-      opacityText.textContent = `${opacityPct}%`;
+    if (this.opacityText) {
+      this.opacityText.textContent = `${opacityPct}%`;
     }
 
     // 4. 计算 5 分区像素统计
@@ -217,107 +356,68 @@ export class MaskPanel extends Panel {
       }
     }
 
-    // 5. 渲染 5 分区画刷选择、上锁与删除列表
-    const zoneList = this.container.querySelector('#zone-list');
-    if (zoneList) {
-      zoneList.innerHTML = '';
-      const visibleSet = new Set(state.visibleMaskZones);
-      const lockedSet = new Set(state.lockedMaskZones);
+    // 5. 原地修补 5 分区画刷选择、上锁与统计 (零 innerHTML 重建)
+    const visibleSet = new Set(state.visibleMaskZones);
+    const lockedSet = new Set(state.lockedMaskZones);
 
-      ALL_ZONES.forEach((zone) => {
-        const meta = ZONE_CONFIG[zone];
-        const count = zoneCounts[zone] || 0;
-        const isActive = isMaskActive && state.activeZone === zone;
-        const isChecked = visibleSet.has(zone);
-        const isLocked = lockedSet.has(zone);
+    this.zoneCardElements.forEach((cached, zone) => {
+      const count = zoneCounts[zone] || 0;
+      const isActive = isMaskActive && state.activeZone === zone;
+      const isChecked = visibleSet.has(zone);
+      const isLocked = lockedSet.has(zone);
 
-        const card = document.createElement('div');
-        card.className = `zone-card ${isActive ? 'active' : ''} ${isLocked ? 'is-locked' : ''}`;
-        card.dataset.zone = String(zone);
-        card.style.borderLeftColor = meta.color;
-        card.title = isLocked
-          ? `【已锁定】${meta.name} 遮罩受保护，不可被涂抹或右键擦除 (点击可切换选中)`
-          : `点击选择 ${meta.name} 画刷 (🖱️ 左键涂抹 · 🖱️ 右键逐点删除)`;
+      cached.card.className = `zone-card ${isActive ? 'active' : ''} ${isLocked ? 'is-locked' : ''}`;
+      cached.card.title = isLocked
+        ? `【已锁定】${cached.metaName} 遮罩受保护，不可被涂抹或右键擦除 (点击可切换选中)`
+        : `点击选择 ${cached.metaName} 画刷 (🖱️ 左键涂抹 · 🖱️ 右键逐点删除)`;
 
-        // 对于明度较高的高亮色（发色电光青 #00E5FF、衣服金黄 #FFD600），使用黑字对勾更清晰
-        const isLightZone = zone === SemanticZone.Clothes || zone === SemanticZone.Hair;
-        const checkColor = isLightZone ? '#000000' : '#FFFFFF';
-        const checkBg = isChecked ? meta.color : 'transparent';
-        const checkBorder = isChecked ? meta.color : 'rgba(255, 255, 255, 0.3)';
+      cached.checkbox.checked = isChecked;
+      cached.checkmark.style.backgroundColor = isChecked ? cached.metaColor : 'transparent';
+      cached.checkmark.style.borderColor = isChecked ? cached.metaColor : 'rgba(255, 255, 255, 0.3)';
+      cached.checkSvg.style.display = isChecked ? 'block' : 'none';
 
-        card.innerHTML = `
-          <label class="zone-checkbox-wrap" title="多选：勾选以在画布上显示此遮罩">
-            <input type="checkbox" class="zone-checkbox" ${isChecked ? 'checked' : ''} />
-            <span class="zone-checkmark" style="background-color: ${checkBg}; border-color: ${checkBorder};">
-              <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="${checkColor}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="display: ${isChecked ? 'block' : 'none'};">
-                <polyline points="3 8.5 6.5 12 13 4.5"></polyline>
-              </svg>
-            </span>
-          </label>
-          <div class="zone-card-main">
-            <span class="zone-color-indicator" style="background-color: ${meta.color};"></span>
-            <span class="zone-name">${meta.name}</span>
-            <span class="zone-hotkey">[${meta.hotkey}]</span>
-          </div>
-          <div class="zone-card-right">
-            <span class="zone-stat"><b>${count}</b> px</span>
-            ${zone !== SemanticZone.Background ? `
-            <button class="zone-action-btn zone-lock-btn ${isLocked ? 'locked' : ''}" title="${isLocked ? '已锁定：此分区受保护，不可被其他遮罩涂抹或右键擦除 (点击解锁)' : '未锁定：点击锁定此分区以防被误改或右键擦除'}">
-              ${isLocked ? '🔒' : '🔓'}
-            </button>` : ''}
-          </div>
-        `;
+      cached.countEl.textContent = String(count);
 
-        zoneList.appendChild(card);
-      });
+      if (cached.lockBtn) {
+        cached.lockBtn.className = `zone-action-btn zone-lock-btn ${isLocked ? 'locked' : ''}`;
+        cached.lockBtn.textContent = isLocked ? '🔒' : '🔓';
+        cached.lockBtn.title = isLocked
+          ? '已锁定：此分区受保护，不可被其他遮罩涂抹或右键擦除 (点击解锁)'
+          : '未锁定：点击锁定此分区以防被误改或右键擦除';
+      }
+    });
+
+    // 5.4 9 大预设发色显隐：默认不显示，只有选了头发 (Hair) 遮罩时才显示
+    const isHairMaskSelected = isMaskActive && state.activeZone === SemanticZone.Hair && visibleSet.has(SemanticZone.Hair);
+    if (this.hairSectionEl) {
+      this.hairSectionEl.style.display = isHairMaskSelected ? 'block' : 'none';
     }
 
     // 5.5 更新发色操作入口显隐
-    const actionBox = this.container.querySelector('#hair-action-box') as HTMLElement;
-    if (actionBox) {
-      actionBox.style.display = draftHairPreset ? 'block' : 'none';
+    if (this.actionBox) {
+      this.actionBox.style.display = draftHairPreset ? 'block' : 'none';
     }
 
-    // 6. 渲染 9 大发色预设卡片 (支持未固化预览态与固化状态区分)
-    const hairGrid = this.container.querySelector('#hair-presets-grid');
-    if (hairGrid) {
-      hairGrid.innerHTML = '';
-      Object.entries(RAMPS_INFO).forEach(([key, info]) => {
-        const isCommitted = state.currentHairPreset === key;
-        const isDraft = draftHairPreset === key;
-        const isActive = isDraft || (isCommitted && !draftHairPreset);
-        const card = document.createElement('div');
-        card.className = `hair-preset-card ${isActive ? 'active' : ''} ${isDraft ? 'previewing' : ''}`;
-        card.dataset.preset = key;
-        card.title = isDraft
-          ? `当前正在预览: ${info.name} (点击可打开固化/还原弹窗)`
-          : (isCommitted ? `已固化发色: ${info.name}` : `置换发色为: ${info.name}`);
+    // 6. 原地修补 9 大发色预设卡片 (零 innerHTML 重建)
+    this.hairPresetCardElements.forEach((cached, key) => {
+      const isCommitted = state.currentHairPreset === key;
+      const isDraft = draftHairPreset === key;
+      const isActive = isDraft || (isCommitted && !draftHairPreset);
 
-        const rampChips = info.hexes
-          .map((h) => `<span class="ramp-chip" style="background-color: ${h};"></span>`)
-          .join('');
+      cached.card.className = `hair-preset-card ${isActive ? 'active' : ''} ${isDraft ? 'previewing' : ''}`;
+      cached.card.title = isDraft
+        ? `当前正在预览: ${cached.name} (点击可打开固化/还原弹窗)`
+        : (isCommitted ? `已固化发色: ${cached.name}` : `置换发色为: ${cached.name}`);
 
-        let badgeHtml = '';
-        if (isDraft) {
-          badgeHtml = '<span class="preset-badge badge-preview">预览中</span>';
-        } else if (isCommitted) {
-          badgeHtml = '<span class="preset-badge">已固化</span>';
-        }
-
-        card.innerHTML = `
-          <div class="preset-header">
-            <span class="preset-icon">${info.icon}</span>
-            <span class="preset-name">${info.name}</span>
-            ${badgeHtml}
-          </div>
-          <div class="preset-ramp-row">
-            ${rampChips}
-          </div>
-        `;
-
-        hairGrid.appendChild(card);
-      });
-    }
+      if (isDraft) {
+        cached.badgeWrap.innerHTML = '<span class="preset-badge badge-preview">预览中</span>';
+      } else if (isCommitted) {
+        cached.badgeWrap.innerHTML = '<span class="preset-badge">已固化</span>';
+      } else {
+        cached.badgeWrap.innerHTML = '';
+      }
+    });
   }
 }
+
 

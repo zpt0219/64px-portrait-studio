@@ -190,7 +190,10 @@ export function floodFillPixels(
   return region.length > 0;
 }
 
-/** 从 (x, y) 开始泛洪替换同分区遮罩，限定在 scope 内；起点分区或目标分区 (非背景) 被锁定时不操作 */
+/**
+ * 从 (x, y) 开始，BFS 泛洪扩展相邻同色 (layers.pixels) 像素并划入 toZone 遮罩，限定在 scope 内；
+ * 锁定分区的像素受保护不被覆盖或穿越；若 toZone (非背景) 本身被锁定则不操作。
+ */
 export function floodFillMask(
   layers: Layers,
   x: number,
@@ -200,16 +203,56 @@ export function floodFillMask(
   scope: RectSelection
 ): boolean {
   const start = y * W + x;
-  const fromZone = layers.mask[start];
-  if (fromZone === toZone || !inRect(x, y, scope)) return false;
-  if (layers.lockedZones.has(fromZone)) return false;
+  if (!inRect(x, y, scope)) return false;
   if (toZone !== SemanticZone.Background && layers.lockedZones.has(toZone)) return false;
+
+  const fromColor = layers.pixels[start];
+  // 关键防护：起点为透明色且非擦除操作时，禁止将透明区域填入遮罩
+  if (fromColor === TRANSPARENT_INDEX && toZone !== SemanticZone.Background) return false;
 
   const region = floodFill(
     [start],
-    (o) => layers.mask[o] === fromZone && inRect(o % W, Math.floor(o / W), scope),
+    (o) =>
+      layers.pixels[o] === fromColor &&
+      !layers.lockedZones.has(layers.mask[o]) &&
+      inRect(o % W, Math.floor(o / W), scope),
     diagonal
   );
-  for (const offset of region) layers.mask[offset] = toZone;
-  return region.length > 0;
+
+  let changed = false;
+  for (const offset of region) {
+    if (layers.mask[offset] !== toZone) {
+      layers.mask[offset] = toZone;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/**
+ * 全域（限定在 scope 内）把所有颜色为 fromColor 的非锁定像素划入 toZone 遮罩 (对应 Shift+油漆桶)；
+ * 返回改动的像素数。
+ */
+export function assignColorToMask(
+  layers: Layers,
+  fromColor: number,
+  toZone: SemanticZone,
+  scope: RectSelection
+): number {
+  if (toZone !== SemanticZone.Background && layers.lockedZones.has(toZone)) return 0;
+  // 关键防护：禁止将全图透明像素批量划入非背景遮罩
+  if (fromColor === TRANSPARENT_INDEX && toZone !== SemanticZone.Background) return 0;
+  let count = 0;
+  for (let py = scope.y; py < scope.y + scope.h; py++) {
+    for (let px = scope.x; px < scope.x + scope.w; px++) {
+      if (px < 0 || px >= W || py < 0 || py >= H) continue;
+      const offset = py * W + px;
+      if (layers.pixels[offset] !== fromColor) continue;
+      const current = layers.mask[offset] as SemanticZone;
+      if (layers.lockedZones.has(current) || current === toZone) continue;
+      layers.mask[offset] = toZone;
+      count++;
+    }
+  }
+  return count;
 }

@@ -2,11 +2,28 @@
  * localStorage 自动暂存 (300ms 防抖) 与恢复
  */
 
-import { ProjectData } from '../types';
+import { ProjectData, SemanticZone } from '../types';
 import { PortraitDocument } from '../model/document';
+import { TRANSPARENT_INDEX } from '../data/palette';
 import { uint8ArrayToBase64, base64ToUint8Array, validateProjectData } from './projectData';
 
 const STORAGE_KEY = 'imagegem_project_autosave_v2';
+
+export interface KeyValueStore {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+}
+
+let activeStore: KeyValueStore = {
+  getItem: (k) => (typeof localStorage !== 'undefined' ? localStorage.getItem(k) : null),
+  setItem: (k, v) => { if (typeof localStorage !== 'undefined') localStorage.setItem(k, v); },
+  removeItem: (k) => { if (typeof localStorage !== 'undefined') localStorage.removeItem(k); },
+};
+
+export function setStorageAdapter(store: KeyValueStore): void {
+  activeStore = store;
+}
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -28,10 +45,18 @@ export function documentToProjectData(doc: PortraitDocument): ProjectData {
  * 将 ProjectData 反序列化为文档
  */
 export function projectDataToDocument(data: ProjectData): PortraitDocument {
+  const pixelIndices = base64ToUint8Array(data.pixels);
+  const semanticMask = base64ToUint8Array(data.mask);
+  // 系统级不变量保护：透明像素恒不入非背景蒙版
+  for (let i = 0; i < pixelIndices.length; i++) {
+    if (pixelIndices[i] === TRANSPARENT_INDEX) {
+      semanticMask[i] = SemanticZone.Background;
+    }
+  }
   return {
-    palette: [...data.palette],
-    pixelIndices: base64ToUint8Array(data.pixels),
-    semanticMask: base64ToUint8Array(data.mask),
+    palette: data.palette.map((h) => h.toUpperCase()),
+    pixelIndices,
+    semanticMask,
     currentHairPreset: data.hairPreset,
   };
 }
@@ -42,7 +67,7 @@ export function projectDataToDocument(data: ProjectData): PortraitDocument {
 function saveProjectImmediate(doc: PortraitDocument): void {
   try {
     const data = documentToProjectData(doc);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    activeStore.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch (err) {
     console.warn('LocalStorage save failed:', err);
   }
@@ -66,7 +91,7 @@ export function saveProjectDebounced(doc: PortraitDocument, onSaved?: () => void
  */
 export function hasSavedProject(): boolean {
   try {
-    const item = localStorage.getItem(STORAGE_KEY);
+    const item = activeStore.getItem(STORAGE_KEY);
     return item !== null && item.length > 50;
   } catch {
     return false;
@@ -78,7 +103,7 @@ export function hasSavedProject(): boolean {
  */
 export function loadProjectFromStorage(): ProjectData | null {
   try {
-    const item = localStorage.getItem(STORAGE_KEY);
+    const item = activeStore.getItem(STORAGE_KEY);
     if (!item) return null;
     const raw = JSON.parse(item);
     const validation = validateProjectData(raw);
@@ -102,7 +127,7 @@ export function clearProjectStorage(): void {
       clearTimeout(debounceTimer);
       debounceTimer = null;
     }
-    localStorage.removeItem(STORAGE_KEY);
+    activeStore.removeItem(STORAGE_KEY);
   } catch (err) {
     console.warn('LocalStorage clear failed:', err);
   }

@@ -7,7 +7,7 @@ import { RectSelection } from '../../types';
 import { PortraitDocument } from '../../model/document';
 import { EditorSession } from '../../model/session';
 import { TRANSPARENT_INDEX, WHITE_PALETTE_INDEX } from '../../data/palette';
-import { IMAGE_WIDTH as W } from '../../core/pixelGrid';
+import { IMAGE_WIDTH as W, IMAGE_HEIGHT as H } from '../../core/pixelGrid';
 
 interface SelectionStatsCallbacks {
   onColorPick: (paletteIndex: number, isBackground: boolean) => void;
@@ -24,13 +24,19 @@ interface ColorStat {
 function selectionColorStats(pixels: Uint8Array, sel: RectSelection): ColorStat[] {
   const counts = new Map<number, number>();
   let total = 0;
-  for (let y = sel.y; y < sel.y + sel.h; y++) {
-    for (let x = sel.x; x < sel.x + sel.w; x++) {
+  const y0 = Math.max(0, sel.y);
+  const y1 = Math.min(H, sel.y + sel.h);
+  const x0 = Math.max(0, sel.x);
+  const x1 = Math.min(W, sel.x + sel.w);
+
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
       const colorIdx = pixels[y * W + x];
       counts.set(colorIdx, (counts.get(colorIdx) || 0) + 1);
       total++;
     }
   }
+  if (total === 0) return [];
   return Array.from(counts.entries())
     .sort(([a], [b]) => a - b) // TRANSPARENT_INDEX = 255 自然排在最后
     .map(([index, count]) => ({ index, count, percentage: (count / total) * 100 }));

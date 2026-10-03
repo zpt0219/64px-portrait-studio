@@ -1,0 +1,289 @@
+/* =========================================================================
+   Picture-in-Picture (PiP) Real-time Viewport
+   ========================================================================= */
+
+.pip-preview-card {
+  box-sizing: border-box;
+  position: absolute;
+  top: 52px;
+  right: 16px;
+  width: auto;
+  min-width: 220px;
+  background: rgba(18, 20, 31, 0.94);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(124, 58, 237, 0.25);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  user-select: none;
+  transition: box-shadow 0.2s, border-color 0.2s, width 0.15s ease-out;
+}
+
+.pip-preview-card.dragging {
+  opacity: 0.95;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.85), 0 0 0 2px var(--accent-primary);
+  cursor: grabbing !important;
+  transition: none;
+}
+
+.pip-header {
+  height: 32px;
+  padding: 0 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px 8px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: grab;
+}
+
+.pip-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-main, #f1f5f9);
+}
+
+.pip-dimension-badge {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.pip-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pip-action-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-sub, #94a3b8);
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.pip-action-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.pip-btn-close:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+
+.pip-body {
+  box-sizing: border-box;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.pip-stage-wrapper {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 88px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  position: relative;
+  overflow: visible;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: background 0.2s, height 0.15s ease-out;
+}
+
+.pip-stage-wrapper canvas {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  box-shadow: none;
+  border-radius: 0;
+  flex-shrink: 0;
+  display: block;
+}
+
+/* 背景模式 */
+
+.pip-bg-lcd {
+  background: #8fa562;
+}
+
+.pip-bg-checker {
+  background-color: #1a1d2d;
+  background-image:
+    linear-gradient(45deg, #24283b 25%, transparent 25%),
+    linear-gradient(-45deg, #24283b 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #24283b 75%),
+    linear-gradient(-45deg, transparent 75%, #24283b 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+}
+
+.pip-empty-placeholder {
+  font-size: 11px;
+  color: var(--text-muted, #64748b);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pip-controls {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pip-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.pip-label {
+  font-size: 11px;
+  color: var(--text-sub, #94a3b8);
+  min-width: 30px;
+}
+
+.pip-range-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: #2b3146;
+  outline: none;
+  cursor: pointer;
+}
+
+.pip-range-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #38bdf8;
+  border: 2px solid #ffffff;
+  cursor: pointer;
+  box-shadow: 0 0 5px rgba(56, 189, 248, 0.6);
+  transition: transform 0.1s;
+}
+
+.pip-range-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.pip-scale-badge {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  font-weight: 600;
+  color: #38bdf8;
+  min-width: 20px;
+  text-align: right;
+}
+
+.pip-bg-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.pip-bg-chips {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+}
+
+.pip-bg-btn {
+  flex: 1;
+  padding: 3px 2px;
+  font-size: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  color: var(--text-sub, #94a3b8);
+  cursor: pointer;
+  white-space: nowrap;
+  text-align: center;
+  transition: all 0.15s;
+}
+
+.pip-bg-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.pip-bg-btn.active {
+  background: rgba(124, 58, 237, 0.35);
+  border-color: var(--accent-primary, #7c3aed);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+/* 最小化折叠胶囊 */
+.pip-preview-card.minimized {
+  width: auto;
+  min-width: 140px;
+}
+
+.pip-minimized-pill {
+  height: 32px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-main, #f1f5f9);
+}
+
+.pill-text {
+  font-weight: 500;
+  color: #38bdf8;
+}
+
+.pill-restore-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  border-radius: 4px;
+  width: 20px;
+  height: 20px;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+}
+
+.pill-restore-btn:hover {
+  background: var(--accent-primary);
+}
+

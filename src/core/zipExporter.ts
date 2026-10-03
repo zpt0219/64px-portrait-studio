@@ -218,18 +218,27 @@ function generateReadme(doc: PortraitDocument): string {
 }
 
 /**
- * 导出单个极简 64x64 纯净 PNG (8-bit 索引色，无冗余元数据，最小化体积)
+ * 生成单个极简 64x64 纯净 PNG Blob (8-bit 索引色)
  */
-export async function exportProjectPng(doc: PortraitDocument): Promise<void> {
-  const finalBlob = await encodeMinimalIndexedPng(doc.pixelIndices, doc.palette);
-  downloadBlob(finalBlob, `avatar_36color_64x64_${Date.now()}.png`);
+export async function generateProjectPngBlob(doc: PortraitDocument): Promise<Blob> {
+  return encodeMinimalIndexedPng(doc.pixelIndices, doc.palette);
 }
 
 /**
- * 打包并导出完整工程 ZIP (包含全部渲染图、遮罩、色板与工程数据)
+ * 导出单个极简 64x64 纯净 PNG (8-bit 索引色，无冗余元数据，最小化体积)
  */
-export async function exportProjectZip(doc: PortraitDocument): Promise<void> {
+export async function exportProjectPng(
+  doc: PortraitDocument,
+  downloader: (blob: Blob, filename: string) => void = downloadBlob
+): Promise<void> {
+  const finalBlob = await generateProjectPngBlob(doc);
+  downloader(finalBlob, `avatar_36color_64x64_${Date.now()}.png`);
+}
 
+/**
+ * 打包并生成完整工程 ZIP Blob (包含全部渲染图、遮罩、色板与工程数据)
+ */
+export async function generateProjectZipBlob(doc: PortraitDocument): Promise<Blob> {
   const zip = new JSZip();
   const projectData = documentToProjectData(doc);
 
@@ -295,14 +304,23 @@ export async function exportProjectZip(doc: PortraitDocument): Promise<void> {
   const swatchBlob = await canvasToBlob(swatchCanvas);
   zip.file('palette/palette_swatches.png', swatchBlob);
 
-  // 5. 压缩并下载
-  const zipBlob = await zip.generateAsync({
+  // 5. 压缩
+  return zip.generateAsync({
     type: 'blob',
     compression: 'DEFLATE',
     compressionOptions: { level: 6 },
   });
+}
 
-  downloadBlob(zipBlob, `portrait_studio_project_${Date.now()}.zip`);
+/**
+ * 打包并导出完整工程 ZIP (包含全部渲染图、遮罩、色板与工程数据)
+ */
+export async function exportProjectZip(
+  doc: PortraitDocument,
+  downloader: (blob: Blob, filename: string) => void = downloadBlob
+): Promise<void> {
+  const zipBlob = await generateProjectZipBlob(doc);
+  downloader(zipBlob, `portrait_studio_project_${Date.now()}.zip`);
 }
 
 /**

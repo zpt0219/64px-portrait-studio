@@ -29,12 +29,15 @@ export class App implements StudioEvents {
   private confirmModal!: ConfirmModal;
   private palettePanelWrapper!: HTMLElement;
   private maskToolsPanelWrapper!: HTMLElement;
+  private fKeyDownTime = 0;
 
   constructor() {
     this.buildDomLayout();
     this.createPanels();
     this.setupSplitterDragging();
     window.addEventListener('keydown', (e) => this.handleShortcut(e));
+    window.addEventListener('keyup', (e) => this.handleKeyUp(e));
+    window.addEventListener('blur', () => { this.fKeyDownTime = 0; });
 
     if (hasSavedProject()) {
       this.vm.notify('检测到上次未完成的编辑进度，可点击中心卡片快速恢复', 'info');
@@ -307,12 +310,14 @@ export class App implements StudioEvents {
       return;
     }
 
-    // 避免 Ctrl/Alt 组合误触单键快捷键
-    if (ctrlOrCmd || e.altKey) return;
+    // 避免 Ctrl/Alt/Shift 组合误触单键快捷键
+    if (ctrlOrCmd || e.altKey || e.shiftKey) return;
 
-    // 遮罩模式下 [ / ] 调整笔刷尺寸
-    if (inMask && is('[', 'BracketLeft')) return vm.changeMaskBrushSize(-1);
-    if (inMask && is(']', 'BracketRight')) return vm.changeMaskBrushSize(1);
+    // 遮罩模式下 [ / ] 调整画笔/橡皮尺寸 (仅在画笔或橡皮工具下有效)
+    if (inMask && (s.activeMaskTool === 'pen' || s.activeMaskTool === 'eraser')) {
+      if (is('[', 'BracketLeft')) return vm.changeMaskBrushSize(-1);
+      if (is(']', 'BracketRight')) return vm.changeMaskBrushSize(1);
+    }
 
     // 同一个键在像素模式与遮罩模式下分别对应的工具
     const toolKey = (maskTool: MaskTool, maskToast: string, pixelAction: Action) => () => {
@@ -327,7 +332,7 @@ export class App implements StudioEvents {
     const singleKeyActions: [string[], Action][] = [
       [['q'], () => vm.setMode('pixel')],
       [['w'], () => vm.setMode('mask')],
-      [['m', 's'], toolKey('box_select', '🔲 已切换为智能框选工具 (左键拖拽匹配色划入遮罩，右键剔除)', () => {
+      [['m', 's'], toolKey('box_select', '🔲 已切换为智能框选 (左键加匹配色，Shift去杂色，Alt去匹配色，右键去所有色)', () => {
         vm.setActiveTool('select');
         vm.notify('⬚ 矩形选区工具：拖拽框选，选区内拖动平移 (原位透明)，按住 Ctrl 复制');
       })],
@@ -335,10 +340,10 @@ export class App implements StudioEvents {
         vm.setActiveTool('pen');
         vm.notify('✏️ 已切换为画笔工具 (左键绘制前景色，右键绘制背景色)');
       })],
-      [['b', 'f'], () => {
+      [['b'], () => {
         if (inMask) {
           vm.setActiveMaskTool('bucket');
-          vm.notify(`🪣 已切换为遮罩油漆桶 (${s.bucketConnectivity} 邻居连通)`);
+          vm.notify(`🪣 已切换为遮罩油漆桶 (${s.bucketConnectivity} 邻居连通，按住 Shift 全图同色生效)`);
         } else if (s.activeTool === 'bucket') {
           // 已是油漆桶时再按一次切换 8/4 连通
           vm.setBucketConnectivity(s.bucketConnectivity === 8 ? 4 : 8);
@@ -346,6 +351,11 @@ export class App implements StudioEvents {
           vm.setActiveTool('bucket');
           vm.notify(`🪣 已切换为油漆桶工具 (当前：${s.bucketConnectivity} 邻居连通)`);
         }
+      }],
+      [['f'], () => {
+        if (e.repeat) return;
+        this.fKeyDownTime = Date.now();
+        this.toggleHairHighlight();
       }],
       [['e'], toolKey('eraser', '🧼 已切换为遮罩橡皮擦 (擦除为背景 0)', () => {
         vm.setActiveTool('eraser');
@@ -377,7 +387,49 @@ export class App implements StudioEvents {
     }
   }
 
+  private handleKeyUp(e: KeyboardEvent): void {
+    const key = e.key.toLowerCase();
+    const is = (...names: string[]) => names.includes(key) || names.includes(e.code);
+    if (is('f', 'KeyF')) {
+      if (this.fKeyDownTime > 0) {
+        const duration = Date.now() - this.fKeyDownTime;
+        this.fKeyDownTime = 0;
+        // 长按模式 (按住 >= 250ms)：松开按键时自动退出高亮
+        if (duration >= 250 && this.ctx.isHairHighlightPinned) {
+          this.ctx.setHairHighlightPinned(false);
+          this.ctx.setHighlightedPaletteIndex(null);
+        }
+      }
+    }
+  }
+
+  /** 切换当前发色全高亮探针状态 (快捷键 F 触发) */
+  private toggleHairHighlight(): void {
+    if (!this.vm.session.isLoaded) return;
+    const isPinned = this.ctx.isHairHighlightPinned;
+    if (isPinned) {
+      this.ctx.setHairHighlightPinned(false);
+      this.ctx.setHighlightedPaletteIndex(null);
+      this.vm.notify('✨ 已关闭发色高亮');
+    } else {
+      const indices = this.vm.getHairRampIndices();
+      this.ctx.setHairHighlightPinned(true);
+      this.ctx.setHighlightedPaletteIndex(indices);
+      this.vm.notify('✨ 已开启全发色高亮 (按住预览，或短按 F / Esc 关闭)');
+    }
+  }
+
   private clearSelectionWithToast(): void {
-    if (this.vm.clearSelection()) this.vm.notify('已取消矩形选区');
+    let clearedHighlight = false;
+    if (this.ctx.isHairHighlightPinned || this.ctx.highlightedPaletteIndex !== null) {
+      this.ctx.setHairHighlightPinned(false);
+      this.ctx.setHighlightedPaletteIndex(null);
+      clearedHighlight = true;
+    }
+    if (this.vm.clearSelection()) {
+      this.vm.notify('已取消矩形选区');
+    } else if (clearedHighlight) {
+      this.vm.notify('✨ 已关闭发色高亮');
+    }
   }
 }

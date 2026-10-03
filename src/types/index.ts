@@ -80,7 +80,7 @@ export interface ProjectData {
 export type PixelTool = 'pen' | 'eraser' | 'bucket' | 'eyedropper' | 'select';
 export type MaskTool = 'pen' | 'eraser' | 'bucket' | 'box_select';
 export type EditorMode = 'pixel' | 'mask';
-export type BrushSize = 1 | 2 | 3 | 4;
+export type BrushSize = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 
 /** 画布矩形选区 */
 export interface RectSelection {
@@ -95,4 +95,13 @@ export interface RampInfo {
   name: string;
   icon: string;
   hexes: string[];
+}
+
+/** 已按导入规则缩放、居中绘制到 64×64 的图片像素 */
+export interface DecodedImage {
+  rgba: Uint8ClampedArray; // 64×64×4
+  origW: number;
+  origH: number;
+  targetW: number;
+  targetH: number;
 }

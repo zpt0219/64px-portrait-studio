@@ -1,0 +1,143 @@
+/* =========================================================================
+   Layout Structure
+   ========================================================================= */
+
+.studio-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+.studio-main-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 50%, #151724 0%, #0c0d14 100%);
+}
+
+.palette-sidebar {
+  width: 280px;
+  min-width: 200px;
+  max-width: 480px;
+  background: var(--bg-pane);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  flex-shrink: 0;
+  container-type: inline-size;
+}
+
+.main-canvas-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 320px;
+  position: relative;
+  overflow: hidden;
+}
+
+.mask-sidebar {
+  width: 310px;
+  min-width: 220px;
+  max-width: 520px;
+  background: var(--bg-pane);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+/* =========================================================================
+   Draggable Column Splitter
+   ========================================================================= */
+
+.column-splitter {
+  width: 8px;
+  position: relative;
+  cursor: col-resize;
+  background: transparent;
+  flex-shrink: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s ease;
+  user-select: none;
+}
+
+.column-splitter::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  background: var(--border-subtle);
+  transition: all 0.15s ease;
+}
+
+.column-splitter:hover,
+.column-splitter.is-active {
+  background: rgba(124, 58, 237, 0.15);
+}
+
+.column-splitter:hover::before,
+.column-splitter.is-active::before {
+  background: var(--accent-primary);
+  width: 3px;
+  left: 2px;
+  box-shadow: 0 0 8px var(--accent-primary-glow);
+}
+
+.splitter-handle {
+  width: 4px;
+  height: 30px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.22);
+  transition: all 0.15s ease;
+  z-index: 1;
+}
+
+.column-splitter:hover .splitter-handle,
+.column-splitter.is-active .splitter-handle {
+  background: #ffffff;
+  height: 44px;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
+}
+
+body.is-resizing {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+body.is-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+
+/* =========================================================================
+   Custom Scrollbar
+   ========================================================================= */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+

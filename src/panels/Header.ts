@@ -10,6 +10,11 @@ export class Header extends Panel {
   private fileInput: HTMLInputElement;
   private saveStatusEl: HTMLElement | null = null;
 
+  private btnModePixel: HTMLButtonElement | null = null;
+  private btnModeMask: HTMLButtonElement | null = null;
+  private btnSave: HTMLButtonElement | null = null;
+  private btnZip: HTMLButtonElement | null = null;
+
   constructor(private readonly container: HTMLElement, vm: ViewModel, private readonly onFileSelect: (file: File) => void) {
     super(vm);
     this.fileInput = document.createElement('input');
@@ -51,9 +56,17 @@ export class Header extends Panel {
         </div>
 
         <div class="header-center">
-          <div class="header-status-pill">
-            <span class="pill-dot"></span>
-            <span class="pill-text">3 列并排工作台：左侧色板 · 中间画布 · 右侧遮罩</span>
+          <div class="mode-segmented-control" id="header-mode-switcher" role="tablist">
+            <button type="button" class="mode-segment-btn active" id="btn-mode-pixel" data-mode="pixel" title="切换至【像素修图模式】(快捷键: Q) - 选用 36 色色板、画笔、橡皮、油漆桶、吸管、选区">
+              <span class="segment-icon">🎨</span>
+              <span class="segment-label">像素修图</span>
+              <kbd class="segment-kbd">Q</kbd>
+            </button>
+            <button type="button" class="mode-segment-btn" id="btn-mode-mask" data-mode="mask" title="切换至【语义遮罩模式】(快捷键: W) - 编辑 5 分区语义遮罩、智能框选匹配色、发色置换">
+              <span class="segment-icon">🎭</span>
+              <span class="segment-label">语义遮罩</span>
+              <kbd class="segment-kbd">W</kbd>
+            </button>
           </div>
         </div>
 
@@ -83,19 +96,29 @@ export class Header extends Panel {
     `;
 
     this.saveStatusEl = this.container.querySelector('#auto-save-status');
+    this.btnSave = this.container.querySelector('#btn-quick-save');
+    this.btnZip = this.container.querySelector('#btn-export-zip');
+    this.btnModePixel = this.container.querySelector('#btn-mode-pixel');
+    this.btnModeMask = this.container.querySelector('#btn-mode-mask');
+
+    this.btnModePixel?.addEventListener('click', () => this.vm.setMode('pixel'));
+    this.btnModeMask?.addEventListener('click', () => this.vm.setMode('mask'));
 
     this.container.querySelector('#btn-import-file')?.addEventListener('click', () => this.triggerUpload());
-    this.container.querySelector('#btn-quick-save')?.addEventListener('click', () => this.vm.exportPng());
-    this.container.querySelector('#btn-export-zip')?.addEventListener('click', () => this.vm.exportZip());
+    this.btnSave?.addEventListener('click', () => this.vm.exportPng());
+    this.btnZip?.addEventListener('click', () => this.vm.exportZip());
     this.container.querySelector('#btn-header-reset')?.addEventListener('click', () => this.vm.requestReset());
   }
 
   render(): void {
     const isLoaded = this.vm.session.isLoaded;
-    const btnSave = this.container.querySelector('#btn-quick-save') as HTMLButtonElement | null;
-    const btnZip = this.container.querySelector('#btn-export-zip') as HTMLButtonElement | null;
-    if (btnSave) btnSave.disabled = !isLoaded;
-    if (btnZip) btnZip.disabled = !isLoaded;
+    const isMask = this.vm.session.activeMode === 'mask';
+
+    if (this.btnSave) this.btnSave.disabled = !isLoaded;
+    if (this.btnZip) this.btnZip.disabled = !isLoaded;
+
+    if (this.btnModePixel) this.btnModePixel.classList.toggle('active', !isMask);
+    if (this.btnModeMask) this.btnModeMask.classList.toggle('active', isMask);
   }
 
   onSaveStatus(status: SaveStatus): void {

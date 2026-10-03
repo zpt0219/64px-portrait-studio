@@ -14,17 +14,16 @@ import {
   replaceColor,
   floodFillPixels,
   floodFillMask,
+  assignColorToMask,
 } from '../core/editOps';
 import { layersOf } from '../model/document';
 import { clampToCanvas, isInRect } from '../model/session';
 import { CommandContext, SnapshotCommand } from './command';
 
-/** 方形笔刷覆盖的矩形 (锚点为鼠标所在像素) */
+/** 方形笔刷覆盖的矩形 (锚点为鼠标所在像素，1~10 均居中覆盖) */
 export function brushRect(x: number, y: number, size: BrushSize): RectSelection {
-  if (size === 2) return { x, y, w: 2, h: 2 };
-  if (size === 3) return { x: x - 1, y: y - 1, w: 3, h: 3 };
-  if (size === 4) return { x: x - 1, y: y - 1, w: 4, h: 4 };
-  return { x, y, w: 1, h: 1 };
+  const offset = Math.floor((size - 1) / 2);
+  return { x: x - offset, y: y - offset, w: size, h: size };
 }
 
 /** 笔划开始时捕获的全部工具参数 (笔划过程中不再读取会话状态) */
@@ -33,7 +32,7 @@ export interface StrokeParams {
   pixelTool: PixelTool;
   maskTool: MaskTool;
   button: 0 | 2;             // 0 左键：前景色 / 当前分区；2 右键：背景色 / 擦除遮罩
-  replaceAll: boolean;       // Shift+油漆桶：全域同色替换 (仅像素模式)
+  replaceAll: boolean;       // Shift+油漆桶：全域同色替换 (像素模式改颜色，遮罩模式改遮罩)
   fg: number;
   bg: number;
   zone: SemanticZone;
@@ -62,6 +61,7 @@ export class StrokeCommand extends SnapshotCommand {
   }
 
   dab(ctx: CommandContext, x: number, y: number): void {
+    if (x < 0 || x >= W || y < 0 || y >= H) return;
     const p = this.p;
     const pixelMode = p.mode === 'pixel';
     if (pixelMode && p.selection && !isInRect(x, y, p.selection)) return;
@@ -111,6 +111,9 @@ export class StrokeCommand extends SnapshotCommand {
     for (let py = rect.y; py < rect.y + rect.h; py++) {
       for (let px = rect.x; px < rect.x + rect.w; px++) {
         if (px < 0 || px >= W || py < 0 || py >= H) continue;
+        const offset = py * W + px;
+        // 关键防护：涂抹遮罩时跳过透明像素；擦除时允许擦除可能遗留在透明像素上的旧遮罩
+        if (!erase && ctx.doc.pixelIndices[offset] === TRANSPARENT_INDEX) continue;
         this.setZone(ctx, py * W + px, erase ? SemanticZone.Background : p.zone);
       }
     }
@@ -139,7 +142,12 @@ export class StrokeCommand extends SnapshotCommand {
     const scope = p.selection ?? FULL_CANVAS;
     if (p.mode === 'mask') {
       const zone = p.button === 0 ? p.zone : SemanticZone.Background;
-      this.maskChanged = floodFillMask(layers, x, y, zone, p.diagonal, scope);
+      if (p.replaceAll) {
+        const fromColor = layers.pixels[y * W + x];
+        this.maskChanged = assignColorToMask(layers, fromColor, zone, scope) > 0;
+      } else {
+        this.maskChanged = floodFillMask(layers, x, y, zone, p.diagonal, scope);
+      }
       return;
     }
     const color = p.button === 0 ? p.fg : p.bg;

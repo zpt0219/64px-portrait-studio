@@ -22,10 +22,10 @@ export interface CanvasOverlay {
   /** 正在拖动的选区内容 */
   floating: { origX: number; origY: number; patch: Patch; dx: number; dy: number; copy: boolean } | null;
   /** 正在拖拽的框选矩形；maskAction 非空表示遮罩模式的智能框选 */
-  boxSelect: { rect: RectSelection; maskAction: 'add' | 'remove' | null } | null;
+  boxSelect: { rect: RectSelection; maskAction: 'add' | 'remove' | 'subtract' | 'clear' | null } | null;
   /** 鼠标悬停的像素 (未按下鼠标时)；alt 为按住 Alt 的吸管状态；shift 为 Shift 探针状态 */
   hover: { x: number; y: number; alt: boolean; shift?: boolean } | null;
-  highlightedPaletteIndex: number | null;
+  highlightedPaletteIndex: number | number[] | null;
   antsOffset: number;
 }
 
@@ -68,8 +68,10 @@ export class CanvasRenderer {
       drawZoneOverlay(ctx, doc.semanticMask, visibleZones, session.maskOpacity, zoom);
     }
 
-    // 3. 颜色探针高亮 (悬停在色板或选区统计行时)
-    if (overlay.highlightedPaletteIndex !== null && session.activeMode === 'pixel') {
+    // 3. 颜色探针高亮 (悬停在色板或选区统计行时，以及遮罩油漆桶按 Shift 悬停时)
+    const isProbeVisible =
+      session.activeMode === 'pixel' || (session.activeMode === 'mask' && session.activeMaskTool === 'bucket');
+    if (overlay.highlightedPaletteIndex !== null && isProbeVisible) {
       drawColorHighlight(ctx, doc.pixelIndices, overlay.highlightedPaletteIndex, zoom);
     }
 
@@ -91,8 +93,25 @@ export class CanvasRenderer {
       if (floating.copy) drawMarchingAnts(ctx, origRect, zoom, overlay.antsOffset, true);
     } else if (boxSelect) {
       if (boxSelect.maskAction) {
-        const fill = boxSelect.maskAction === 'remove' ? 'rgba(239, 68, 68, 0.5)' : `${ZONE_CONFIG[session.activeZone].color}88`;
-        drawMatchPreview(ctx, doc.pixelIndices, boxSelect.rect, new Set(session.maskMatchColors), fill, zoom);
+        const fill =
+          boxSelect.maskAction === 'clear'
+            ? 'rgba(239, 68, 68, 0.7)'
+            : boxSelect.maskAction === 'subtract'
+            ? 'rgba(239, 68, 68, 0.65)'
+            : boxSelect.maskAction === 'remove'
+            ? 'rgba(239, 68, 68, 0.65)'
+            : `${ZONE_CONFIG[session.activeZone].color}88`;
+        drawMatchPreview(
+          ctx,
+          doc.pixelIndices,
+          doc.semanticMask,
+          session.activeZone,
+          boxSelect.rect,
+          new Set(session.maskMatchColors),
+          fill,
+          zoom,
+          boxSelect.maskAction
+        );
       }
       drawMarchingAnts(ctx, boxSelect.rect, zoom, overlay.antsOffset);
     } else if (session.activeMode === 'pixel' && session.selection) {

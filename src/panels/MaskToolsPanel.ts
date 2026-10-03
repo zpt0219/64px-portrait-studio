@@ -5,12 +5,31 @@
 import { ZONE_CONFIG, MaskTool, BrushSize } from '../types';
 import { TRANSPARENT_INDEX, MATCH_COLOR_PRESETS, paletteIndexLabel } from '../data/palette';
 import { PIXEL_COUNT } from '../core/pixelGrid';
+import { EditorSession } from '../model/session';
 import { ViewModel } from '../app/viewModel';
 import { Panel } from './Panel';
 import { TOOL_ICONS } from './canvas/cursors';
 
 export class MaskToolsPanel extends Panel {
   private isAddPopoverOpen = false;
+  private colorListDirty = true;
+
+  // Cached DOM elements
+  private zoneBadge!: HTMLElement | null;
+  private zoneTag!: HTMLElement | null;
+  private btnUndo!: HTMLButtonElement | null;
+  private btnRedo!: HTMLButtonElement | null;
+  private toolBtns!: NodeListOf<HTMLButtonElement>;
+  private boxSelectCard!: HTMLElement | null;
+  private brushSizeSection!: HTMLElement | null;
+  private brushSlider!: HTMLInputElement | null;
+  private brushSizeText!: HTMLElement | null;
+  private presetSelect!: HTMLSelectElement | null;
+  private countTag!: HTMLElement | null;
+  private chipsRow!: HTMLElement | null;
+  private popover!: HTMLElement | null;
+  private addGrid!: HTMLElement | null;
+  private listEl!: HTMLElement | null;
 
   constructor(private readonly container: HTMLElement, vm: ViewModel) {
     super(vm);
@@ -18,22 +37,29 @@ export class MaskToolsPanel extends Panel {
     this.markDirty();
   }
 
-  onSessionChanged(): void {
+  onSessionChanged(keys: (keyof EditorSession)[]): void {
+    if (keys.includes('activeZone') || keys.includes('lockedMaskZones') || keys.includes('isLoaded')) {
+      this.colorListDirty = true;
+    }
     this.markDirty();
   }
   onPixelsChanged(): void {
+    this.colorListDirty = true;
     this.markDirty();
   }
   onMaskChanged(): void {
+    this.colorListDirty = true;
     this.markDirty();
   }
   onPaletteChanged(): void {
+    this.colorListDirty = true;
     this.markDirty();
   }
   onHistoryChanged(): void {
     this.markDirty();
   }
   onDocumentReplaced(): void {
+    this.colorListDirty = true;
     this.markDirty();
   }
 
@@ -61,6 +87,14 @@ export class MaskToolsPanel extends Panel {
             </div>
           </div>
 
+          <!-- 切回像素修图模式快捷入口 -->
+          <div class="mask-mode-switch-row" style="margin-bottom: 12px;">
+            <button class="btn btn-outline btn-block btn-sm" id="btn-switch-to-pixel" type="button" title="退出遮罩编辑，切回 36 色板修图模式 (快捷键: Q)">
+              <span>🎨 切回色板修图</span>
+              <kbd class="tool-btn-kbd">Q</kbd>
+            </button>
+          </div>
+
           <!-- 工具选择 (画笔 / 橡皮 / 油漆桶 / 框选) -->
           <div class="tool-picker-group mask-tool-grid">
             <button class="tool-tab-btn active" id="btn-mask-tool-pen" data-tool="pen" title="遮罩画笔 (快捷键: P)">
@@ -73,29 +107,31 @@ export class MaskToolsPanel extends Panel {
               <span class="tool-btn-label">橡皮</span>
               <kbd class="tool-btn-kbd">E</kbd>
             </button>
-            <button class="tool-tab-btn" id="btn-mask-tool-bucket" data-tool="bucket" title="遮罩油漆桶 (快捷键: B，泛洪填充相邻同分区)">
+            <button class="tool-tab-btn" id="btn-mask-tool-bucket" data-tool="bucket" title="遮罩油漆桶 (快捷键: B，BFS 扩展相邻同色像素；按住 Shift 全图同色进入遮罩)">
               <span class="tool-btn-icon">${TOOL_ICONS.bucket}</span>
               <span class="tool-btn-label">油漆桶</span>
               <kbd class="tool-btn-kbd">B</kbd>
             </button>
-            <button class="tool-tab-btn" id="btn-mask-tool-select" data-tool="box_select" title="智能框选 (快捷键: S，框选匹配色组快速划入/剔除遮罩)">
+            <button class="tool-tab-btn" id="btn-mask-tool-select" data-tool="box_select" title="智能框选 (快捷键: S，左键加匹配色，Shift+左键去杂色，Alt+左键去匹配色，右键去所有颜色)">
               <span class="tool-btn-icon">${TOOL_ICONS.select}</span>
               <span class="tool-btn-label">框选</span>
               <kbd class="tool-btn-kbd">S</kbd>
             </button>
           </div>
 
-          <!-- 笔刷尺寸选择 (1px ~ 4px 方形印章) -->
+          <!-- 画笔与橡皮共用尺寸选择 (1 ~ 10 滑块，类似缩放 slider，仅画笔/橡皮显示) -->
           <div class="brush-size-section" id="brush-size-section">
             <div class="brush-size-header">
-              <span class="sub-label">笔刷尺寸</span>
+              <div class="brush-size-title-group">
+                <span class="sub-label">画笔 / 橡皮尺寸</span>
+                <span class="badge-tag-sm brush-size-badge" id="brush-size-text">1×1</span>
+              </div>
               <span class="sub-hint">快捷键: <kbd>[</kbd> / <kbd>]</kbd></span>
             </div>
-            <div class="brush-size-pills" id="brush-size-pills">
-              <button class="brush-size-pill active" data-size="1" title="1×1 像素单点精细修边">1×1</button>
-              <button class="brush-size-pill" data-size="2" title="2×2 像素发丝与细轮廓">2×2</button>
-              <button class="brush-size-pill" data-size="3" title="3×3 像素块面快速铺底">3×3</button>
-              <button class="brush-size-pill" data-size="4" title="4×4 像素大面积涂抹">4×4</button>
+            <div class="brush-size-slider-row">
+              <span class="slider-tick-label">1</span>
+              <input type="range" class="zoom-range-slider brush-range-slider" id="slider-mask-brush-size" min="1" max="10" step="1" value="1" title="画笔/橡皮尺寸 (1 ~ 10 像素)">
+              <span class="slider-tick-label">10</span>
             </div>
           </div>
 
@@ -126,9 +162,11 @@ export class MaskToolsPanel extends Panel {
             </div>
 
             <div class="match-tip-box">
-              <div class="match-tip-line">🖱️ <b>左键框选</b>：将框内匹配色划入当前遮罩</div>
-              <div class="match-tip-line">🖱️ <b>右键框选</b>：将框内匹配色从遮罩剔除</div>
-              <div class="match-sub-tip">💡 点击「➕ 添加」追加颜色，悬停色块点 ✕ 剔除</div>
+              <div class="match-tip-line">🖱️ <b>左键框选</b>：将框内<b>匹配色</b>划入遮罩 (加法)</div>
+              <div class="match-tip-line match-tip-highlight">⚡ <b>Shift + 左键</b>：<span class="subtract-tag">去杂色</span> 将框内<b>非匹配色</b>从遮罩删除</div>
+              <div class="match-tip-line match-tip-highlight">✂️ <b>Alt + 左键</b>：<span class="subtract-tag">去匹配色</span> 将框内<b>当前匹配色</b>从遮罩删除</div>
+              <div class="match-tip-line match-tip-highlight">🧹 <b>右键框选</b>：<span class="subtract-tag">去所有色</span> 直接清空框内<b>所有颜色</b>的遮罩</div>
+              <div class="match-sub-tip">💡 点击「➕ 添加」可追加匹配颜色；右键框选可一键清除整块遮罩</div>
             </div>
           </div>
 
@@ -149,19 +187,41 @@ export class MaskToolsPanel extends Panel {
       </aside>
     `;
 
+    this.cacheDomReferences();
     this.bindEvents();
+  }
+
+  private cacheDomReferences(): void {
+    const q = <T extends HTMLElement>(sel: string) => this.container.querySelector<T>(sel);
+    this.zoneBadge = q('#mask-tools-zone-badge');
+    this.zoneTag = q('#color-to-mask-zone-tag');
+    this.btnUndo = q('#btn-mask-undo');
+    this.btnRedo = q('#btn-mask-redo');
+    this.toolBtns = this.container.querySelectorAll<HTMLButtonElement>('.tool-tab-btn[data-tool]');
+    this.boxSelectCard = q('#mask-box-select-card');
+    this.brushSizeSection = q('#brush-size-section');
+    this.brushSlider = q('#slider-mask-brush-size');
+    this.brushSizeText = q('#brush-size-text');
+    this.presetSelect = q('#select-match-preset');
+    this.countTag = q('#match-color-count-tag');
+    this.chipsRow = q('#match-chips-row');
+    this.popover = q('#add-color-picker-popover');
+    this.addGrid = q('#add-color-grid');
+    this.listEl = q('#color-to-mask-list');
   }
 
   private bindEvents(): void {
     // 撤销 / 重做
-    const btnUndo = this.container.querySelector('#btn-mask-undo');
-    const btnRedo = this.container.querySelector('#btn-mask-redo');
-    btnUndo?.addEventListener('click', () => this.vm.undo());
-    btnRedo?.addEventListener('click', () => this.vm.redo());
+    this.btnUndo?.addEventListener('click', () => this.vm.undo());
+    this.btnRedo?.addEventListener('click', () => this.vm.redo());
+
+    // 切回像素修图模式
+    this.container.querySelector('#btn-switch-to-pixel')?.addEventListener('click', () => {
+      this.vm.setMode('pixel');
+    });
 
     // 工具按钮点击
-    const toolBtns = this.container.querySelectorAll<HTMLButtonElement>('.tool-tab-btn[data-tool]');
-    toolBtns.forEach((btn) => {
+    this.toolBtns.forEach((btn) => {
       btn.addEventListener('click', () => {
         const tool = btn.getAttribute('data-tool') as MaskTool;
         if (tool) {
@@ -171,10 +231,9 @@ export class MaskToolsPanel extends Panel {
     });
 
     // 预制色板组下拉切换
-    const presetSelect = this.container.querySelector('#select-match-preset') as HTMLSelectElement | null;
-    presetSelect?.addEventListener('change', () => {
-      if (presetSelect.value !== 'custom') {
-        this.vm.setMaskMatchPreset(presetSelect.value);
+    this.presetSelect?.addEventListener('change', () => {
+      if (this.presetSelect && this.presetSelect.value !== 'custom') {
+        this.vm.setMaskMatchPreset(this.presetSelect.value);
       }
     });
 
@@ -183,19 +242,17 @@ export class MaskToolsPanel extends Panel {
       this.toggleAddColorPopover(false);
     });
 
-    // 笔刷尺寸药丸点击
-    const pillBtns = this.container.querySelectorAll<HTMLButtonElement>('.brush-size-pill[data-size]');
-    pillBtns.forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const size = parseInt(btn.getAttribute('data-size') || '1', 10) as BrushSize;
-        if (size >= 1 && size <= 4) {
-          this.vm.setMaskBrushSize(size);
-        }
-      });
+    // 画笔/橡皮尺寸滑块 (1 ~ 10)
+    this.brushSlider?.addEventListener('input', () => {
+      if (!this.brushSlider) return;
+      const size = parseInt(this.brushSlider.value, 10) as BrushSize;
+      if (size >= 1 && size <= 10) {
+        this.vm.setMaskBrushSize(size);
+      }
     });
 
     // 匹配色块：✕ 移除，➕ 展开加色浮层
-    this.container.querySelector('#match-chips-row')?.addEventListener('click', (e) => {
+    this.chipsRow?.addEventListener('click', (e) => {
       const target = e.target as HTMLElement;
       const delBtn = target.closest<HTMLElement>('.match-chip-del-btn');
       if (delBtn) {
@@ -206,7 +263,7 @@ export class MaskToolsPanel extends Panel {
     });
 
     // 加色浮层：已在组中的颜色点击移除，否则加入
-    this.container.querySelector('#add-color-grid')?.addEventListener('click', (e) => {
+    this.addGrid?.addEventListener('click', (e) => {
       const swatch = (e.target as HTMLElement).closest<HTMLElement>('.add-swatch-item');
       if (!swatch) return;
       const idx = Number(swatch.dataset.index);
@@ -215,8 +272,7 @@ export class MaskToolsPanel extends Panel {
     });
 
     // 颜色卡片点击委托 (画面颜色一键转遮罩)
-    const listEl = this.container.querySelector('#color-to-mask-list');
-    listEl?.addEventListener('click', (e) => {
+    this.listEl?.addEventListener('click', (e) => {
       const target = e.target as HTMLElement;
       const card = target.closest<HTMLElement>('.color-mask-card');
       if (!card) return;
@@ -239,73 +295,59 @@ export class MaskToolsPanel extends Panel {
     const state = this.state;
 
     // 1. 更新顶部当前分区指示
-    const zoneBadge = this.container.querySelector('#mask-tools-zone-badge') as HTMLElement | null;
-    const zoneTag = this.container.querySelector('#color-to-mask-zone-tag') as HTMLElement | null;
     const zoneMeta = ZONE_CONFIG[state.activeZone];
 
-    if (zoneBadge && zoneMeta) {
-      zoneBadge.textContent = `● ${zoneMeta.shortName}`;
-      zoneBadge.style.color = zoneMeta.color;
-      zoneBadge.style.borderColor = `${zoneMeta.color}66`;
-      zoneBadge.style.background = `${zoneMeta.color}18`;
+    if (this.zoneBadge && zoneMeta) {
+      this.zoneBadge.textContent = `● ${zoneMeta.shortName}`;
+      this.zoneBadge.style.color = zoneMeta.color;
+      this.zoneBadge.style.borderColor = `${zoneMeta.color}66`;
+      this.zoneBadge.style.background = `${zoneMeta.color}18`;
     }
 
-    if (zoneTag && zoneMeta) {
-      zoneTag.textContent = `目标: ${zoneMeta.shortName}`;
-      zoneTag.style.color = zoneMeta.color;
-      zoneTag.style.borderColor = `${zoneMeta.color}66`;
+    if (this.zoneTag && zoneMeta) {
+      this.zoneTag.textContent = `目标: ${zoneMeta.shortName}`;
+      this.zoneTag.style.color = zoneMeta.color;
+      this.zoneTag.style.borderColor = `${zoneMeta.color}66`;
     }
 
     // 2. 更新撤销/重做按钮状态
-    const btnUndo = this.container.querySelector('#btn-mask-undo') as HTMLButtonElement | null;
-    const btnRedo = this.container.querySelector('#btn-mask-redo') as HTMLButtonElement | null;
-    if (btnUndo) btnUndo.disabled = !this.vm.canUndo();
-    if (btnRedo) btnRedo.disabled = !this.vm.canRedo();
+    if (this.btnUndo) this.btnUndo.disabled = !this.vm.canUndo();
+    if (this.btnRedo) this.btnRedo.disabled = !this.vm.canRedo();
 
     // 3. 更新工具激活高亮
     const activeTool = state.activeMaskTool;
-    const toolBtns = this.container.querySelectorAll<HTMLButtonElement>('.tool-tab-btn[data-tool]');
-    toolBtns.forEach((btn) => {
+    this.toolBtns.forEach((btn) => {
       const tool = btn.getAttribute('data-tool');
-      if (tool === activeTool) {
-        btn.classList.add('active');
-      } else {
-        btn.classList.remove('active');
-      }
+      btn.classList.toggle('active', tool === activeTool);
     });
 
     // 4. 智能框选激活时高亮控制卡片
-    const boxSelectCard = this.container.querySelector('#mask-box-select-card') as HTMLElement | null;
-    if (boxSelectCard) {
-      if (activeTool === 'box_select') {
-        boxSelectCard.classList.add('tool-active');
-      } else {
-        boxSelectCard.classList.remove('tool-active');
-      }
+    if (this.boxSelectCard) {
+      this.boxSelectCard.classList.toggle('tool-active', activeTool === 'box_select');
     }
 
-    // 5. 更新笔刷尺寸激活高亮
+    // 5. 更新画笔与橡皮共用尺寸显隐与滑块数值 (仅画笔和橡皮显示该选项)
+    const isPenOrEraser = activeTool === 'pen' || activeTool === 'eraser';
+    if (this.brushSizeSection) {
+      this.brushSizeSection.style.display = isPenOrEraser ? '' : 'none';
+    }
+
     const activeSize = state.maskBrushSize;
-    const pillBtns = this.container.querySelectorAll<HTMLButtonElement>('.brush-size-pill[data-size]');
-    pillBtns.forEach((btn) => {
-      const size = parseInt(btn.getAttribute('data-size') || '1', 10);
-      if (size === activeSize) {
-        btn.classList.add('active');
-      } else {
-        btn.classList.remove('active');
-      }
-    });
+    if (this.brushSlider && parseInt(this.brushSlider.value, 10) !== activeSize) {
+      this.brushSlider.value = String(activeSize);
+    }
+    if (this.brushSizeText) {
+      this.brushSizeText.textContent = `${activeSize}×${activeSize}`;
+    }
 
     // 6. 更新预制色板组下拉与匹配色色块
-    const presetSelect = this.container.querySelector('#select-match-preset') as HTMLSelectElement | null;
-    if (presetSelect && state.maskMatchPresetKey) {
-      presetSelect.value = state.maskMatchPresetKey;
+    if (this.presetSelect && state.maskMatchPresetKey) {
+      this.presetSelect.value = state.maskMatchPresetKey;
     }
 
-    const countTag = this.container.querySelector('#match-color-count-tag') as HTMLElement | null;
     const matchColors = state.maskMatchColors;
-    if (countTag) {
-      countTag.textContent = `${matchColors.length} 色`;
+    if (this.countTag) {
+      this.countTag.textContent = `${matchColors.length} 色`;
     }
 
     this.renderMatchChips();
@@ -313,15 +355,17 @@ export class MaskToolsPanel extends Panel {
       this.renderAddColorGrid();
     }
 
-    // 7. 更新画面颜色一键转遮罩列表
-    this.renderColorList();
+    // 7. 更新画面颜色一键转遮罩列表 (仅在像素/遮罩/分区发生变化时重新扫描计算)
+    if (this.colorListDirty) {
+      this.colorListDirty = false;
+      this.renderColorList();
+    }
   }
 
   private renderMatchChips(): void {
-    const chipsRow = this.container.querySelector('#match-chips-row');
-    if (!chipsRow) return;
+    if (!this.chipsRow) return;
 
-    chipsRow.innerHTML = '';
+    this.chipsRow.innerHTML = '';
     const matchColors = this.vm.session.maskMatchColors;
     const palette = this.vm.doc.palette;
 
@@ -339,7 +383,7 @@ export class MaskToolsPanel extends Panel {
         <button class="match-chip-del-btn" data-color-idx="${idx}" title="从匹配组移除">✕</button>
       `;
 
-      chipsRow.appendChild(chip);
+      this.chipsRow!.appendChild(chip);
     });
 
     const addBtn = document.createElement('button');
@@ -348,37 +392,35 @@ export class MaskToolsPanel extends Panel {
     addBtn.type = 'button';
     addBtn.innerHTML = '➕ 添加';
     addBtn.title = '展开色板挑选颜色追加进匹配组';
-    chipsRow.appendChild(addBtn);
+    this.chipsRow.appendChild(addBtn);
   }
 
   private toggleAddColorPopover(show?: boolean): void {
-    const popover = this.container.querySelector('#add-color-picker-popover') as HTMLElement | null;
-    if (!popover) return;
+    if (!this.popover) return;
     this.isAddPopoverOpen = show !== undefined ? show : !this.isAddPopoverOpen;
-    popover.style.display = this.isAddPopoverOpen ? 'block' : 'none';
+    this.popover.style.display = this.isAddPopoverOpen ? 'block' : 'none';
     if (this.isAddPopoverOpen) {
       this.renderAddColorGrid();
     }
   }
 
   private renderAddColorGrid(): void {
-    const grid = this.container.querySelector('#add-color-grid');
-    if (!grid) return;
+    if (!this.addGrid) return;
 
-    grid.innerHTML = '';
+    this.addGrid.innerHTML = '';
     const currentColors = new Set(this.vm.session.maskMatchColors);
 
-    const allIndices = [...Array.from({ length: 36 }, (_, i) => i), TRANSPARENT_INDEX];
+    // 仅提供 36 色实体色供挑选，透明色不入蒙版匹配色组
+    const allIndices = Array.from({ length: Math.min(36, this.vm.doc.palette.length) }, (_, i) => i);
     allIndices.forEach((idx) => {
-      const hex = this.vm.doc.palette[idx] || (idx === TRANSPARENT_INDEX ? 'transparent' : '#000000');
+      const hex = this.vm.doc.palette[idx] || '#000000';
       const isAlreadyIn = currentColors.has(idx);
       const isWhite = hex.toUpperCase() === '#FFFFFF';
-      const isTransparent = idx === TRANSPARENT_INDEX;
 
       const swatch = document.createElement('div');
       swatch.dataset.index = String(idx);
-      swatch.className = `add-swatch-item ${isAlreadyIn ? 'is-selected' : ''} ${isTransparent ? 'chip-transparent' : ''} ${isWhite ? 'chip-white' : ''}`;
-      swatch.style.backgroundColor = isTransparent ? '' : hex;
+      swatch.className = `add-swatch-item ${isAlreadyIn ? 'is-selected' : ''} ${isWhite ? 'chip-white' : ''}`;
+      swatch.style.backgroundColor = hex;
       swatch.title = `#${paletteIndexLabel(idx)} ${hex} ${isAlreadyIn ? '(已在组中，点击移除)' : '(点击加入)'}`;
 
       swatch.innerHTML = `
@@ -386,16 +428,15 @@ export class MaskToolsPanel extends Panel {
         ${isAlreadyIn ? '<span class="swatch-check">✓</span>' : ''}
       `;
 
-      grid.appendChild(swatch);
+      this.addGrid!.appendChild(swatch);
     });
   }
 
   private renderColorList(): void {
-    const listEl = this.container.querySelector('#color-to-mask-list');
-    if (!listEl) return;
+    if (!this.listEl) return;
 
     if (!this.vm.session.isLoaded) {
-      listEl.innerHTML = `<div class="empty-color-hint">请先载入图片以提取画面颜色</div>`;
+      this.listEl.innerHTML = `<div class="empty-color-hint">请先载入图片以提取画面颜色</div>`;
       return;
     }
 
@@ -426,7 +467,7 @@ export class MaskToolsPanel extends Panel {
     }
 
     if (counts.size === 0) {
-      listEl.innerHTML = `<div class="empty-color-hint">画面中无有效不透明颜色</div>`;
+      this.listEl.innerHTML = `<div class="empty-color-hint">画面中无有效不透明颜色</div>`;
       return;
     }
 
@@ -475,6 +516,6 @@ export class MaskToolsPanel extends Panel {
       `;
     }
 
-    listEl.innerHTML = html;
+    this.listEl.innerHTML = html;
   }
 }

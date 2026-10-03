@@ -98,7 +98,7 @@ export function validateProjectData(raw: unknown): { valid: boolean; error?: str
     valid: true,
     data: {
       v: 1,
-      palette: d.palette as string[],
+      palette: (d.palette as string[]).map((hex) => hex.toUpperCase()),
       pixels: d.pixels,
       mask: d.mask,
       hairPreset: typeof d.hairPreset === 'string' ? d.hairPreset : null,

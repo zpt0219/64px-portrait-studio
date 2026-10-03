@@ -1,0 +1,583 @@
+/* ==========================================================================
+   遮罩模式专用左栏工具箱 (MaskToolsPanel) 样式
+   ========================================================================== */
+
+.mask-tools-sidebar-inner {
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.active-zone-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 229, 255, 0.4);
+  background: rgba(0, 229, 255, 0.12);
+  color: #00e5ff;
+  transition: all 0.2s ease;
+}
+
+/* 笔刷尺寸选择区 */
+.brush-size-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.brush-size-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.brush-size-header .sub-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.brush-size-header .sub-hint kbd {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 4px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  font-family: inherit;
+  font-size: 10px;
+  color: var(--text-sub);
+}
+
+.brush-size-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.brush-size-badge {
+  font-family: var(--font-mono, monospace);
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.35);
+  background: rgba(56, 189, 248, 0.12);
+  min-width: 40px;
+  text-align: center;
+  font-weight: 600;
+}
+
+.brush-size-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 0;
+}
+
+.brush-range-slider {
+  flex: 1;
+  width: 100% !important;
+}
+
+.slider-tick-label {
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-muted);
+  user-select: none;
+  line-height: 1;
+}
+
+/* 方案 A：颜色一键转遮罩列表 (Color-to-Mask Magic) */
+.color-to-mask-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  flex: 1;
+}
+
+.badge-tag-sm {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-sub);
+  font-weight: 500;
+}
+
+.panel-tip-text {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.color-to-mask-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 380px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.color-mask-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 8px;
+  background: #191c2b;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  gap: 8px;
+  user-select: none;
+}
+
+.color-mask-card:hover {
+  background: #22273a;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.color-mask-card.fully-assigned {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.06);
+  opacity: 0.65;
+  cursor: default;
+}
+
+.color-mask-card.all-locked {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(239, 68, 68, 0.2);
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.color-mask-card-left {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 80px;
+  flex-shrink: 0;
+}
+
+.color-swatch-box {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.color-meta-info {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+
+.color-hex-text {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.color-pixel-count {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.color-mask-card-mid {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.zone-pct-bar-wrap {
+  width: 100%;
+  height: 5px;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.zone-pct-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.25s ease;
+}
+
+.zone-pct-label {
+  font-size: 9px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.color-mask-card-right {
+  flex-shrink: 0;
+}
+
+.btn-assign-zone {
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  color: #38bdf8;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.color-mask-card:hover .btn-assign-zone {
+  background: #38bdf8;
+  color: #0b0f19;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
+}
+
+.badge-fully-assigned {
+  font-size: 10px;
+  color: #10b981;
+  font-weight: 500;
+  padding: 2px 4px;
+}
+
+.badge-locked {
+  font-size: 10px;
+  color: #f87171;
+  font-weight: 500;
+  padding: 2px 4px;
+}
+
+.empty-color-hint {
+  padding: 20px 10px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border-subtle);
+}
+
+
+/* =========================================================================
+   MaskPanel 发色预设高亮与操作区样式
+   ========================================================================= */
+
+.hair-action-box {
+  animation: hairActionFade 0.18s ease-out;
+}
+
+@keyframes hairActionFade {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.hair-preset-card.previewing {
+  border-color: #a855f7 !important;
+  background: rgba(168, 85, 247, 0.15) !important;
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.3) !important;
+}
+
+.preset-badge.badge-preview {
+  background: #9333ea !important;
+  color: #ffffff !important;
+}
+
+/* =========================================================================
+   MaskToolsPanel 智能色组框选器样式
+   ========================================================================= */
+
+.tool-picker-group.mask-tool-grid {
+  grid-template-columns: repeat(2, 1fr);
+  gap: 5px;
+}
+
+.mask-tool-grid .tool-tab-btn {
+  grid-column: span 1;
+}
+
+.mask-box-select-card {
+  background: rgba(124, 58, 237, 0.05);
+  border: 1px solid rgba(124, 58, 237, 0.2);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.mask-box-select-card.tool-active {
+  border-color: rgba(168, 85, 247, 0.6);
+  background: rgba(124, 58, 237, 0.09);
+  box-shadow: 0 0 12px rgba(124, 58, 237, 0.2);
+}
+
+.box-select-dropdown-row {
+  width: 100%;
+}
+
+.match-preset-select {
+  width: 100%;
+  height: 28px;
+  background: #111422;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #f8fafc;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.match-preset-select:hover,
+.match-preset-select:focus {
+  border-color: #a855f7;
+  background: #161b2e;
+}
+
+.match-chips-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+  min-height: 28px;
+  max-height: 120px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.match-color-chip {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  cursor: default;
+  user-select: none;
+  transition: transform 0.1s ease;
+}
+
+.match-color-chip.chip-white {
+  border: 1px solid rgba(0, 0, 0, 0.35);
+}
+
+.match-color-chip.chip-white .match-chip-index {
+  color: #0f172a;
+  text-shadow: 0 0 2px #fff;
+}
+
+.match-color-chip.chip-transparent {
+  background-color: #1a1d2d !important;
+  background-image:
+    linear-gradient(45deg, #2e344e 25%, transparent 25%),
+    linear-gradient(-45deg, #2e344e 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #2e344e 75%),
+    linear-gradient(-45deg, transparent 75%, #2e344e 75%) !important;
+  background-size: 6px 6px !important;
+  background-position: 0 0, 0 3px, 3px -3px, -3px 0px !important;
+  border: 1px dashed rgba(56, 189, 248, 0.6) !important;
+}
+
+.match-chip-index {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  color: #ffffff;
+  text-shadow: 0 1px 2px #000, 0 0 3px #000;
+  line-height: 1;
+}
+
+.match-chip-del-btn {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #ef4444;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  font-size: 8px;
+  line-height: 1;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.match-color-chip:hover .match-chip-del-btn {
+  display: flex;
+}
+
+.match-chip-del-btn:hover {
+  background: #dc2626;
+  transform: scale(1.15);
+}
+
+.match-chip-add-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px dashed rgba(255, 255, 255, 0.25);
+  color: var(--text-sub);
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 24px;
+  transition: all 0.15s ease;
+}
+
+.match-chip-add-btn:hover {
+  background: rgba(168, 85, 247, 0.18);
+  border-color: #a855f7;
+  color: #f8fafc;
+}
+
+.add-color-picker-popover {
+  background: #141724;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.add-color-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-sub);
+}
+
+.btn-xs-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 4px;
+}
+
+.btn-xs-close:hover {
+  color: #fff;
+}
+
+.add-color-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+}
+
+.add-swatch-item {
+  height: 20px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.1s ease;
+}
+
+.add-swatch-item:hover {
+  transform: scale(1.12);
+  z-index: 2;
+  border-color: #fff;
+}
+
+.add-swatch-item.is-selected {
+  outline: 2px solid #a855f7;
+  outline-offset: -1px;
+}
+
+.add-swatch-item .swatch-idx {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 2px #000;
+}
+
+.add-swatch-item.chip-white .swatch-idx {
+  color: #000;
+  text-shadow: 0 0 2px #fff;
+}
+
+.add-swatch-item .swatch-check {
+  position: absolute;
+  top: -2px;
+  right: 0px;
+  font-size: 8px;
+  color: #10b981;
+  font-weight: 900;
+  text-shadow: 0 1px 2px #000;
+}
+
+.match-tip-box {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.match-tip-line {
+  color: var(--text-sub);
+}
+
+.match-tip-line.match-tip-highlight {
+  color: #fca5a5;
+  margin-top: 2px;
+}
+
+.subtract-tag {
+  display: inline-block;
+  padding: 0px 4px;
+  border-radius: 3px;
+  background: rgba(239, 68, 68, 0.25);
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  color: #f87171;
+  font-size: 9.5px;
+  font-weight: 700;
+  vertical-align: middle;
+  margin: 0 2px;
+}
+
+.match-sub-tip {
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
