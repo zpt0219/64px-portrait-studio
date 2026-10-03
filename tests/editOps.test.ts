@@ -3,12 +3,10 @@ import {
   extractPatch,
   stampPatch,
   clearRect,
-  movePatch,
   flipRect,
   rotateRectCW,
   replaceColor,
   floodFillPixels,
-  floodFillMask,
   assignColorToMask,
   FULL_CANVAS,
   Layers,
@@ -60,7 +58,7 @@ describe('editOps', () => {
     expect(layers.mask[11 * W + 11]).toBe(SemanticZone.Clothes);
   });
 
-  it('clearRect clears pixels and resets mask to background unless locked', () => {
+  it('clearRect clears pixels and resets mask to background even if zone is locked', () => {
     const layers = createTestLayers();
     layers.pixels[2 * W + 2] = 5;
     layers.mask[2 * W + 2] = SemanticZone.Hair;
@@ -76,9 +74,9 @@ describe('editOps', () => {
     expect(layers.pixels[2 * W + 2]).toBe(TRANSPARENT_INDEX);
     expect(layers.mask[2 * W + 2]).toBe(SemanticZone.Background);
 
-    // Pixel at (3,2) should be transparent, but mask remains Skin because it was locked
+    // Pixel at (3,2) should be transparent, and mask must be Background (T02 invariant overrides zone lock)
     expect(layers.pixels[2 * W + 3]).toBe(TRANSPARENT_INDEX);
-    expect(layers.mask[2 * W + 3]).toBe(SemanticZone.Skin);
+    expect(layers.mask[2 * W + 3]).toBe(SemanticZone.Background);
   });
 
   it('flipRect flips horizontal and vertical', () => {

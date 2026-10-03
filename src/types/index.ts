@@ -67,13 +67,25 @@ export const ALL_ZONES: SemanticZone[] = [
   SemanticZone.Background,
 ];
 
+/** 9 种内置发色预设键名 */
+export type HairPresetKey =
+  | '01_black_黑'
+  | '02_brown_棕'
+  | '03_blonde_金'
+  | '04_pink_粉'
+  | '05_blue_蓝'
+  | '06_silver_银白'
+  | '07_green_绿'
+  | '08_purple_紫'
+  | '09_red_红';
+
 /** 工程 ZIP / LocalStorage 存储的统一数据结构 */
 export interface ProjectData {
   v: number;                    // Schema 版本号 (1)
   palette: string[];            // 36 色 Hex 数组
   pixels: string;               // Base64(Uint8Array[4096]) — 色板索引 0~35 或 255 (透明)
   mask: string;                 // Base64(Uint8Array[4096]) — 语义分区 0~4
-  hairPreset: string | null;    // 当前发色预设 key
+  hairPreset: HairPresetKey | null; // 当前发色预设 key
   ts: number;                   // Unix 时间戳 (秒)
 }
 
@@ -105,3 +117,5 @@ export interface DecodedImage {
   targetW: number;
   targetH: number;
 }
+
+export type { ToastLevel, SaveStatus } from '../command/events';

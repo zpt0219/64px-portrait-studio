@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { ViewModel } from '../src/app/viewModel';
-import { SemanticZone, ALL_ZONES } from '../src/types';
+import { ViewModel, PromptOptions } from '../src/app/viewModel';
+import { SemanticZone, HairPresetKey } from '../src/types';
+import { assertDocumentInvariant } from './helpers/documentFixture';
 
 describe('Mode Switching and Mask Visibility', () => {
   it('switches between pixel and mask modes via setMode', () => {
@@ -68,25 +69,41 @@ describe('Mode Switching and Mask Visibility', () => {
   });
 
   describe('Hair Recolor Confirmation Before Switching to Pixel Mode', () => {
-    function setupHairDraft(vm: ViewModel, preset = '06_silver_银白') {
+    function setupHairDraft(vm: ViewModel, preset: HairPresetKey = '06_silver_银白') {
       vm.patchSession({ isLoaded: true });
-      // Mark some pixels as Hair
+      // Mark some pixels as non-transparent Hair so document invariant holds
+      vm.doc.pixelIndices[0] = 0;
+      vm.doc.pixelIndices[1] = 0;
       vm.doc.semanticMask[0] = SemanticZone.Hair;
       vm.doc.semanticMask[1] = SemanticZone.Hair;
+      assertDocumentInvariant(vm.doc);
       vm.applyHairPreset(preset);
       expect(vm.session.activeMode).toBe('mask');
       expect(vm.session.hairDraftPreset).toBe(preset);
+    }
+
+    function createPromptCapture() {
+      let latest: PromptOptions | null = null;
+      return {
+        capture: (opts: PromptOptions) => {
+          latest = opts;
+        },
+        getLatest(): PromptOptions {
+          if (!latest) throw new Error('Expected prompt to have been called');
+          return latest;
+        },
+      };
     }
 
     it('prompts confirmation modal before switching to pixel mode and commits recolor upon confirm', () => {
       const vm = new ViewModel();
       setupHairDraft(vm, '06_silver_银白');
 
-      let promptOptions: any = null;
-      vm.setPrompts({ confirm: (opts) => { promptOptions = opts; } });
+      const prompt = createPromptCapture();
+      vm.setPrompts({ confirm: prompt.capture });
 
       vm.setMode('pixel');
-      expect(promptOptions).not.toBeNull();
+      const promptOptions = prompt.getLatest();
       expect(promptOptions.title).toBe('切换至画板模式前发色确认');
       expect(promptOptions.message).toContain('银白');
       expect(promptOptions.buttons).toHaveLength(3);
@@ -110,11 +127,11 @@ describe('Mode Switching and Mask Visibility', () => {
       setupHairDraft(vm, '06_silver_银白');
       const originalPreset = vm.doc.currentHairPreset;
 
-      let promptOptions: any = null;
-      vm.setPrompts({ confirm: (opts) => { promptOptions = opts; } });
+      const prompt = createPromptCapture();
+      vm.setPrompts({ confirm: prompt.capture });
 
       vm.setMode('pixel');
-      expect(promptOptions).not.toBeNull();
+      const promptOptions = prompt.getLatest();
 
       // Click discard button
       promptOptions.buttons[1].onClick();
@@ -127,11 +144,11 @@ describe('Mode Switching and Mask Visibility', () => {
       const vm = new ViewModel();
       setupHairDraft(vm, '06_silver_银白');
 
-      let promptOptions: any = null;
-      vm.setPrompts({ confirm: (opts) => { promptOptions = opts; } });
+      const prompt = createPromptCapture();
+      vm.setPrompts({ confirm: prompt.capture });
 
       vm.setMode('pixel');
-      expect(promptOptions).not.toBeNull();
+      const promptOptions = prompt.getLatest();
 
       // Click cancel/continue testing
       promptOptions.buttons[2].onClick();
@@ -143,11 +160,11 @@ describe('Mode Switching and Mask Visibility', () => {
       const vm = new ViewModel();
       setupHairDraft(vm, '06_silver_银白');
 
-      let promptOptions: any = null;
-      vm.setPrompts({ confirm: (opts) => { promptOptions = opts; } });
+      const prompt = createPromptCapture();
+      vm.setPrompts({ confirm: prompt.capture });
 
       vm.setAllZonesVisibility(false);
-      expect(promptOptions).not.toBeNull();
+      const promptOptions = prompt.getLatest();
       expect(vm.session.activeMode).toBe('mask');
 
       // Click confirm
@@ -161,11 +178,11 @@ describe('Mode Switching and Mask Visibility', () => {
       setupHairDraft(vm, '06_silver_银白');
       vm.patchSession({ visibleMaskZones: [SemanticZone.Hair] });
 
-      let promptOptions: any = null;
-      vm.setPrompts({ confirm: (opts) => { promptOptions = opts; } });
+      const prompt = createPromptCapture();
+      vm.setPrompts({ confirm: prompt.capture });
 
       vm.toggleZoneVisibility(SemanticZone.Hair, false);
-      expect(promptOptions).not.toBeNull();
+      const promptOptions = prompt.getLatest();
       expect(vm.session.activeMode).toBe('mask');
 
       // Click confirm
@@ -178,11 +195,11 @@ describe('Mode Switching and Mask Visibility', () => {
       const vm = new ViewModel();
       setupHairDraft(vm, '06_silver_银白');
 
-      let promptOptions: any = null;
-      vm.setPrompts({ confirm: (opts) => { promptOptions = opts; } });
+      const prompt = createPromptCapture();
+      vm.setPrompts({ confirm: prompt.capture });
 
       vm.selectPaletteIndex(5);
-      expect(promptOptions).not.toBeNull();
+      const promptOptions = prompt.getLatest();
       expect(vm.session.activeMode).toBe('mask');
 
       // Click confirm

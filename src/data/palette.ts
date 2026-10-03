@@ -1,4 +1,4 @@
-import { RampInfo, SemanticZone } from '../types';
+import { RampInfo, SemanticZone, HairPresetKey } from '../types';
 
 export const PALETTE_36: string[] = [
   // 1. 基础 (Base: #00 ~ #01, #透 255)
@@ -21,7 +21,7 @@ export const PALETTE_36: string[] = [
   "#310839", "#6B106B", "#B5106B", "#C6218C", "#DE8C94", "#FFA5B5"
 ];
 
-export const RAMPS_INFO: Record<string, RampInfo> = {
+export const RAMPS_INFO: Record<HairPresetKey, RampInfo> = {
   "01_black_黑": { name: "黑色", icon: "🖤", hexes: ["#000000", "#080821", "#081039", "#212142", "#8473A5"] },
   "02_brown_棕": { name: "棕色", icon: "🤎", hexes: ["#080821", "#3A2016", "#7B4239", "#DE6B42", "#FFFFFF"] },
   "03_blonde_金": { name: "金色", icon: "💛", hexes: ["#6B0818", "#7B4239", "#C68C31", "#FFDE6B", "#FFFFFF"] },
@@ -32,6 +32,11 @@ export const RAMPS_INFO: Record<string, RampInfo> = {
   "08_purple_紫": { name: "紫色", icon: "💜", hexes: ["#180852", "#421084", "#6329BD", "#8473A5", "#FFFFFF"] },
   "09_red_红": { name: "红色", icon: "❤️", hexes: ["#080821", "#6B0818", "#8C1031", "#A51831", "#DE6B42"] }
 };
+
+/** 检查给定的键是否为合法的内置发色预设键名 */
+export function isHairPresetKey(key: unknown): key is HairPresetKey {
+  return typeof key === 'string' && Object.hasOwn(RAMPS_INFO, key);
+}
 
 export const TIER_NAMES: string[] = ["绝墨轮廓", "基底暗部", "过渡中色", "发丝主色", "极光高光"];
 
@@ -112,7 +117,7 @@ interface MatchColorPreset {
   id: string;
   name: string;
   icon: string;
-  getIndices: (palette: string[], currentHairPreset?: string | null) => number[];
+  getIndices: (palette: string[], currentHairPreset?: HairPresetKey | null) => number[];
 }
 
 export const MATCH_COLOR_PRESETS: MatchColorPreset[] = [
@@ -127,12 +132,14 @@ export const MATCH_COLOR_PRESETS: MatchColorPreset[] = [
     name: '当前发色预设',
     icon: '💇',
     getIndices: (palette, currentHairPreset) => {
-      const presetKey = currentHairPreset || Object.keys(RAMPS_INFO)[0];
+      const presetKey: HairPresetKey = (currentHairPreset && isHairPresetKey(currentHairPreset))
+        ? currentHairPreset
+        : (Object.keys(RAMPS_INFO)[0] as HairPresetKey);
       const ramp = RAMPS_INFO[presetKey];
       if (!ramp) return [];
       return ramp.hexes
-        .map((hex) => palette.indexOf(hex))
-        .filter((idx) => idx >= 0);
+        .map((hex: string) => palette.indexOf(hex))
+        .filter((idx: number) => idx >= 0);
     },
   },
   {

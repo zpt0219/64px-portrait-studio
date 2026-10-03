@@ -3,8 +3,9 @@
  * localStorage 自动暂存与工程 ZIP 共用同一数据结构。
  */
 
-import { ProjectData } from '../types';
-import { TRANSPARENT_INDEX } from '../data/palette';
+import { ProjectData, SemanticZone } from '../types';
+import { TRANSPARENT_INDEX, isHairPresetKey } from '../data/palette';
+import { PortraitDocument } from '../model/document';
 import { PIXEL_COUNT } from './pixelGrid';
 
 export function uint8ArrayToBase64(bytes: Uint8Array): string {
@@ -24,8 +25,62 @@ export function base64ToUint8Array(base64: string): Uint8Array {
   return bytes;
 }
 
+export interface ProjectDecodeResult {
+  document: PortraitDocument;
+  warnings: string[];
+}
+
 /**
- * 严格校验工程数据：版本号、36 色色板格式、4096 像素索引 (0~35 或 255)、4096 遮罩值 (0~4)
+ * 将文档序列化为 ProjectData (纯函数，无 DOM 依赖，不修改输入文档)
+ */
+export function documentToProjectData(
+  doc: PortraitDocument,
+  timestamp: number = Math.floor(Date.now() / 1000)
+): ProjectData {
+  return {
+    v: 1,
+    palette: [...doc.palette],
+    pixels: uint8ArrayToBase64(doc.pixelIndices),
+    mask: uint8ArrayToBase64(doc.semanticMask),
+    hairPreset: doc.currentHairPreset,
+    ts: timestamp,
+  };
+}
+
+/**
+ * 将 ProjectData 反序列化为文档 (纯函数，无 DOM 依赖)
+ * 系统级不变量保护：透明像素恒不入非背景蒙版。若发现不合规像素则自动修正并输出 warning。
+ */
+export function projectDataToDocument(data: ProjectData): ProjectDecodeResult {
+  const pixelIndices = base64ToUint8Array(data.pixels);
+  const semanticMask = base64ToUint8Array(data.mask);
+  const warnings: string[] = [];
+  let normalizedCount = 0;
+
+  for (let i = 0; i < pixelIndices.length; i++) {
+    if (pixelIndices[i] === TRANSPARENT_INDEX && semanticMask[i] !== SemanticZone.Background) {
+      semanticMask[i] = SemanticZone.Background;
+      normalizedCount++;
+    }
+  }
+
+  if (normalizedCount > 0) {
+    warnings.push(`已规范化 ${normalizedCount} 处透明像素的语义遮罩至背景分区 (SemanticZone.Background)`);
+  }
+
+  return {
+    document: {
+      palette: data.palette.map((h) => h.toUpperCase()),
+      pixelIndices,
+      semanticMask,
+      currentHairPreset: data.hairPreset,
+    },
+    warnings,
+  };
+}
+
+/**
+ * 严格校验工程数据：版本号、36 色色板格式、4096 像素索引 (0~35 或 255)、4096 遮罩值 (0~4)、发色预设及时间戳
  */
 export function validateProjectData(raw: unknown): { valid: boolean; error?: string; data?: ProjectData } {
   if (!raw || typeof raw !== 'object') {
@@ -35,7 +90,7 @@ export function validateProjectData(raw: unknown): { valid: boolean; error?: str
   const d = raw as Record<string, unknown>;
 
   if (d.v !== 1) {
-    return { valid: false, error: `不支持的工程 Schema 版本: ${d.v} (当前仅支持 v1)` };
+    return { valid: false, error: `不支持的工程 Schema 版本: ${String(d.v)} (当前仅支持 v1)` };
   }
 
   if (!Array.isArray(d.palette) || d.palette.length !== 36) {
@@ -94,6 +149,26 @@ export function validateProjectData(raw: unknown): { valid: boolean; error?: str
     }
   }
 
+  // 严格校验 hairPreset
+  let hairPreset: ProjectData['hairPreset'] = null;
+  if (d.hairPreset !== null && d.hairPreset !== undefined) {
+    if (!isHairPresetKey(d.hairPreset)) {
+      return { valid: false, error: `无效的发色预设标识: ${String(d.hairPreset)}` };
+    }
+    hairPreset = d.hairPreset;
+  }
+
+  // 严格校验 ts
+  let ts: number;
+  if (d.ts !== undefined) {
+    if (typeof d.ts !== 'number' || !Number.isFinite(d.ts)) {
+      return { valid: false, error: `无效的工程时间戳 (ts): ${String(d.ts)}` };
+    }
+    ts = d.ts;
+  } else {
+    ts = Math.floor(Date.now() / 1000);
+  }
+
   return {
     valid: true,
     data: {
@@ -101,8 +176,8 @@ export function validateProjectData(raw: unknown): { valid: boolean; error?: str
       palette: (d.palette as string[]).map((hex) => hex.toUpperCase()),
       pixels: d.pixels,
       mask: d.mask,
-      hairPreset: typeof d.hairPreset === 'string' ? d.hairPreset : null,
-      ts: typeof d.ts === 'number' ? d.ts : Math.floor(Date.now() / 1000),
+      hairPreset,
+      ts,
     },
   };
 }

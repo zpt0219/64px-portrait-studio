@@ -1,9 +1,14 @@
-/** 审查诊断脚本：记录当前问题的实际输出，非正式回归测试。运行方式见 ../REFACTOR_PLAN_2026-10-03.md。 */
+/**
+ * 历史审查诊断脚本 (已归档)：
+ * 本脚本仅用于记录 2026-10-03 审查阶段发现的历史缺陷输出（非正式回归测试）。
+ * 当前工程的所有正式回归断言均统一收敛于 Vitest 测试套件 (`tests/`) 中。
+ * 运行方式详见 ../REFACTOR_PLAN_2026-10-03.md。
+ */
 import { ViewModel } from '../../src/app/viewModel';
 import { SemanticZone } from '../../src/types';
 import { createEmptyDocument } from '../../src/model/document';
-import { documentToProjectData, projectDataToDocument, setStorageAdapter, saveProjectDebounced, clearProjectStorage } from '../../src/core/storage';
-import { validateProjectData, base64ToUint8Array } from '../../src/core/projectData';
+import { setStorageAdapter, saveProjectDebounced, clearProjectStorage } from '../../src/core/storage';
+import { validateProjectData, base64ToUint8Array, documentToProjectData, projectDataToDocument } from '../../src/core/projectData';
 import { generateProjectZipBlob } from '../../src/core/zipExporter';
 import JSZip from 'jszip';
 import { hexToRgb } from '../../src/core/colorUtils';
@@ -12,16 +17,16 @@ function loaded() { const vm = new ViewModel(); vm.session.isLoaded = true; vm.d
 setStorageAdapter({ getItem: () => null, setItem: () => {}, removeItem: () => {} });
 {
  const vm = loaded(); vm.selectPaletteIndex(255); vm.beginStroke(0, false); vm.strokeAt(0,0); vm.endStroke();
- const restored = projectDataToDocument(documentToProjectData(vm.doc));
+ const restored = projectDataToDocument(documentToProjectData(vm.doc)).document;
  report('B1-transparent-pen-roundtrip', {pixel:vm.doc.pixelIndices[0],maskBefore:vm.doc.semanticMask[0],maskRestored:restored.semanticMask[0]});
 }
 {
  const vm = loaded(); vm.toggleLockZone(SemanticZone.Hair); vm.setActiveTool('eraser'); vm.beginStroke(0,false); vm.strokeAt(0,0); vm.endStroke();
- const restored = projectDataToDocument(documentToProjectData(vm.doc));
+ const restored = projectDataToDocument(documentToProjectData(vm.doc)).document;
  report('B1-locked-erase-roundtrip', {pixel:vm.doc.pixelIndices[0],maskBefore:vm.doc.semanticMask[0],maskRestored:restored.semanticMask[0]});
 }
 {
- const vm = loaded(); vm.doc.semanticMask[0] = SemanticZone.Skin; vm.setActiveZone(SemanticZone.Hair); vm.toggleLockZone(SemanticZone.Hair); vm.setMaskMatchPreset('all_non_trans');
+ const vm = loaded(); vm.doc.semanticMask[0] = SemanticZone.Skin; vm.setActiveZone(SemanticZone.Hair); vm.toggleLockZone(SemanticZone.Hair); vm.setMaskMatchPreset('all_colors');
  vm.beginStroke(0,false); vm.strokeAt(0,0); vm.endStroke(); const pen = vm.doc.semanticMask[0];
  vm.maskBoxSelect({x:0,y:0,w:1,h:1},'add'); const box = vm.doc.semanticMask[0]; vm.undo(); vm.assignColorToZone(5);
  report('B2-locked-target', {pen,box,assign:vm.doc.semanticMask[0]});
@@ -40,7 +45,7 @@ setStorageAdapter({ getItem: () => null, setItem: () => {}, removeItem: () => {}
 {
  clearProjectStorage(); const warnings: unknown[]=[]; const original=console.warn; console.warn=(...args)=>warnings.push(String(args[0]));
  setStorageAdapter({getItem:()=>null,setItem:()=>{throw new Error('quota exceeded');},removeItem:()=>{}});
- let onSaved=false; saveProjectDebounced(createEmptyDocument(),()=>onSaved=true); await new Promise(r=>setTimeout(r,320)); console.warn=original;
+ let onSaved=false; saveProjectDebounced(createEmptyDocument(),(result)=>onSaved=result.success); await new Promise(r=>setTimeout(r,320)); console.warn=original;
  report('B4-save-failure-reported-success', {onSaved,warnings});
  setStorageAdapter({getItem:()=>null,setItem:()=>{},removeItem:()=>{}});
 }

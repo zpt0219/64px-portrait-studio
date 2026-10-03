@@ -11,7 +11,7 @@
 
 import JSZip from 'jszip';
 import { SemanticZone, ProjectData } from '../types';
-import { PortraitDocument } from '../model/document';
+import { PortraitDocument, cloneDocument } from '../model/document';
 import { documentToProjectData } from './storage';
 import { validateProjectData } from './projectData';
 import { encodeMinimalIndexedPng } from './minimalPng';
@@ -19,29 +19,22 @@ import { Rgb, hexToRgb } from './colorUtils';
 import { drawIndexedPixels, zoneRgbTable, createScaledCanvas } from './pixelRender';
 import { IMAGE_WIDTH, IMAGE_HEIGHT, PIXEL_COUNT } from './pixelGrid';
 
-/**
- * 触发浏览器文件下载
- */
-function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
+import { downloadBlob } from '../app/utils/download';
+export { downloadBlob };
 
 /**
- * 将 Canvas 转为 PNG Blob
+ * 将 Canvas 转为 PNG Blob (支持异步 Promise 异常捕获)
  */
-function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+export function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) resolve(blob);
-      else reject(new Error('Canvas toBlob failed'));
-    }, 'image/png');
+    try {
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error('Canvas 导出 Blob 失败'));
+      }, 'image/png');
+    } catch (err) {
+      reject(err);
+    }
   });
 }
 
@@ -219,9 +212,11 @@ function generateReadme(doc: PortraitDocument): string {
 
 /**
  * 生成单个极简 64x64 纯净 PNG Blob (8-bit 索引色)
+ * 采用独立快照，避免导出异步期间状态被并发修改 (B7 防御)
  */
 export async function generateProjectPngBlob(doc: PortraitDocument): Promise<Blob> {
-  return encodeMinimalIndexedPng(doc.pixelIndices, doc.palette);
+  const snapshot = cloneDocument(doc);
+  return encodeMinimalIndexedPng(snapshot.pixelIndices, snapshot.palette);
 }
 
 /**
@@ -231,29 +226,47 @@ export async function exportProjectPng(
   doc: PortraitDocument,
   downloader: (blob: Blob, filename: string) => void = downloadBlob
 ): Promise<void> {
-  const finalBlob = await generateProjectPngBlob(doc);
+  const snapshot = cloneDocument(doc);
+  const finalBlob = await generateProjectPngBlob(snapshot);
   downloader(finalBlob, `avatar_36color_64x64_${Date.now()}.png`);
 }
 
 /**
+ * 导出 5 色综合语义遮罩 PNG (1x 或指定倍率)
+ */
+export async function exportMaskPng(
+  doc: PortraitDocument,
+  scale = 1,
+  downloader: (blob: Blob, filename: string) => void = downloadBlob
+): Promise<void> {
+  const snapshot = cloneDocument(doc);
+  const canvas = createCompositeMaskCanvas(snapshot, scale);
+  const blob = await canvasToBlob(canvas);
+  downloader(blob, `mask_composite_${scale}x_${Date.now()}.png`);
+}
+
+/**
  * 打包并生成完整工程 ZIP Blob (包含全部渲染图、遮罩、色板与工程数据)
+ * 关键安全规则 (B7): 在首次 await 发生前必须执行 cloneDocument，
+ * 确保所有渲染图、二值遮罩、JSON 工程数据及色板来自完全同一瞬态快照。
  */
 export async function generateProjectZipBlob(doc: PortraitDocument): Promise<Blob> {
+  const snapshot = cloneDocument(doc);
   const zip = new JSZip();
-  const projectData = documentToProjectData(doc);
+  const projectData = documentToProjectData(snapshot);
 
   // 1. 核心工程文件
-  const minimalPngBlob = await encodeMinimalIndexedPng(doc.pixelIndices, doc.palette);
-  const canvas64 = createPixelCanvas(doc, 1);
+  const minimalPngBlob = await encodeMinimalIndexedPng(snapshot.pixelIndices, snapshot.palette);
+  const canvas64 = createPixelCanvas(snapshot, 1);
   const blob64 = await canvasToBlob(canvas64);
 
   zip.file('imagegem_project_64x64.png', minimalPngBlob);
   zip.file('imagegem_project.json', JSON.stringify(projectData, null, 2));
-  zip.file('README.txt', generateReadme(doc));
+  zip.file('README.txt', generateReadme(snapshot));
 
   // 2. 渲染图 (1x, 4x, 8x)
-  const canvas256 = createPixelCanvas(doc, 4);
-  const canvas512 = createPixelCanvas(doc, 8);
+  const canvas256 = createPixelCanvas(snapshot, 4);
+  const canvas512 = createPixelCanvas(snapshot, 8);
 
   const [blob256, blob512] = await Promise.all([
     canvasToBlob(canvas256),
@@ -265,8 +278,8 @@ export async function generateProjectZipBlob(doc: PortraitDocument): Promise<Blo
   zip.file('renders/avatar_512x512_8x.png', blob512);
 
   // 3. 语义遮罩 (综合遮罩 + 5 个独立分区二值遮罩)
-  const maskComposite64 = createCompositeMaskCanvas(doc, 1);
-  const maskComposite512 = createCompositeMaskCanvas(doc, 8);
+  const maskComposite64 = createCompositeMaskCanvas(snapshot, 1);
+  const maskComposite512 = createCompositeMaskCanvas(snapshot, 8);
 
   const [blobMask64, blobMask512] = await Promise.all([
     canvasToBlob(maskComposite64),
@@ -278,11 +291,11 @@ export async function generateProjectZipBlob(doc: PortraitDocument): Promise<Blo
 
   // 各分区二值遮罩
   const [blobHair, blobSkin, blobEyes, blobClothes, blobBg] = await Promise.all([
-    canvasToBlob(createBinaryMaskCanvas(doc, SemanticZone.Hair)),
-    canvasToBlob(createBinaryMaskCanvas(doc, SemanticZone.Skin)),
-    canvasToBlob(createBinaryMaskCanvas(doc, SemanticZone.Eyes)),
-    canvasToBlob(createBinaryMaskCanvas(doc, SemanticZone.Clothes)),
-    canvasToBlob(createBinaryMaskCanvas(doc, SemanticZone.Background)),
+    canvasToBlob(createBinaryMaskCanvas(snapshot, SemanticZone.Hair)),
+    canvasToBlob(createBinaryMaskCanvas(snapshot, SemanticZone.Skin)),
+    canvasToBlob(createBinaryMaskCanvas(snapshot, SemanticZone.Eyes)),
+    canvasToBlob(createBinaryMaskCanvas(snapshot, SemanticZone.Clothes)),
+    canvasToBlob(createBinaryMaskCanvas(snapshot, SemanticZone.Background)),
   ]);
 
   zip.file('masks/layers/mask_hair_64x64.png', blobHair);
@@ -292,15 +305,15 @@ export async function generateProjectZipBlob(doc: PortraitDocument): Promise<Blo
   zip.file('masks/layers/mask_background_64x64.png', blobBg);
 
   // 4. 色板资源
-  const palJson = doc.palette.map((hex, i) => ({
+  const palJson = snapshot.palette.map((hex, i) => ({
     index: i,
     hex,
     rgb: hexToRgb(hex),
   }));
   zip.file('palette/palette_36.json', JSON.stringify(palJson, null, 2));
-  zip.file('palette/palette_aseprite.gpl', generateGplPalette(doc));
+  zip.file('palette/palette_aseprite.gpl', generateGplPalette(snapshot));
 
-  const swatchCanvas = createPaletteSwatchCanvas(doc);
+  const swatchCanvas = createPaletteSwatchCanvas(snapshot);
   const swatchBlob = await canvasToBlob(swatchCanvas);
   zip.file('palette/palette_swatches.png', swatchBlob);
 
@@ -319,7 +332,8 @@ export async function exportProjectZip(
   doc: PortraitDocument,
   downloader: (blob: Blob, filename: string) => void = downloadBlob
 ): Promise<void> {
-  const zipBlob = await generateProjectZipBlob(doc);
+  const snapshot = cloneDocument(doc);
+  const zipBlob = await generateProjectZipBlob(snapshot);
   downloader(zipBlob, `portrait_studio_project_${Date.now()}.zip`);
 }
 

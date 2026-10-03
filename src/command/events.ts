@@ -7,7 +7,7 @@
 import { EditorSession } from '../model/session';
 
 export type ToastLevel = 'info' | 'success' | 'warning' | 'error';
-export type SaveStatus = 'saving' | 'saved';
+export type SaveStatus = 'saving' | 'saved' | 'error';
 
 export interface StudioEvents {
   /** 导入图片 / 工程、恢复存档、清空画布：整份文档被替换，撤销历史已清空 */

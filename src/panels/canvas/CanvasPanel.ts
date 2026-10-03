@@ -59,6 +59,7 @@ export class CanvasPanel extends Panel {
 
   /** 本面板自己修改选区时置位，用来区分外部清除选区 (Esc、切换模式) */
   private ownSelectionChange = false;
+  private abortController = new AbortController();
 
   constructor(
     private readonly container: HTMLElement,
@@ -78,6 +79,14 @@ export class CanvasPanel extends Panel {
   }
 
   onDocumentReplaced(): void {
+    if (this.isMouseDown) {
+      this.isMouseDown = false;
+      this.vm.endStroke();
+    }
+    this.selection.cancelAll();
+    this.isMouseDown = false;
+    this.spacePress = false;
+    this.isPanning = false;
     this.cursorDirty = true;
     this.invalidate();
   }
@@ -90,12 +99,30 @@ export class CanvasPanel extends Panel {
   onPaletteChanged(): void {
     this.invalidate();
   }
+  onHistoryChanged(): void {
+    if (this.isMouseDown) {
+      this.isMouseDown = false;
+      this.vm.endStroke();
+    }
+    this.selection.cancelAll();
+    this.isMouseDown = false;
+    this.spacePress = false;
+    this.invalidate();
+  }
   onContextChanged(): void {
     this.markDirty();
   }
   onSessionChanged(keys: (keyof EditorSession)[]): void {
     const s = this.vm.session;
     if (!s.isLoaded || s.activeMode !== 'pixel') this.ctx.setHighlightedPaletteIndex(null);
+    if (keys.includes('activeMode')) {
+      if (this.isMouseDown) {
+        this.isMouseDown = false;
+        this.vm.endStroke();
+      }
+      this.selection.cancelAll();
+      this.isMouseDown = false;
+    }
     if (keys.includes('selection') && !s.selection) {
       // 选区统计面板随之消失，它的悬停高亮一并清除
       this.ctx.setHighlightedPaletteIndex(null);
@@ -274,21 +301,21 @@ export class CanvasPanel extends Panel {
     viewport.addEventListener('dragover', (e) => {
       e.preventDefault();
       viewport.classList.add('dragover');
-    });
+    }, { signal: this.abortController.signal });
     viewport.addEventListener('dragleave', (e) => {
       e.preventDefault();
       viewport.classList.remove('dragover');
-    });
+    }, { signal: this.abortController.signal });
     viewport.addEventListener('drop', (e) => {
       e.preventDefault();
       viewport.classList.remove('dragover');
       const file = e.dataTransfer?.files?.[0];
       if (file) this.hooks.onFileDrop(file);
-    });
+    }, { signal: this.abortController.signal });
 
     // 阻止画布与视口默认右键菜单
-    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-    viewport.addEventListener('contextmenu', (e) => e.preventDefault());
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault(), { signal: this.abortController.signal });
+    viewport.addEventListener('contextmenu', (e) => e.preventDefault(), { signal: this.abortController.signal });
 
     // 滚轮：横向滚轮 / Shift+滚轮水平滚动，Ctrl/Cmd+滚轮步进缩放
     viewport.addEventListener('wheel', (e: WheelEvent) => {
@@ -304,7 +331,7 @@ export class CanvasPanel extends Panel {
         viewport.scrollLeft += e.deltaY;
         e.preventDefault();
       }
-    }, { passive: false });
+    }, { passive: false, signal: this.abortController.signal });
 
     // 中键拖拽平移视口
     let panStartX = 0;
@@ -325,21 +352,21 @@ export class CanvasPanel extends Panel {
         return;
       }
       if (e.target !== canvas && this.onViewportMouseDown(e)) e.preventDefault();
-    });
+    }, { signal: this.abortController.signal });
 
     window.addEventListener('mousemove', (e: MouseEvent) => {
       if (!this.isPanning) return;
       viewport.scrollLeft = scrollStartX - (e.clientX - panStartX);
       viewport.scrollTop = scrollStartY - (e.clientY - panStartY);
       e.preventDefault();
-    });
+    }, { signal: this.abortController.signal });
 
     window.addEventListener('mouseup', (e: MouseEvent) => {
       if (this.isPanning && e.button === 1) {
         this.isPanning = false;
         viewport.style.cursor = '';
       }
-    });
+    }, { signal: this.abortController.signal });
 
     // 空格等同左键；Shift 悬停同色高亮；Ctrl/Alt 在拖动选区时切换为复制；Alt 悬停显示吸管光标
     window.addEventListener('keydown', (e: KeyboardEvent) => {
@@ -359,7 +386,7 @@ export class CanvasPanel extends Panel {
           canvas.style.cursor = 'copy';
         }
       }
-    });
+    }, { signal: this.abortController.signal });
 
     window.addEventListener('keyup', (e: KeyboardEvent) => {
       if (e.code === 'Space' && this.spacePress) {
@@ -378,36 +405,44 @@ export class CanvasPanel extends Panel {
         }
         if (!this.selection.moving && this.pointerInSelection()) canvas.style.cursor = 'move';
       }
-    });
+    }, { signal: this.abortController.signal });
 
-    // 窗口失焦：收不到 keyup，结束空格按下并重置修饰键状态，避免笔划 / Alt 吸色死锁
-    window.addEventListener('blur', () => {
-      if (this.spacePress) {
-        this.spacePress = false;
-        this.onMouseUp({ clientX: 0, clientY: 0, button: 0, altKey: false, ctrlKey: false, metaKey: false, shiftKey: false });
-      }
-      this.currentIsAlt = false;
-      this.setAltHeld(false);
-      this.setShiftHeld(false);
-      if (!this.isMouseDown && !this.selection.moving) {
-        this.selection.resetCopyLatch();
-      }
-      if (!this.isPanning) viewport.style.cursor = '';
-      this.updateCanvasCursor();
-    });
+    // 窗口失焦或取消指针操作：结束绘制、取消选区拖动/框选、停止平移并重置修饰键状态
+    const handleBlurOrCancel = () => this.cancelPointerInteraction();
+
+    window.addEventListener('blur', handleBlurOrCancel, { signal: this.abortController.signal });
+    window.addEventListener('pointercancel', handleBlurOrCancel, { signal: this.abortController.signal });
 
     canvas.addEventListener('mouseenter', (e) => {
       this.updateCanvasCursor({ altKey: e.altKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey });
-    });
+    }, { signal: this.abortController.signal });
 
-    canvas.addEventListener('mousedown', (e) => this.onCanvasMouseDown(e));
+    canvas.addEventListener('mousedown', (e) => this.onCanvasMouseDown(e), { signal: this.abortController.signal });
     window.addEventListener('mousemove', (e) => {
       this.pointer = { clientX: e.clientX, clientY: e.clientY };
       this.onMouseMove(e);
-    });
+    }, { signal: this.abortController.signal });
     window.addEventListener('mouseup', (e) => {
       if (!this.spacePress) this.onMouseUp(e); // 空格按下期间点鼠标不结束笔划
-    });
+    }, { signal: this.abortController.signal });
+  }
+
+  private cancelPointerInteraction(): void {
+    // A cancelled Space drag must not take the normal mouseup commit path.
+    this.spacePress = false;
+    if (this.isMouseDown) {
+      this.isMouseDown = false;
+      this.vm.endStroke();
+    }
+    this.selection.cancelAll();
+    this.isPanning = false;
+    this.currentIsAlt = false;
+    this.lastX = this.lastY = -1;
+    this.setAltHeld(false);
+    this.setShiftHeld(false);
+    this.viewport.style.cursor = '';
+    this.updateCanvasCursor();
+    this.markDirty();
   }
 
   /** 以最近的鼠标位置与键盘事件的修饰键构造一次左键输入 */
@@ -419,8 +454,10 @@ export class CanvasPanel extends Panel {
   /** 空格按下 = 在鼠标所在位置按下左键 (鼠标需在画布或视口空白处，且不被弹窗 / 浮动面板遮挡) */
   private onSpaceDown(e: KeyboardEvent): void {
     const target = e.target as HTMLElement | null;
+    if (target?.closest('.confirm-modal-overlay, .replace-color-modal-overlay')) return;
+    if (target?.tagName === 'BUTTON') return;
     if (target?.isContentEditable || target?.matches('input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=color]), textarea, select')) return;
-    e.preventDefault(); // 阻止页面滚动与按钮被空格触发
+    e.preventDefault(); // 阻止页面滚动
     if (e.repeat || this.isMouseDown || !this.pointer) return;
     const hit = document.elementFromPoint(this.pointer.clientX, this.pointer.clientY);
     const input = this.pointerInput(e);
@@ -811,5 +848,11 @@ export class CanvasPanel extends Panel {
     }
 
     canvas.style.cursor = s.activeTool === 'bucket' ? cursors.bucket : s.activeTool === 'eraser' ? cursors.eraser : cursors.pen;
+  }
+
+  protected onDispose(): void {
+    this.abortController.abort();
+    this.selection.dispose();
+    this.container.innerHTML = '';
   }
 }

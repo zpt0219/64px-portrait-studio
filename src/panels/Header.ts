@@ -129,9 +129,17 @@ export class Header extends Panel {
     if (status === 'saving') {
       dot.className = 'indicator-dot saving';
       text.innerText = '正在自动保存...';
-    } else {
+    } else if (status === 'saved') {
       dot.className = 'indicator-dot saved';
       text.innerText = '已自动存盘';
+    } else if (status === 'error') {
+      dot.className = 'indicator-dot error';
+      text.innerText = '自动保存失败';
     }
+  }
+
+  protected onDispose(): void {
+    this.fileInput.remove();
+    this.container.innerHTML = '';
   }
 }

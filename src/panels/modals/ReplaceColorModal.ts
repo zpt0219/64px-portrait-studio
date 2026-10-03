@@ -34,11 +34,18 @@ export class ReplaceColorModal {
 
   // 内部状态
   private isOpen = false;
+  private previousActiveElement: HTMLElement | null = null;
   private fromIndex = 0;
   private toIndex = 0;
   private activePickingSlot: 'from' | 'to' = 'from';
   private currentScope: 'selection' | 'all' = 'selection';
   private currentState: ReplaceColorSource | null = null;
+  private abortController = new AbortController();
+  private _isDisposed = false;
+
+  get isDisposed(): boolean {
+    return this._isDisposed;
+  }
 
   constructor(container: HTMLElement, callbacks: ReplaceColorModalCallbacks) {
     this.container = container;
@@ -193,26 +200,46 @@ export class ReplaceColorModal {
     });
 
     // 键盘监听 (Enter 确定，Escape 关闭，打开期间阻断其余快捷键向底层冒泡)
-    window.addEventListener('keydown', (e) => {
-      if (!this.isOpen) return;
+    if (typeof window !== 'undefined') {
+      window.addEventListener('keydown', (e) => {
+        if (!this.isOpen) return;
 
-      if (e.key === 'Escape') {
-        e.preventDefault();
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          this.close();
+          return;
+        }
+
+        if (e.key === 'Enter') {
+          // Preserve native activation of focused buttons (including Cancel).
+          if ((e.target as HTMLElement | null)?.tagName === 'BUTTON') {
+            e.stopPropagation();
+            return;
+          }
+          e.preventDefault();
+          e.stopPropagation();
+          this.confirm();
+          return;
+        }
+
+        if (e.key === 'Tab' && this.overlayEl) {
+          const focusable = Array.from(this.overlayEl.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]'
+          ));
+          const first = focusable[0], last = focusable[focusable.length - 1];
+          if (first && last && (e.shiftKey
+            ? document.activeElement === first || !this.overlayEl.contains(document.activeElement)
+            : document.activeElement === last || !this.overlayEl.contains(document.activeElement))) {
+            e.preventDefault();
+            (e.shiftKey ? last : first).focus();
+          }
+        }
+
+        // 阻断所有快捷键冒泡到底层画布监听器，防止误触发画笔切换、选区删除等
         e.stopPropagation();
-        this.close();
-        return;
-      }
-
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        e.stopPropagation();
-        this.confirm();
-        return;
-      }
-
-      // 阻断所有快捷键冒泡到底层画布监听器，防止误触发画笔切换、选区删除等
-      e.stopPropagation();
-    }, true);
+      }, { capture: true, signal: this.abortController.signal });
+    }
   }
 
   private setActiveSlot(slot: 'from' | 'to'): void {
@@ -234,6 +261,8 @@ export class ReplaceColorModal {
   }
 
   public open(state: ReplaceColorSource, selection: RectSelection | null): void {
+    if (this._isDisposed) return;
+    if (!this.isOpen) this.previousActiveElement = document.activeElement as HTMLElement | null;
     this.currentState = state;
     this.isOpen = true;
 
@@ -272,6 +301,7 @@ export class ReplaceColorModal {
     if (this.overlayEl) {
       this.overlayEl.style.display = 'flex';
     }
+    this.btnConfirm?.focus?.();
   }
 
   public close(): void {
@@ -280,16 +310,29 @@ export class ReplaceColorModal {
     if (this.overlayEl) {
       this.overlayEl.style.display = 'none';
     }
+    this.previousActiveElement?.focus?.();
+    this.previousActiveElement = null;
   }
 
   public getIsOpen(): boolean {
     return this.isOpen;
   }
 
-  private confirm(): void {
-    const scope = this.currentScope;
-    this.callbacks.onConfirm(this.fromIndex, this.toIndex, scope);
+  public dispose(): void {
+    if (this._isDisposed) return;
+    this._isDisposed = true;
     this.close();
+    this.abortController.abort();
+    this.overlayEl?.remove();
+    this.overlayEl = null;
+  }
+
+
+  private confirm(): void {
+    if (this._isDisposed || !this.isOpen) return;
+    const scope = this.currentScope;
+    this.close();
+    this.callbacks.onConfirm(this.fromIndex, this.toIndex, scope);
   }
 
   private updateSlotPreviews(): void {

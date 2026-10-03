@@ -10,9 +10,30 @@ import { ViewModel } from '../app/viewModel';
 import { Panel } from './Panel';
 import { TOOL_ICONS } from './canvas/cursors';
 
+interface ColorCardNodes {
+  card: HTMLElement;
+  swatch: HTMLElement;
+  hexText: HTMLElement;
+  countText: HTMLElement;
+  pctWrap: HTMLElement;
+  pctFill: HTMLElement;
+  pctLabel: HTMLElement;
+  right: HTMLElement;
+  lastClass?: string;
+  lastTitle?: string;
+  lastHex?: string;
+  lastTotal?: number;
+  lastPct?: number;
+  lastRightMode?: string;
+}
+
 export class MaskToolsPanel extends Panel {
   private isAddPopoverOpen = false;
   private colorListDirty = true;
+  private cachedMatchColors: number[] | null = null;
+  private cachedChipsPalette: string[] | null = null;
+  private addSwatchNodes: HTMLElement[] = [];
+  private cardMap: Map<number, ColorCardNodes> = new Map();
 
   // Cached DOM elements
   private zoneBadge!: HTMLElement | null;
@@ -365,9 +386,25 @@ export class MaskToolsPanel extends Panel {
   private renderMatchChips(): void {
     if (!this.chipsRow) return;
 
-    this.chipsRow.innerHTML = '';
     const matchColors = this.vm.session.maskMatchColors;
     const palette = this.vm.doc.palette;
+
+    const colorsChanged =
+      !this.cachedMatchColors ||
+      this.cachedMatchColors.length !== matchColors.length ||
+      this.cachedMatchColors.some((c, i) => c !== matchColors[i]);
+    const paletteChanged =
+      !this.cachedChipsPalette ||
+      this.cachedChipsPalette.length !== palette.length ||
+      this.cachedChipsPalette.some((c, i) => c !== palette[i]);
+
+    if (!colorsChanged && !paletteChanged) {
+      return;
+    }
+
+    this.cachedMatchColors = [...matchColors];
+    this.cachedChipsPalette = [...palette];
+    this.chipsRow.innerHTML = '';
 
     matchColors.forEach((idx) => {
       const hex = palette[idx] || (idx === TRANSPARENT_INDEX ? 'transparent' : '#000000');
@@ -407,29 +444,48 @@ export class MaskToolsPanel extends Panel {
   private renderAddColorGrid(): void {
     if (!this.addGrid) return;
 
-    this.addGrid.innerHTML = '';
     const currentColors = new Set(this.vm.session.maskMatchColors);
+    const palette = this.vm.doc.palette;
+    const count = Math.min(36, palette.length);
 
-    // 仅提供 36 色实体色供挑选，透明色不入蒙版匹配色组
-    const allIndices = Array.from({ length: Math.min(36, this.vm.doc.palette.length) }, (_, i) => i);
-    allIndices.forEach((idx) => {
-      const hex = this.vm.doc.palette[idx] || '#000000';
+    // 仅在首次或色板长度异常时构建节点，避免后续渲染清空 DOM 导致正在交互/聚焦的色块丢失焦点
+    if (this.addSwatchNodes.length !== count || this.addGrid.children.length !== count) {
+      this.addGrid.innerHTML = '';
+      this.addSwatchNodes = [];
+      for (let idx = 0; idx < count; idx++) {
+        const swatch = document.createElement('div');
+        swatch.dataset.index = String(idx);
+        this.addSwatchNodes.push(swatch);
+        this.addGrid.appendChild(swatch);
+      }
+    }
+
+    for (let idx = 0; idx < count; idx++) {
+      const swatch = this.addSwatchNodes[idx];
+      const hex = palette[idx] || '#000000';
       const isAlreadyIn = currentColors.has(idx);
       const isWhite = hex.toUpperCase() === '#FFFFFF';
 
-      const swatch = document.createElement('div');
-      swatch.dataset.index = String(idx);
-      swatch.className = `add-swatch-item ${isAlreadyIn ? 'is-selected' : ''} ${isWhite ? 'chip-white' : ''}`;
-      swatch.style.backgroundColor = hex;
-      swatch.title = `#${paletteIndexLabel(idx)} ${hex} ${isAlreadyIn ? '(已在组中，点击移除)' : '(点击加入)'}`;
-
-      swatch.innerHTML = `
-        <span class="swatch-idx">${paletteIndexLabel(idx)}</span>
-        ${isAlreadyIn ? '<span class="swatch-check">✓</span>' : ''}
-      `;
-
-      this.addGrid!.appendChild(swatch);
-    });
+      const newClassName = `add-swatch-item ${isAlreadyIn ? 'is-selected' : ''} ${isWhite ? 'chip-white' : ''}`;
+      if (swatch.className !== newClassName) {
+        swatch.className = newClassName;
+      }
+      if (swatch.style.backgroundColor !== hex) {
+        swatch.style.backgroundColor = hex;
+      }
+      const title = `#${paletteIndexLabel(idx)} ${hex} ${isAlreadyIn ? '(已在组中，点击移除)' : '(点击加入)'}`;
+      if (swatch.title !== title) {
+        swatch.title = title;
+      }
+      const hasCheck = !!swatch.querySelector('.swatch-check');
+      if (isAlreadyIn && !hasCheck) {
+        swatch.innerHTML = `<span class="swatch-idx">${paletteIndexLabel(idx)}</span><span class="swatch-check">✓</span>`;
+      } else if (!isAlreadyIn && hasCheck) {
+        swatch.innerHTML = `<span class="swatch-idx">${paletteIndexLabel(idx)}</span>`;
+      } else if (!swatch.hasChildNodes()) {
+        swatch.innerHTML = `<span class="swatch-idx">${paletteIndexLabel(idx)}</span>${isAlreadyIn ? '<span class="swatch-check">✓</span>' : ''}`;
+      }
+    }
   }
 
   private renderColorList(): void {
@@ -437,6 +493,7 @@ export class MaskToolsPanel extends Panel {
 
     if (!this.vm.session.isLoaded) {
       this.listEl.innerHTML = `<div class="empty-color-hint">请先载入图片以提取画面颜色</div>`;
+      this.cardMap.clear();
       return;
     }
 
@@ -468,54 +525,125 @@ export class MaskToolsPanel extends Panel {
 
     if (counts.size === 0) {
       this.listEl.innerHTML = `<div class="empty-color-hint">画面中无有效不透明颜色</div>`;
+      this.cardMap.clear();
       return;
+    }
+
+    // 移除可能存在的空提示
+    const hint = this.listEl.querySelector('.empty-color-hint');
+    if (hint) {
+      hint.remove();
     }
 
     // 按该颜色在全图中的像素数量从多到少排序
     const sorted = Array.from(counts.entries()).sort((a, b) => b[1].total - a[1].total);
 
-    let html = '';
-    for (const [colorIdx, stat] of sorted) {
+    // 复用卡片 DOM 节点 (最多 36 张)，避免每次整段拼接 innerHTML 导致垃圾回收与重排
+    for (let i = 0; i < sorted.length; i++) {
+      const [colorIdx, stat] = sorted[i];
+      let nodes = this.cardMap.get(colorIdx);
+      if (!nodes) {
+        const card = document.createElement('div');
+        card.className = 'color-mask-card';
+        card.setAttribute('data-color-idx', String(colorIdx));
+        card.innerHTML = `
+          <div class="color-mask-card-left">
+            <div class="color-swatch-box"></div>
+            <div class="color-meta-info">
+              <span class="color-hex-text"></span>
+              <span class="color-pixel-count"></span>
+            </div>
+          </div>
+          <div class="color-mask-card-mid">
+            <div class="zone-pct-bar-wrap">
+              <div class="zone-pct-bar-fill"></div>
+            </div>
+            <span class="zone-pct-label"></span>
+          </div>
+          <div class="color-mask-card-right"></div>
+        `;
+        nodes = {
+          card,
+          swatch: card.querySelector('.color-swatch-box') as HTMLElement,
+          hexText: card.querySelector('.color-hex-text') as HTMLElement,
+          countText: card.querySelector('.color-pixel-count') as HTMLElement,
+          pctWrap: card.querySelector('.zone-pct-bar-wrap') as HTMLElement,
+          pctFill: card.querySelector('.zone-pct-bar-fill') as HTMLElement,
+          pctLabel: card.querySelector('.zone-pct-label') as HTMLElement,
+          right: card.querySelector('.color-mask-card-right') as HTMLElement,
+        };
+        this.cardMap.set(colorIdx, nodes);
+      }
+
       const hex = palette[colorIdx] || '#000000';
       const pct = Math.round((stat.inActiveZone / stat.total) * 100);
       const isFull = stat.inActiveZone === stat.total;
-      // 若尚未归入该分区的像素全部受到图层锁定保护，则标记为 all-locked
       const unassignedCount = stat.total - stat.inActiveZone;
-      const allLocked = !isFull && (stat.locked >= unassignedCount);
+      const allLocked = !isFull && stat.locked >= unassignedCount;
 
       let cardClass = 'color-mask-card';
       if (isFull) cardClass += ' fully-assigned';
       if (allLocked) cardClass += ' all-locked';
+      if (nodes.lastClass !== cardClass) {
+        nodes.card.className = cardClass;
+        nodes.lastClass = cardClass;
+      }
 
-      html += `
-        <div class="${cardClass}" data-color-idx="${colorIdx}" title="点击将 ${stat.total - stat.inActiveZone} 个像素划入【${zoneMeta.name}】">
-          <div class="color-mask-card-left">
-            <div class="color-swatch-box" style="background-color: ${hex};" title="色板 #${colorIdx} (${hex})"></div>
-            <div class="color-meta-info">
-              <span class="color-hex-text">${hex}</span>
-              <span class="color-pixel-count">${stat.total} px</span>
-            </div>
-          </div>
+      const title = `点击将 ${unassignedCount} 个像素划入【${zoneMeta.name}】`;
+      if (nodes.lastTitle !== title) {
+        nodes.card.title = title;
+        nodes.lastTitle = title;
+      }
 
-          <div class="color-mask-card-mid">
-            <div class="zone-pct-bar-wrap" title="${stat.inActiveZone}/${stat.total} 像素已在当前【${zoneMeta.name}】">
-              <div class="zone-pct-bar-fill" style="width: ${pct}%; background-color: ${zoneMeta.color};"></div>
-            </div>
-            <span class="zone-pct-label">${pct}% ${zoneMeta.shortName}</span>
-          </div>
+      if (nodes.lastHex !== hex) {
+        nodes.swatch.style.backgroundColor = hex;
+        nodes.swatch.title = `色板 #${colorIdx} (${hex})`;
+        nodes.hexText.textContent = hex;
+        nodes.lastHex = hex;
+      }
 
-          <div class="color-mask-card-right">
-            ${isFull
-              ? `<span class="badge-fully-assigned">✓ 已全归入</span>`
-              : allLocked
-                ? `<span class="badge-locked" title="未划入的像素均位于已锁定分区">🔒 已锁定</span>`
-                : `<button class="btn-assign-zone" data-color-idx="${colorIdx}" title="划入【${zoneMeta.name}】">+ 划入</button>`
-            }
-          </div>
-        </div>
-      `;
+      if (nodes.lastTotal !== stat.total) {
+        nodes.countText.textContent = `${stat.total} px`;
+        nodes.lastTotal = stat.total;
+      }
+
+      const pctWrapTitle = `${stat.inActiveZone}/${stat.total} 像素已在当前【${zoneMeta.name}】`;
+      if (nodes.pctWrap.title !== pctWrapTitle) {
+        nodes.pctWrap.title = pctWrapTitle;
+      }
+      nodes.pctFill.style.width = `${pct}%`;
+      nodes.pctFill.style.backgroundColor = zoneMeta.color;
+      nodes.pctLabel.textContent = `${pct}% ${zoneMeta.shortName}`;
+
+      const rightMode = isFull ? 'full' : allLocked ? 'locked' : 'btn';
+      if (nodes.lastRightMode !== rightMode) {
+        nodes.lastRightMode = rightMode;
+        if (isFull) {
+          nodes.right.innerHTML = `<span class="badge-fully-assigned">✓ 已全归入</span>`;
+        } else if (allLocked) {
+          nodes.right.innerHTML = `<span class="badge-locked" title="未划入的像素均位于已锁定分区">🔒 已锁定</span>`;
+        } else {
+          nodes.right.innerHTML = `<button class="btn-assign-zone" data-color-idx="${colorIdx}" title="划入【${zoneMeta.name}】">+ 划入</button>`;
+        }
+      }
+
+      // 按排序对齐子节点顺序
+      if (this.listEl.children[i] !== nodes.card) {
+        this.listEl.insertBefore(nodes.card, this.listEl.children[i] || null);
+      }
     }
 
-    this.listEl.innerHTML = html;
+    // 清理超出当前画面色数的旧节点
+    while (this.listEl.children.length > sorted.length) {
+      this.listEl.removeChild(this.listEl.lastChild!);
+    }
+  }
+
+  protected onDispose(): void {
+    this.cachedMatchColors = null;
+    this.cachedChipsPalette = null;
+    this.addSwatchNodes = [];
+    this.cardMap.clear();
+    this.container.innerHTML = '';
   }
 }

@@ -3,8 +3,9 @@
  */
 
 import { SemanticZone, ZONE_CONFIG, ALL_ZONES } from '../types';
-import { RAMPS_INFO } from '../data/palette';
+import { RAMPS_INFO, isHairPresetKey } from '../data/palette';
 import { PIXEL_COUNT } from '../core/pixelGrid';
+import { EditorSession } from '../model/session';
 import { ViewModel } from '../app/viewModel';
 import { Panel } from './Panel';
 
@@ -40,9 +41,19 @@ export class MaskPanel extends Panel {
       card: HTMLElement;
       badgeWrap: HTMLElement;
       name: string;
+      badgeState?: 'draft' | 'committed' | 'none';
     }
   >();
   private hairSectionEl: HTMLElement | null = null;
+
+  private cachedZoneCounts: Record<number, number> = {
+    [SemanticZone.Background]: 0,
+    [SemanticZone.Hair]: 0,
+    [SemanticZone.Skin]: 0,
+    [SemanticZone.Eyes]: 0,
+    [SemanticZone.Clothes]: 0,
+  };
+  private maskCountsDirty = true;
 
   constructor(private readonly container: HTMLElement, vm: ViewModel) {
     super(vm);
@@ -50,16 +61,21 @@ export class MaskPanel extends Panel {
     this.markDirty();
   }
 
-  onSessionChanged(): void {
+  onSessionChanged(keys?: (keyof EditorSession)[]): void {
+    if (!keys || keys.includes('isLoaded')) {
+      this.maskCountsDirty = true;
+    }
     this.markDirty();
   }
   onMaskChanged(): void {
+    this.maskCountsDirty = true;
     this.markDirty();
   }
   onHairPresetChanged(): void {
     this.markDirty();
   }
   onDocumentReplaced(): void {
+    this.maskCountsDirty = true;
     this.markDirty();
   }
 
@@ -306,7 +322,7 @@ export class MaskPanel extends Panel {
     // 发色预设卡片：点击预览；点击正在预览的卡片则打开固化/还原弹窗
     this.hairGridEl?.addEventListener('click', (e) => {
       const key = (e.target as HTMLElement).closest<HTMLElement>('.hair-preset-card')?.dataset.preset;
-      if (!key) return;
+      if (!key || !isHairPresetKey(key)) return;
       if (key === this.vm.session.hairDraftPreset) this.vm.openHairRecolorPrompt();
       else this.vm.applyHairPreset(key);
     });
@@ -340,21 +356,27 @@ export class MaskPanel extends Panel {
       this.opacityText.textContent = `${opacityPct}%`;
     }
 
-    // 4. 计算 5 分区像素统计
-    const zoneCounts: Record<number, number> = {
-      [SemanticZone.Background]: 0,
-      [SemanticZone.Hair]: 0,
-      [SemanticZone.Skin]: 0,
-      [SemanticZone.Eyes]: 0,
-      [SemanticZone.Clothes]: 0,
-    };
+    // 4. 计算 5 分区像素统计 (仅在遮罩/文档变化时重新扫描 4096 像素)
+    if (this.maskCountsDirty) {
+      this.cachedZoneCounts = {
+        [SemanticZone.Background]: 0,
+        [SemanticZone.Hair]: 0,
+        [SemanticZone.Skin]: 0,
+        [SemanticZone.Eyes]: 0,
+        [SemanticZone.Clothes]: 0,
+      };
 
-    for (let i = 0; i < PIXEL_COUNT; i++) {
-      const z = state.semanticMask[i];
-      if (zoneCounts[z] !== undefined) {
-        zoneCounts[z]++;
+      if (state.isLoaded) {
+        for (let i = 0; i < PIXEL_COUNT; i++) {
+          const z = state.semanticMask[i];
+          if (this.cachedZoneCounts[z] !== undefined) {
+            this.cachedZoneCounts[z]++;
+          }
+        }
       }
+      this.maskCountsDirty = false;
     }
+    const zoneCounts = this.cachedZoneCounts;
 
     // 5. 原地修补 5 分区画刷选择、上锁与统计 (零 innerHTML 重建)
     const visibleSet = new Set(state.visibleMaskZones);
@@ -362,6 +384,7 @@ export class MaskPanel extends Panel {
 
     this.zoneCardElements.forEach((cached, zone) => {
       const count = zoneCounts[zone] || 0;
+      const countStr = String(count);
       const isActive = isMaskActive && state.activeZone === zone;
       const isChecked = visibleSet.has(zone);
       const isLocked = lockedSet.has(zone);
@@ -376,7 +399,9 @@ export class MaskPanel extends Panel {
       cached.checkmark.style.borderColor = isChecked ? cached.metaColor : 'rgba(255, 255, 255, 0.3)';
       cached.checkSvg.style.display = isChecked ? 'block' : 'none';
 
-      cached.countEl.textContent = String(count);
+      if (cached.countEl.textContent !== countStr) {
+        cached.countEl.textContent = countStr;
+      }
 
       if (cached.lockBtn) {
         cached.lockBtn.className = `zone-action-btn zone-lock-btn ${isLocked ? 'locked' : ''}`;
@@ -398,7 +423,7 @@ export class MaskPanel extends Panel {
       this.actionBox.style.display = draftHairPreset ? 'block' : 'none';
     }
 
-    // 6. 原地修补 9 大发色预设卡片 (零 innerHTML 重建)
+    // 6. 原地修补 9 大发色预设卡片 (零 innerHTML 重建，状态变化才写 badge DOM)
     this.hairPresetCardElements.forEach((cached, key) => {
       const isCommitted = state.currentHairPreset === key;
       const isDraft = draftHairPreset === key;
@@ -409,15 +434,24 @@ export class MaskPanel extends Panel {
         ? `当前正在预览: ${cached.name} (点击可打开固化/还原弹窗)`
         : (isCommitted ? `已固化发色: ${cached.name}` : `置换发色为: ${cached.name}`);
 
-      if (isDraft) {
-        cached.badgeWrap.innerHTML = '<span class="preset-badge badge-preview">预览中</span>';
-      } else if (isCommitted) {
-        cached.badgeWrap.innerHTML = '<span class="preset-badge">已固化</span>';
-      } else {
-        cached.badgeWrap.innerHTML = '';
+      const newBadgeState: 'draft' | 'committed' | 'none' = isDraft ? 'draft' : isCommitted ? 'committed' : 'none';
+      if (cached.badgeState !== newBadgeState) {
+        cached.badgeState = newBadgeState;
+        if (newBadgeState === 'draft') {
+          cached.badgeWrap.innerHTML = '<span class="preset-badge badge-preview">预览中</span>';
+        } else if (newBadgeState === 'committed') {
+          cached.badgeWrap.innerHTML = '<span class="preset-badge">已固化</span>';
+        } else {
+          cached.badgeWrap.innerHTML = '';
+        }
       }
     });
   }
-}
 
+  protected onDispose(): void {
+    this.container.innerHTML = '';
+    this.zoneCardElements.clear();
+    this.hairPresetCardElements.clear();
+  }
+}
 

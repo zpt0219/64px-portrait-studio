@@ -15,6 +15,7 @@ import {
   floodFillPixels,
   floodFillMask,
   assignColorToMask,
+  canAssignZone,
 } from '../core/editOps';
 import { layersOf } from '../model/document';
 import { clampToCanvas, isInRect } from '../model/session';
@@ -88,19 +89,20 @@ export class StrokeCommand extends SnapshotCommand {
     return this.finish(ctx, false);
   }
 
+  private forceClearMaskToBackground(ctx: CommandContext, offset: number): void {
+    if (ctx.doc.semanticMask[offset] !== SemanticZone.Background) {
+      ctx.doc.semanticMask[offset] = SemanticZone.Background;
+      this.maskChanged = true;
+    }
+  }
+
   private paintPixel(ctx: CommandContext, x: number, y: number): void {
     const { p } = this;
     const offset = y * W + x;
-    const clearsMask = (color: number) => color === TRANSPARENT_INDEX && ctx.doc.semanticMask[offset] !== SemanticZone.Background;
-    if (p.button === 2) {
-      // 右键一律画背景色 (与工具无关)
-      this.setPixel(ctx, offset, p.bg);
-      if (clearsMask(p.bg)) this.setZone(ctx, offset, SemanticZone.Background);
-    } else if (p.pixelTool === 'pen') {
-      this.setPixel(ctx, offset, p.fg);
-    } else if (p.pixelTool === 'eraser') {
-      this.setPixel(ctx, offset, TRANSPARENT_INDEX);
-      if (clearsMask(TRANSPARENT_INDEX)) this.setZone(ctx, offset, SemanticZone.Background);
+    const color = p.button === 2 ? p.bg : (p.pixelTool === 'eraser' ? TRANSPARENT_INDEX : p.fg);
+    this.setPixel(ctx, offset, color);
+    if (color === TRANSPARENT_INDEX) {
+      this.forceClearMaskToBackground(ctx, offset);
     }
   }
 
@@ -125,13 +127,12 @@ export class StrokeCommand extends SnapshotCommand {
     this.pixelsChanged = true;
   }
 
-  /** 已锁定分区的像素不可被覆盖；目标分区 (非背景) 已锁定时也不可涂抹 */
+  /** 使用统一策略判定是否可划入该分区 */
   private setZone(ctx: CommandContext, offset: number, zone: SemanticZone): void {
     const mask = ctx.doc.semanticMask;
     const current = mask[offset] as SemanticZone;
-    const locked = this.p.lockedZones;
-    if (current === zone || locked.includes(current)) return;
-    if (zone !== SemanticZone.Background && locked.includes(zone)) return;
+    const color = ctx.doc.pixelIndices[offset];
+    if (!canAssignZone(color, current, zone, this.p.lockedZones)) return;
     mask[offset] = zone;
     this.maskChanged = true;
   }
@@ -151,14 +152,35 @@ export class StrokeCommand extends SnapshotCommand {
       return;
     }
     const color = p.button === 0 ? p.fg : p.bg;
-    if (p.replaceAll) {
-      const fromColor = layers.pixels[y * W + x];
-      this.pixelsChanged = replaceColor(layers, fromColor, color, scope) > 0;
+    if (color === TRANSPARENT_INDEX) {
+      const maskBefore = new Uint8Array(ctx.doc.semanticMask);
+      if (p.replaceAll) {
+        const fromColor = layers.pixels[y * W + x];
+        this.pixelsChanged = replaceColor(layers, fromColor, color, scope) > 0;
+      } else {
+        this.pixelsChanged = floodFillPixels(layers, x, y, color, p.diagonal, scope);
+      }
+      if (this.pixelsChanged) {
+        let changed = false;
+        for (let i = 0; i < maskBefore.length; i++) {
+          if (maskBefore[i] !== ctx.doc.semanticMask[i]) {
+            changed = true;
+            break;
+          }
+        }
+        this.maskChanged = changed;
+      } else {
+        this.maskChanged = false;
+      }
     } else {
-      this.pixelsChanged = floodFillPixels(layers, x, y, color, p.diagonal, scope);
+      if (p.replaceAll) {
+        const fromColor = layers.pixels[y * W + x];
+        this.pixelsChanged = replaceColor(layers, fromColor, color, scope) > 0;
+      } else {
+        this.pixelsChanged = floodFillPixels(layers, x, y, color, p.diagonal, scope);
+      }
+      this.maskChanged = false;
     }
-    // 填充透明时遮罩也会被清为背景
-    this.maskChanged = this.pixelsChanged;
   }
 }
 

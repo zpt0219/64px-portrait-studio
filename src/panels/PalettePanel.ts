@@ -2,8 +2,8 @@
  * 像素模式左栏：修图工具、前景/背景色、发色卡、按色系分组的 36 色色板与颜色微调
  */
 
-import { PixelTool } from '../types';
-import { PALETTE_FAMILIES, WHITE_PALETTE_INDEX, TRANSPARENT_INDEX, RAMPS_INFO, TIER_NAMES } from '../data/palette';
+import { PixelTool, HairPresetKey } from '../types';
+import { PALETTE_FAMILIES, WHITE_PALETTE_INDEX, TRANSPARENT_INDEX, RAMPS_INFO, TIER_NAMES, isHairPresetKey } from '../data/palette';
 import { findNearestColor } from '../core/colorUtils';
 import { ViewModel } from '../app/viewModel';
 import { EditorContext } from '../app/editorContext';
@@ -11,7 +11,7 @@ import { Panel } from './Panel';
 import { TOOL_ICONS } from './canvas/cursors';
 
 export class PalettePanel extends Panel {
-  private selectedHairRampKey: string = '01_black_黑';
+  private selectedHairRampKey: HairPresetKey = '01_black_黑';
 
   // Cached DOM elements
   private activeBadge!: HTMLElement | null;
@@ -331,7 +331,7 @@ export class PalettePanel extends Panel {
     colorPickerInput?.addEventListener('input', (e) => {
       if (!isAdjustingColor) {
         isAdjustingColor = true;
-        gesture++;
+        gesture = this.vm.nextGestureId();
       }
       const val = (e.target as HTMLInputElement).value.toUpperCase();
       this.vm.setPaletteColor(this.vm.session.activePaletteIndex, val, gesture);
@@ -339,6 +339,7 @@ export class PalettePanel extends Panel {
 
     colorPickerInput?.addEventListener('change', () => {
       isAdjustingColor = false;
+      gesture = 0;
     });
 
     this.container.querySelector('#btn-reset-active-color')?.addEventListener('click', () => {
@@ -352,11 +353,14 @@ export class PalettePanel extends Panel {
     // 发色系下拉菜单切换 (与右侧 9 大发色系对齐)
     this.hairRampSelect?.addEventListener('change', () => {
       if (!this.hairRampSelect) return;
-      this.selectedHairRampKey = this.hairRampSelect.value;
-      this.vm.setHairPreset(this.selectedHairRampKey);
-      this.renderHairRampChips();
-      if (this.ctx.isHairHighlightPinned) {
-        this.ctx.setHighlightedPaletteIndex(this.getHairRampIndices());
+      const val = this.hairRampSelect.value;
+      if (isHairPresetKey(val)) {
+        this.selectedHairRampKey = val;
+        this.vm.setHairPreset(this.selectedHairRampKey);
+        this.renderHairRampChips();
+        if (this.ctx.isHairHighlightPinned) {
+          this.ctx.setHighlightedPaletteIndex(this.getHairRampIndices());
+        }
       }
     });
 
@@ -602,5 +606,11 @@ export class PalettePanel extends Panel {
     if (this.btnHighlightHair) {
       this.btnHighlightHair.classList.toggle('active', this.ctx.isHairHighlightPinned);
     }
+  }
+
+  protected onDispose(): void {
+    this.container.innerHTML = '';
+    this.paletteChipElements.clear();
+    this.hairChipElements = [];
   }
 }

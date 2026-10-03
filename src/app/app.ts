@@ -4,7 +4,6 @@
  */
 
 import { ZONE_CONFIG, ALL_ZONES, MaskTool } from '../types';
-import { importProjectZip } from '../core/zipExporter';
 import { hasSavedProject } from '../core/storage';
 import { Header } from '../panels/Header';
 import { PalettePanel } from '../panels/PalettePanel';
@@ -19,25 +18,46 @@ import { EditorSession } from '../model/session';
 import { ViewModel } from './viewModel';
 import { EditorContext } from './editorContext';
 import { Toaster } from './toaster';
-import { decodeImageFile } from './imageDecode';
+import { ImportCoordinator } from './controllers/ImportCoordinator';
 
 export class App implements StudioEvents {
   readonly vm = new ViewModel();
   private readonly ctx = new EditorContext(() => this.vm.onContextChanged());
+  private readonly importCoordinator: ImportCoordinator;
   private header!: Header;
   private replaceColorModal!: ReplaceColorModal;
   private confirmModal!: ConfirmModal;
+  private palettePanel!: PalettePanel;
+  private maskToolsPanel!: MaskToolsPanel;
+  private canvasPanel!: CanvasPanel;
+  private realtimePreview!: RealtimePreview;
+  private maskPanel!: MaskPanel;
+  private toaster!: Toaster;
   private palettePanelWrapper!: HTMLElement;
   private maskToolsPanelWrapper!: HTMLElement;
   private fKeyDownTime = 0;
+  private abortController = new AbortController();
+  private isDisposed = false;
 
   constructor() {
+    this.importCoordinator = new ImportCoordinator({
+      loadProject: (data) => this.vm.loadProject(data),
+      importImage: (image) => this.vm.importImage(image),
+      notify: (msg, lvl) => this.vm.notify(msg, lvl),
+    });
+
     this.buildDomLayout();
     this.createPanels();
     this.setupSplitterDragging();
-    window.addEventListener('keydown', (e) => this.handleShortcut(e));
-    window.addEventListener('keyup', (e) => this.handleKeyUp(e));
-    window.addEventListener('blur', () => { this.fKeyDownTime = 0; });
+    window.addEventListener('keydown', (e) => this.handleShortcut(e), { signal: this.abortController.signal });
+    window.addEventListener('keyup', (e) => this.handleKeyUp(e), { signal: this.abortController.signal });
+    window.addEventListener('blur', () => { this.fKeyDownTime = 0; }, { signal: this.abortController.signal });
+    window.addEventListener('pagehide', () => { this.vm.flushAutosave(); }, { signal: this.abortController.signal });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        this.vm.flushAutosave();
+      }
+    }, { signal: this.abortController.signal });
 
     if (hasSavedProject()) {
       this.vm.notify('检测到上次未完成的编辑进度，可点击中心卡片快速恢复', 'info');
@@ -76,26 +96,33 @@ export class App implements StudioEvents {
     this.palettePanelWrapper = byId('palette-panel-wrapper');
     this.maskToolsPanelWrapper = byId('mask-tools-panel-wrapper');
 
-    vm.registerListener(new Toaster(byId('toast-container')));
+    this.toaster = new Toaster(byId('toast-container'));
+    vm.registerListener(this.toaster);
     vm.registerListener(this);
 
     this.confirmModal = new ConfirmModal(document.body);
-    vm.setPrompts({ confirm: (options) => this.confirmModal.show(options) });
+    vm.setPrompts({
+      confirm: (options) => {
+        this.replaceColorModal?.close();
+        this.confirmModal.show(options);
+      },
+      dismiss: () => this.confirmModal.dismiss(),
+    });
     this.replaceColorModal = new ReplaceColorModal(document.body, {
       onConfirm: (fromIdx, toIdx, scope) => vm.replaceColor(fromIdx, toIdx, scope),
     });
 
     this.header = new Header(byId('header-mount'), vm, (file) => this.handleIncomingFile(file));
-    new PalettePanel(this.palettePanelWrapper, vm, this.ctx);
-    new MaskToolsPanel(this.maskToolsPanelWrapper, vm);
-    const canvas = new CanvasPanel(byId('canvas-mount'), vm, this.ctx, {
+    this.palettePanel = new PalettePanel(this.palettePanelWrapper, vm, this.ctx);
+    this.maskToolsPanel = new MaskToolsPanel(this.maskToolsPanelWrapper, vm);
+    this.canvasPanel = new CanvasPanel(byId('canvas-mount'), vm, this.ctx, {
       onFileDrop: (file) => this.handleIncomingFile(file),
       onTriggerUpload: () => this.header.triggerUpload(),
       onTogglePreview: () => this.toggleRealtimePreview(),
       onOpenReplaceColor: () => this.openReplaceColorModal(),
     });
-    new RealtimePreview(canvas.getViewportElement(), vm, this.ctx);
-    new MaskPanel(byId('mask-mount'), vm);
+    this.realtimePreview = new RealtimePreview(this.canvasPanel.getViewportElement(), vm, this.ctx);
+    this.maskPanel = new MaskPanel(byId('mask-mount'), vm);
   }
 
   /** 左栏在像素模式显示色板面板，在遮罩模式显示遮罩工具箱 */
@@ -106,44 +133,18 @@ export class App implements StudioEvents {
     this.maskToolsPanelWrapper.style.display = isMask ? '' : 'none';
   }
 
+  onDocumentReplaced(): void {
+    this.importCoordinator.cancelPending();
+    this.confirmModal.dismiss();
+    this.replaceColorModal.close();
+  }
+
   // ===================== 文件导入 =====================
 
   /** 处理拖入或选择的文件：工程 ZIP 完整恢复，普通图片作为新项目载入 */
   private async handleIncomingFile(file: File): Promise<void> {
-    if (!file) return;
-    const vm = this.vm;
-    const lowerName = file.name.toLowerCase();
-    const isZip = lowerName.endsWith('.zip') || file.type.includes('zip');
-    const isImage = file.type.startsWith('image/') || /\.(png|jpe?g|webp|bmp|gif)$/i.test(lowerName);
-
-    if (!isZip && !isImage) {
-      vm.notify('仅支持工程 ZIP 包或图片格式文件 (PNG, JPG, WebP 等)', 'error');
-      return;
-    }
-
-    if (isZip) {
-      try {
-        vm.loadProject(await importProjectZip(file));
-        vm.notify('🎉 成功载入工程 ZIP！已完整恢复画布、遮罩与色板', 'success');
-      } catch (err) {
-        console.error('Failed to import project zip:', err);
-        vm.notify(`导入工程 ZIP 失败: ${err instanceof Error ? err.message : String(err)}`, 'error');
-      }
-      return;
-    }
-
-    // 图片一律作为新建项目载入，不读取 PNG 附加元数据
-    try {
-      const image = await decodeImageFile(file);
-      if (!image) {
-        vm.notify('无法读取有效图片尺寸，请重试', 'error');
-        return;
-      }
-      vm.importImage(image);
-    } catch (err) {
-      console.error('File load error:', err);
-      vm.notify('载入图片失败，请检查文件是否损坏', 'error');
-    }
+    if (this.isDisposed) return;
+    await this.importCoordinator.handleFile(file);
   }
 
   // ===================== 弹窗与画中画 =====================
@@ -183,8 +184,13 @@ export class App implements StudioEvents {
 
     // 恢复本地存储的列宽偏好
     const savedWidth = (key: string, min: number, max: number): number | null => {
-      const w = parseInt(localStorage.getItem(key) ?? '', 10);
-      return !isNaN(w) && w >= min && w <= max ? w : null;
+      try {
+        const val = localStorage.getItem(key);
+        const w = parseInt(val ?? '', 10);
+        return !isNaN(w) && w >= min && w <= max ? w : null;
+      } catch {
+        return null;
+      }
     };
     paletteMount.style.width = `${savedWidth('imagegem_layout_left_width', 220, 480) ?? 280}px`;
     const rightWidth = savedWidth('imagegem_layout_right_width', 220, 520);
@@ -201,19 +207,27 @@ export class App implements StudioEvents {
         startWidth = pane.offsetWidth;
         splitter.classList.add('is-active');
         document.body.classList.add('is-resizing');
-      });
-      window.addEventListener('mousemove', (e) => {
-        if (!dragging) return;
-        const width = Math.max(min, Math.min(max, startWidth + direction * (e.clientX - startX)));
-        pane.style.width = `${width}px`;
-      });
-      window.addEventListener('mouseup', () => {
-        if (!dragging) return;
-        dragging = false;
-        splitter.classList.remove('is-active');
-        document.body.classList.remove('is-resizing');
-        localStorage.setItem(storageKey, pane.offsetWidth.toString());
-      });
+      }, { signal: this.abortController.signal });
+      if (typeof window !== 'undefined') {
+        window.addEventListener('mousemove', (e) => {
+          if (!dragging) return;
+          const width = Math.max(min, Math.min(max, startWidth + direction * (e.clientX - startX)));
+          pane.style.width = `${width}px`;
+        }, { signal: this.abortController.signal });
+        window.addEventListener('mouseup', () => {
+          if (!dragging) return;
+          dragging = false;
+          splitter.classList.remove('is-active');
+          document.body.classList.remove('is-resizing');
+          try {
+            if (typeof localStorage !== 'undefined') {
+              localStorage.setItem(storageKey, pane.offsetWidth.toString());
+            }
+          } catch {
+            // ignore storage error
+          }
+        }, { signal: this.abortController.signal });
+      }
     };
     makeDraggable(splitterLeft, paletteMount, 1, 200, 480, 'imagegem_layout_left_width');
     makeDraggable(splitterRight, maskMount, -1, 220, 520, 'imagegem_layout_right_width');
@@ -228,6 +242,7 @@ export class App implements StudioEvents {
    * 同时匹配 e.key 与 e.code，兼容中文输入法与 CapsLock。
    */
   private handleShortcut(e: KeyboardEvent): void {
+    if (this.isDisposed || e.defaultPrevented) return;
     // 只在真正的文本输入中屏蔽快捷键；滑杆、复选框等非文本控件不阻塞
     const target = e.target as HTMLElement | null;
     if (target) {
@@ -388,6 +403,7 @@ export class App implements StudioEvents {
   }
 
   private handleKeyUp(e: KeyboardEvent): void {
+    if (this.isDisposed) return;
     const key = e.key.toLowerCase();
     const is = (...names: string[]) => names.includes(key) || names.includes(e.code);
     if (is('f', 'KeyF')) {
@@ -431,5 +447,29 @@ export class App implements StudioEvents {
     } else if (clearedHighlight) {
       this.vm.notify('✨ 已关闭发色高亮');
     }
+  }
+
+  /** 幂等销毁：释放所有子面板、全局监听器、作废挂起导入并终结 ViewModel */
+  dispose(): void {
+    if (this.isDisposed) return;
+    this.isDisposed = true;
+
+    this.abortController.abort();
+    document.body.classList.remove('is-resizing');
+
+    this.importCoordinator.cancelPending();
+
+    this.toaster?.dispose();
+    this.header?.dispose();
+    this.palettePanel?.dispose();
+    this.maskToolsPanel?.dispose();
+    this.canvasPanel?.dispose();
+    this.realtimePreview?.dispose();
+    this.maskPanel?.dispose();
+    this.confirmModal?.dispose();
+    this.replaceColorModal?.dispose();
+
+    this.vm.unregisterListener(this);
+    this.vm.dispose();
   }
 }

@@ -2,8 +2,8 @@
  * 发色识别与 5 阶色阶置换 (仅作用于 Hair 分区)
  */
 
-import { SemanticZone } from '../types';
-import { RAMPS_INFO, TRANSPARENT_INDEX } from '../data/palette';
+import { SemanticZone, HairPresetKey } from '../types';
+import { RAMPS_INFO, TRANSPARENT_INDEX, isHairPresetKey } from '../data/palette';
 import { hexToRgb, findNearestColor } from './colorUtils';
 import { PIXEL_COUNT } from './pixelGrid';
 
@@ -30,7 +30,7 @@ export function nearestTierForColor(hex: string, ramp: string[]): number {
  * 头发区域核心发色投票，识别图像当前属于哪个发色预设 (纯白高光不参与)。
  * 命中像素不足 50 时视为无法识别。
  */
-export function detectHairPreset(indices: Uint8Array, mask: Uint8Array, palette: string[]): string | null {
+export function detectHairPreset(indices: Uint8Array, mask: Uint8Array, palette: string[]): HairPresetKey | null {
   const hairCounts: Record<string, number> = {};
   for (let i = 0; i < PIXEL_COUNT; i++) {
     if (mask[i] !== SemanticZone.Hair || indices[i] === TRANSPARENT_INDEX) continue;
@@ -41,9 +41,9 @@ export function detectHairPreset(indices: Uint8Array, mask: Uint8Array, palette:
     }
   }
 
-  let bestPreset: string | null = null;
+  let bestPreset: HairPresetKey | null = null;
   let bestScore = 0;
-  for (const [presetKey, info] of Object.entries(RAMPS_INFO)) {
+  for (const [presetKey, info] of Object.entries(RAMPS_INFO) as [HairPresetKey, (typeof RAMPS_INFO)[HairPresetKey]][]) {
     const score = info.hexes.reduce((sum, h) => {
       const uh = h.toUpperCase();
       return sum + (uh === '#FFFFFF' ? 0 : hairCounts[uh] || 0);
@@ -66,15 +66,16 @@ export function recolorHair(
   basePixels: Uint8Array,
   mask: Uint8Array,
   palette: string[],
-  sourcePreset: string | null,
-  targetPreset: string
+  sourcePreset: HairPresetKey | null,
+  targetPreset: HairPresetKey
 ): Uint8Array {
   const result = new Uint8Array(basePixels);
+  if (!isHairPresetKey(targetPreset)) return result;
   const targetRamp = RAMPS_INFO[targetPreset]?.hexes;
   if (!targetRamp) return result;
 
   // 若未显式传入有效 sourcePreset，尝试根据遮罩内发色自动识别当前属于哪个预设色板
-  const effectiveSourceKey = (sourcePreset && RAMPS_INFO[sourcePreset])
+  const effectiveSourceKey = (sourcePreset && isHairPresetKey(sourcePreset))
     ? sourcePreset
     : detectHairPreset(basePixels, mask, palette);
 

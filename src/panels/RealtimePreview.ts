@@ -33,6 +33,7 @@ export class RealtimePreview extends Panel {
   private dragStartY = 0;
   private initialLeft = 0;
   private initialTop = 0;
+  private abortController = new AbortController();
 
   constructor(private readonly container: HTMLElement, vm: ViewModel, private readonly ctx: EditorContext) {
     super(vm);
@@ -210,14 +211,14 @@ export class RealtimePreview extends Panel {
       this.rootEl.style.top = `${newTop}px`;
       this.rootEl.style.right = 'auto';
       this.rootEl.style.bottom = 'auto';
-    });
+    }, { signal: this.abortController.signal });
 
     window.addEventListener('mouseup', () => {
       if (this.isDragging) {
         this.isDragging = false;
         this.rootEl?.classList.remove('dragging');
       }
-    });
+    }, { signal: this.abortController.signal });
   }
 
   public setScale(scale: number): void {
@@ -336,5 +337,15 @@ export class RealtimePreview extends Panel {
       targetSize,
       targetSize
     );
+  }
+
+  protected onDispose(): void {
+    this.abortController.abort();
+    this.rootEl?.remove();
+    this.rootEl = null;
+    this.headerEl = null;
+    this.previewCanvas = null;
+    this.previewCtx = null;
+    this.stageWrapper = null;
   }
 }

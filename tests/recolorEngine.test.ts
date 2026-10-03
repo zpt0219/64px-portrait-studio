@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { recolorHair, detectHairPreset, nearestTierForColor } from '../src/core/recolorEngine';
+import { recolorHair, nearestTierForColor } from '../src/core/recolorEngine';
 import { RAMPS_INFO, PALETTE_36, TRANSPARENT_INDEX } from '../src/data/palette';
-import { SemanticZone } from '../src/types';
+import { SemanticZone, HairPresetKey } from '../src/types';
 import { PIXEL_COUNT } from '../src/core/pixelGrid';
 
 describe('recolorEngine', () => {
   const palette = [...PALETTE_36];
 
-  function createHairTestBuffer(presetKey: string): { pixels: Uint8Array; mask: Uint8Array } {
+  function createHairTestBuffer(presetKey: HairPresetKey): { pixels: Uint8Array; mask: Uint8Array } {
     const pixels = new Uint8Array(PIXEL_COUNT).fill(TRANSPARENT_INDEX);
     const mask = new Uint8Array(PIXEL_COUNT).fill(SemanticZone.Background);
     const ramp = RAMPS_INFO[presetKey].hexes;
@@ -36,7 +36,7 @@ describe('recolorEngine', () => {
 
   it('multi-hop recolor cycle across all 9 presets maintains 100% deterministic fidelity without drift', () => {
     const initial = createHairTestBuffer('02_brown_棕');
-    const sequence = [
+    const sequence: HairPresetKey[] = [
       '09_red_红',
       '03_blonde_金',
       '04_pink_粉',
@@ -49,7 +49,7 @@ describe('recolorEngine', () => {
     ];
 
     let currentPixels = initial.pixels;
-    let currentPreset = '02_brown_棕';
+    let currentPreset: HairPresetKey | null = '02_brown_棕';
 
     for (const targetPreset of sequence) {
       currentPixels = recolorHair(currentPixels, initial.mask, palette, currentPreset, targetPreset);
@@ -96,8 +96,8 @@ describe('recolorEngine', () => {
 
   it('simulates user changing hair, confirming, and changing again multiple times', () => {
     const { pixels, mask } = createHairTestBuffer('01_black_黑');
-    let docPixels = new Uint8Array(pixels);
-    let docPreset: string | null = '01_black_黑';
+    let docPixels: Uint8Array = new Uint8Array(pixels);
+    let docPreset: HairPresetKey | null = '01_black_黑';
 
     // Step 1: Change to Brown and commit
     docPixels = recolorHair(docPixels, mask, palette, docPreset, '02_brown_棕');

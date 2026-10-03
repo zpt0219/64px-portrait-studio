@@ -43,6 +43,12 @@ function selectionColorStats(pixels: Uint8Array, sel: RectSelection): ColorStat[
 }
 
 export class SelectionStatsPanel {
+  private cachedSel: RectSelection | null = null;
+  private cachedSelectedPixels: Uint8Array | null = null;
+  private cachedPalette: string[] | null = null;
+  private cachedActiveFg: number | null = null;
+  private cachedActiveBg: number | null = null;
+
   constructor(private el: HTMLElement, callbacks: SelectionStatsCallbacks) {
     // 阻止事件穿透到下方画布，避免误绘制
     for (const type of ['pointerdown', 'mousedown', 'mouseup']) {
@@ -71,13 +77,101 @@ export class SelectionStatsPanel {
     el.addEventListener('mouseleave', () => callbacks.onHighlight(null));
   }
 
+  private clearCache(): void {
+    this.cachedSel = null;
+    this.cachedSelectedPixels = null;
+    this.cachedPalette = null;
+    this.cachedActiveFg = null;
+    this.cachedActiveBg = null;
+  }
+
   public update(doc: PortraitDocument, session: EditorSession, selection: RectSelection | null): void {
-    const stats = selection ? selectionColorStats(doc.pixelIndices, selection) : [];
+    if (!selection) {
+      if (this.el.style.display !== 'none') {
+        this.el.style.display = 'none';
+        this.el.innerHTML = '';
+      }
+      this.clearCache();
+      return;
+    }
+
+    // 检查选区坐标或尺寸是否改变
+    const selChanged =
+      !this.cachedSel ||
+      this.cachedSel.x !== selection.x ||
+      this.cachedSel.y !== selection.y ||
+      this.cachedSel.w !== selection.w ||
+      this.cachedSel.h !== selection.h;
+
+    // 检查色板是否改变
+    const paletteChanged =
+      !this.cachedPalette ||
+      this.cachedPalette.length !== doc.palette.length ||
+      this.cachedPalette.some((c, i) => c !== doc.palette[i]);
+
+    // 检查选区内像素内容是否改变 (对比快照，禁止保留可变 pixelIndices 引用以防脏缓存)
+    let pixelsChanged = selChanged || !this.cachedSelectedPixels;
+    if (!pixelsChanged && this.cachedSelectedPixels) {
+      const y0 = Math.max(0, selection.y);
+      const y1 = Math.min(H, selection.y + selection.h);
+      const x0 = Math.max(0, selection.x);
+      const x1 = Math.min(W, selection.x + selection.w);
+      let pIdx = 0;
+      for (let y = y0; y < y1; y++) {
+        for (let x = x0; x < x1; x++) {
+          if (doc.pixelIndices[y * W + x] !== this.cachedSelectedPixels[pIdx++]) {
+            pixelsChanged = true;
+            break;
+          }
+        }
+        if (pixelsChanged) break;
+      }
+    }
+
+    // 若数据无实质变化，仅在前/背景色板索引发生变化时就地更新 class，避免全量重建 DOM
+    if (!selChanged && !paletteChanged && !pixelsChanged) {
+      if (
+        this.cachedActiveFg !== session.activePaletteIndex ||
+        this.cachedActiveBg !== session.bgPaletteIndex
+      ) {
+        this.cachedActiveFg = session.activePaletteIndex;
+        this.cachedActiveBg = session.bgPaletteIndex;
+        const rows = this.el.querySelectorAll<HTMLElement>('.stats-color-row');
+        rows.forEach((row) => {
+          const idx = parseInt(row.getAttribute('data-index') ?? '', 10);
+          row.classList.toggle('is-active-fg', idx === session.activePaletteIndex);
+          row.classList.toggle('is-active-bg', idx === session.bgPaletteIndex);
+        });
+      }
+      return;
+    }
+
+    const stats = selectionColorStats(doc.pixelIndices, selection);
     if (stats.length === 0) {
       this.el.style.display = 'none';
       this.el.innerHTML = '';
+      this.clearCache();
       return;
     }
+
+    // 缓存当前选区像素快照 (独立拷贝 Uint8Array)
+    const y0 = Math.max(0, selection.y);
+    const y1 = Math.min(H, selection.y + selection.h);
+    const x0 = Math.max(0, selection.x);
+    const x1 = Math.min(W, selection.x + selection.w);
+    const pixelCount = Math.max(0, y1 - y0) * Math.max(0, x1 - x0);
+    const pixelSnapshot = new Uint8Array(pixelCount);
+    let pIdx = 0;
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
+        pixelSnapshot[pIdx++] = doc.pixelIndices[y * W + x];
+      }
+    }
+    this.cachedSelectedPixels = pixelSnapshot;
+    this.cachedSel = { ...selection };
+    this.cachedPalette = [...doc.palette];
+    this.cachedActiveFg = session.activePaletteIndex;
+    this.cachedActiveBg = session.bgPaletteIndex;
 
     const totalPixels = stats.reduce((sum, s) => sum + s.count, 0);
     const rowsHtml = stats

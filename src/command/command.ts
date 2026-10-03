@@ -4,7 +4,7 @@
  * 所有文档修改都必须经过命令，撤销 / 重做与事件广播才能保持一致。
  */
 
-import { RectSelection } from '../types';
+import { RectSelection, HairPresetKey } from '../types';
 import { PortraitDocument } from '../model/document';
 import { EditorSession } from '../model/session';
 import { StudioEvents } from './events';
@@ -44,7 +44,7 @@ export interface DocumentMemento {
   pixels: Uint8Array;
   mask: Uint8Array;
   palette: string[];
-  hairPreset: string | null;
+  hairPreset: HairPresetKey | null;
   selection: RectSelection | null;
 }
 

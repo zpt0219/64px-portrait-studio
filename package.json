@@ -9,6 +9,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "typecheck:tests": "tsc --project tsconfig.tests.json --noEmit",
     "test": "vitest run"
   },
   "dependencies": {

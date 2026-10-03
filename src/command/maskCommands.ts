@@ -5,6 +5,7 @@
 import { SemanticZone, RectSelection } from '../types';
 import { TRANSPARENT_INDEX } from '../data/palette';
 import { IMAGE_WIDTH as W, IMAGE_HEIGHT as H, PIXEL_COUNT } from '../core/pixelGrid';
+import { canAssignZone } from '../core/editOps';
 import { CommandContext, SnapshotCommand } from './command';
 
 /** 框内像素遮罩操作：
@@ -28,35 +29,38 @@ export class MaskBoxSelectCommand extends SnapshotCommand {
   }
   protected apply({ doc }: CommandContext): void {
     const { x, y, w, h } = this.rect;
+    // 若 add 操作的目标分区已锁定且非背景，直接拒绝
+    if (this.action === 'add' && this.target !== SemanticZone.Background && this.lockedZones.includes(this.target)) {
+      return;
+    }
+
     for (let py = y; py < y + h; py++) {
       for (let px = x; px < x + w; px++) {
         if (px < 0 || px >= W || py < 0 || py >= H) continue;
         const offset = py * W + px;
         const color = doc.pixelIndices[offset];
         const current = doc.semanticMask[offset] as SemanticZone;
-        if (this.lockedZones.includes(current)) continue;
 
-        // 关键防护：透明像素永远不入非背景遮罩！
-        if (this.action === 'add' && color === TRANSPARENT_INDEX) continue;
-
-        if (this.action === 'clear') {
-          // 右键去所有颜色：框内所有属于当前分区的像素全额清除为背景
-          if (current === this.target) {
+        if (this.action === 'add') {
+          if (this.matchColors.has(color) && canAssignZone(color, current, this.target, this.lockedZones)) {
+            doc.semanticMask[offset] = this.target;
+            this.count++;
+          }
+        } else if (this.action === 'clear') {
+          // 右键去所有颜色：框内属于 target 分区的像素剔除为背景
+          if (current === this.target && canAssignZone(color, current, SemanticZone.Background, this.lockedZones)) {
             doc.semanticMask[offset] = SemanticZone.Background;
             this.count++;
           }
         } else if (this.action === 'subtract') {
-          // Shift 减法模式：所有不在匹配色组的像素 (杂色) 从 target 分区剔除
-          if (!this.matchColors.has(color) && current === this.target) {
+          // Shift 减法模式：所有不在匹配色组的像素 (杂色) 从 target 分区剔除为背景
+          if (!this.matchColors.has(color) && current === this.target && canAssignZone(color, current, SemanticZone.Background, this.lockedZones)) {
             doc.semanticMask[offset] = SemanticZone.Background;
             this.count++;
           }
-        } else if (this.matchColors.has(color)) {
-          if (this.action === 'add' && current !== this.target) {
-            doc.semanticMask[offset] = this.target;
-            this.count++;
-          } else if (this.action === 'remove' && current === this.target) {
-            // Alt 减法模式：属于匹配色组的像素从 target 分区剔除
+        } else if (this.action === 'remove') {
+          // Alt 减法模式：属于匹配色组的像素从 target 分区剔除为背景
+          if (this.matchColors.has(color) && current === this.target && canAssignZone(color, current, SemanticZone.Background, this.lockedZones)) {
             doc.semanticMask[offset] = SemanticZone.Background;
             this.count++;
           }
@@ -80,10 +84,13 @@ export class AssignColorToZoneCommand extends SnapshotCommand {
   protected apply({ doc }: CommandContext): void {
     // 关键防护：禁止将全图透明像素批量划入非背景遮罩
     if (this.colorIdx === TRANSPARENT_INDEX && this.target !== SemanticZone.Background) return;
+    // 目标分区被锁定且非背景时禁止写入
+    if (this.target !== SemanticZone.Background && this.lockedZones.includes(this.target)) return;
+
     for (let i = 0; i < PIXEL_COUNT; i++) {
       if (doc.pixelIndices[i] !== this.colorIdx) continue;
       const current = doc.semanticMask[i] as SemanticZone;
-      if (this.lockedZones.includes(current) || current === this.target) continue;
+      if (!canAssignZone(this.colorIdx, current, this.target, this.lockedZones)) continue;
       doc.semanticMask[i] = this.target;
       this.count++;
     }

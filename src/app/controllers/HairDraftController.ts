@@ -1,79 +1,99 @@
-import { SemanticZone } from '../../types';
-import { RAMPS_INFO, MATCH_COLOR_PRESETS } from '../../data/palette';
+import { SemanticZone, HairPresetKey, ToastLevel } from '../../types';
+import { RAMPS_INFO, MATCH_COLOR_PRESETS, isHairPresetKey } from '../../data/palette';
 import { findNearestColor } from '../../core/colorUtils';
 import { recolorHair } from '../../core/recolorEngine';
+import { PortraitDocument } from '../../model/document';
 import { EditorSession } from '../../model/session';
+import { Command } from '../../command/command';
 import { SetHairPresetCommand, CommitHairRecolorCommand } from '../../command/paletteCommands';
-import type { ViewModel } from '../viewModel';
+import type { PromptOptions } from '../viewModel';
+
+export interface HairDraftHost {
+  getDoc(): PortraitDocument;
+  getSession(): EditorSession;
+  patchSession(patch: Partial<EditorSession>): void;
+  setMode(mode: 'pixel' | 'mask'): void;
+  setActiveZone(zone: SemanticZone): void;
+  executeCommand(cmd: Command): boolean;
+  notify(message: string, level?: ToastLevel): void;
+  confirm(options: PromptOptions): void;
+}
 
 export class HairDraftController {
   /** 发色预览像素缓存；文档或草稿变化时置空，下次读取时重算 */
   private hairPreview: Uint8Array | null = null;
 
-  constructor(private readonly vm: ViewModel) {}
+  constructor(private readonly host: HairDraftHost) {}
 
   invalidatePreview(): void {
     this.hairPreview = null;
   }
 
   hasHairDraft(): boolean {
-    return this.vm.session.hairDraftPreset !== null;
+    return this.host.getSession().hairDraftPreset !== null;
   }
 
   hairDraftName(): string {
-    return RAMPS_INFO[this.vm.session.hairDraftPreset!]?.name || '新发色';
+    const preset = this.host.getSession().hairDraftPreset;
+    return (preset && RAMPS_INFO[preset]?.name) || '新发色';
   }
 
   /** 画布显示用的像素：有发色草稿时为基于当前文档实时计算的预览，否则为文档像素 */
   displayPixels(): Uint8Array {
-    const draft = this.vm.session.hairDraftPreset;
-    if (!draft) return this.vm.doc.pixelIndices;
+    const draft = this.host.getSession().hairDraftPreset;
+    const doc = this.host.getDoc();
+    if (!draft) return doc.pixelIndices;
     if (!this.hairPreview) {
-      const { pixelIndices, semanticMask, palette, currentHairPreset } = this.vm.doc;
+      const { pixelIndices, semanticMask, palette, currentHairPreset } = doc;
       this.hairPreview = recolorHair(pixelIndices, semanticMask, palette, currentHairPreset, draft);
     }
     return this.hairPreview;
   }
 
   /** 非破坏性预览 9 大发色预设之一 (不修改文档，可反复切换) */
-  applyHairPreset(presetKey: string): void {
-    if (!this.vm.session.isLoaded) return;
+  applyHairPreset(presetKey: HairPresetKey): void {
+    const session = this.host.getSession();
+    if (!session.isLoaded) return;
+    if (!isHairPresetKey(presetKey)) return;
     const ramp = RAMPS_INFO[presetKey];
     if (!ramp) return;
-    if (!this.vm.doc.semanticMask.includes(SemanticZone.Hair)) {
-      this.vm.notify('当前遮罩中未标记任何头发 (Hair) 区域，请先涂抹遮罩', 'warning');
+    const doc = this.host.getDoc();
+    if (!doc.semanticMask.includes(SemanticZone.Hair)) {
+      this.host.notify('当前遮罩中未标记任何头发 (Hair) 区域，请先涂抹遮罩', 'warning');
       return;
     }
-    if (this.vm.session.activeMode !== 'mask') {
-      this.vm.setMode('mask');
+    if (session.activeMode !== 'mask') {
+      this.host.setMode('mask');
     }
-    this.vm.setActiveZone(SemanticZone.Hair);
-    this.vm.patchSession({ hairDraftPreset: presetKey });
-    this.vm.notify(`🎨 正在预览发色: ${ramp.name} (${ramp.icon})，离开蒙版模式前可自由试色`);
+    this.host.setActiveZone(SemanticZone.Hair);
+    this.host.patchSession({ hairDraftPreset: presetKey });
+    this.host.notify(`🎨 正在预览发色: ${ramp.name} (${ramp.icon})，离开蒙版模式前可自由试色`);
   }
 
   /** 固化发色预览到文档 */
   commitHairRecolor(): void {
     if (!this.hasHairDraft()) return;
     const name = this.hairDraftName();
-    this.vm.commandHandler.execute(
-      new CommitHairRecolorCommand(new Uint8Array(this.displayPixels()), this.vm.session.hairDraftPreset!)
+    const session = this.host.getSession();
+    const doc = this.host.getDoc();
+    this.host.executeCommand(
+      new CommitHairRecolorCommand(new Uint8Array(this.displayPixels()), session.hairDraftPreset!)
     );
     const changes: Partial<EditorSession> = { hairDraftPreset: null };
-    if (this.vm.session.maskMatchPresetKey === 'current_hair') {
+    if (session.maskMatchPresetKey === 'current_hair') {
       const preset = MATCH_COLOR_PRESETS.find((p) => p.id === 'current_hair');
       if (preset) {
-        changes.maskMatchColors = preset.getIndices(this.vm.doc.palette, this.vm.doc.currentHairPreset);
+        changes.maskMatchColors = preset.getIndices(doc.palette, doc.currentHairPreset);
       }
     }
-    this.vm.patchSession(changes);
-    this.vm.notify(`✓ 发色【${name}】已成功应用并固化到画布！`, 'success');
+    this.host.patchSession(changes);
+    this.host.notify(`✓ 发色【${name}】已成功应用并固化到画布！`, 'success');
   }
 
   discardHairRecolor(): void {
     if (!this.hasHairDraft()) return;
-    this.vm.patchSession({ hairDraftPreset: null });
-    this.vm.notify('已放弃发色预览，恢复为原图', 'info');
+    this.host.patchSession({ hairDraftPreset: null });
+    this.host.notify('已放弃发色预览，恢复为原图', 'info');
   }
 
   openHairRecolorPrompt(): void {
@@ -92,29 +112,33 @@ export class HairDraftController {
   }
 
   /** 发色卡下拉框：设定当前发色预设 */
-  setHairPreset(presetKey: string): void {
-    this.vm.commandHandler.execute(new SetHairPresetCommand(presetKey));
-    if (this.vm.session.maskMatchPresetKey === 'current_hair') {
+  setHairPreset(presetKey: HairPresetKey): void {
+    if (!isHairPresetKey(presetKey)) return;
+    this.host.executeCommand(new SetHairPresetCommand(presetKey));
+    const session = this.host.getSession();
+    const doc = this.host.getDoc();
+    if (session.maskMatchPresetKey === 'current_hair') {
       const preset = MATCH_COLOR_PRESETS.find((p) => p.id === 'current_hair');
       if (preset) {
-        this.vm.patchSession({ maskMatchColors: preset.getIndices(this.vm.doc.palette, this.vm.doc.currentHairPreset) });
+        this.host.patchSession({ maskMatchColors: preset.getIndices(doc.palette, doc.currentHairPreset) });
       }
     }
   }
 
   /** 获取当前文档的发色预设 key (若无则取首个默认预设) */
-  getHairPresetKey(): string {
-    return this.vm.doc.currentHairPreset || Object.keys(RAMPS_INFO)[0];
+  getHairPresetKey(): HairPresetKey {
+    return this.host.getDoc().currentHairPreset || (Object.keys(RAMPS_INFO)[0] as HairPresetKey);
   }
 
   /** 获取指定或当前发色预设的 5 阶颜色在色板中的索引列表 */
-  getHairRampIndices(presetKey?: string): number[] {
+  getHairRampIndices(presetKey?: HairPresetKey): number[] {
     const key = presetKey || this.getHairPresetKey();
+    if (!isHairPresetKey(key)) return [];
     const rampInfo = RAMPS_INFO[key];
     if (!rampInfo) return [];
-    const palette = this.vm.doc.palette;
+    const palette = this.host.getDoc().palette;
     const indices: number[] = [];
-    rampInfo.hexes.forEach((hex) => {
+    rampInfo.hexes.forEach((hex: string) => {
       let idx = palette.findIndex((c) => c.toLowerCase() === hex.toLowerCase());
       if (idx === -1) {
         const nearest = findNearestColor(hex, palette);
@@ -125,7 +149,7 @@ export class HairDraftController {
     return indices;
   }
 
-  /** 未固化发色预览的三选一对话框：第一个按钮先固化再执行 onApplied，第三个按钮什么都不做 */
+  /** 未固化发色预览的三选一对话框：第一个按钮先固化再执行 onApplied，第三个按钮取消操作 */
   confirmHairDraft(o: {
     icon: string;
     title: string;
@@ -136,8 +160,9 @@ export class HairDraftController {
     otherLabel: string;
     onOther: () => void;
     cancelLabel: string;
+    onCancel?: () => void;
   }): void {
-    this.vm.studioPrompts.confirm({
+    this.host.confirm({
       icon: o.icon,
       title: o.title,
       message: o.message,
@@ -152,8 +177,9 @@ export class HairDraftController {
           },
         },
         { label: o.otherLabel, className: 'btn-outline', onClick: o.onOther },
-        { label: o.cancelLabel, className: 'btn-ghost', onClick: () => {} },
+        { label: o.cancelLabel, className: 'btn-ghost', onClick: () => o.onCancel?.() },
       ],
+      onDismiss: () => o.onCancel?.(),
     });
   }
 }

@@ -23,6 +23,39 @@ export interface Patch {
 
 export const FULL_CANVAS: RectSelection = { x: 0, y: 0, w: W, h: H };
 
+/**
+ * 遮罩分配判定通用策略：
+ * 判定给定像素是否允许被重新划分至 targetZone
+ */
+export function canAssignZone(
+  pixelIndex: number, // 0~35 或 255
+  currentZone: SemanticZone,
+  targetZone: SemanticZone,
+  lockedZones: ReadonlySet<SemanticZone> | SemanticZone[]
+): boolean {
+  // 1. 若像素为透明色且目标不是背景，禁止划分非背景遮罩
+  if (pixelIndex === TRANSPARENT_INDEX && targetZone !== SemanticZone.Background) {
+    return false;
+  }
+  // 2. 当前分区已锁定，受保护不可被改写
+  const isLocked = Array.isArray(lockedZones)
+    ? (z: SemanticZone) => lockedZones.includes(z)
+    : (z: SemanticZone) => lockedZones.has(z);
+
+  if (isLocked(currentZone)) {
+    return false;
+  }
+  // 3. 目标分区 (非背景) 已锁定，禁止向其写入
+  if (targetZone !== SemanticZone.Background && isLocked(targetZone)) {
+    return false;
+  }
+  // 4. 当前分区已是目标分区，无需改写
+  if (currentZone === targetZone) {
+    return false;
+  }
+  return true;
+}
+
 const inCanvas = (x: number, y: number) => x >= 0 && x < W && y >= 0 && y < H;
 const inRect = (x: number, y: number, r: RectSelection) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
 
@@ -37,12 +70,10 @@ function forEachInRect(rect: RectSelection, fn: (offset: number, c: number, r: n
   }
 }
 
-/** 把像素设为透明；遮罩在未锁定时一并清为背景 */
+/** 把像素设为透明；根据系统最高优先级不变量规则，遮罩必须无条件清为背景 (不受分区锁阻碍) */
 function erase(layers: Layers, offset: number): void {
   layers.pixels[offset] = TRANSPARENT_INDEX;
-  if (!layers.lockedZones.has(layers.mask[offset])) {
-    layers.mask[offset] = SemanticZone.Background;
-  }
+  layers.mask[offset] = SemanticZone.Background;
 }
 
 /** 抠出矩形块，超出画布的部分视为透明背景 */
@@ -71,7 +102,7 @@ export function stampPatch(layers: Layers, patch: Patch, x: number, y: number): 
   });
 }
 
-/** 清空矩形为透明 (遵守分区锁)，返回是否有变化 */
+/** 清空矩形为透明；根据系统最高优先级不变量规则，遮罩无条件清为背景 (不受分区锁阻碍)，返回是否有变化 */
 export function clearRect(layers: Layers, rect: RectSelection): boolean {
   let changed = false;
   forEachInRect(rect, (offset) => {
@@ -79,7 +110,7 @@ export function clearRect(layers: Layers, rect: RectSelection): boolean {
       layers.pixels[offset] = TRANSPARENT_INDEX;
       changed = true;
     }
-    if (!layers.lockedZones.has(layers.mask[offset]) && layers.mask[offset] !== SemanticZone.Background) {
+    if (layers.mask[offset] !== SemanticZone.Background) {
       layers.mask[offset] = SemanticZone.Background;
       changed = true;
     }
@@ -209,6 +240,8 @@ export function floodFillMask(
   const fromColor = layers.pixels[start];
   // 关键防护：起点为透明色且非擦除操作时，禁止将透明区域填入遮罩
   if (fromColor === TRANSPARENT_INDEX && toZone !== SemanticZone.Background) return false;
+  const startZone = layers.mask[start] as SemanticZone;
+  if (layers.lockedZones.has(startZone)) return false;
 
   const region = floodFill(
     [start],
@@ -221,7 +254,8 @@ export function floodFillMask(
 
   let changed = false;
   for (const offset of region) {
-    if (layers.mask[offset] !== toZone) {
+    const current = layers.mask[offset] as SemanticZone;
+    if (canAssignZone(layers.pixels[offset], current, toZone, layers.lockedZones)) {
       layers.mask[offset] = toZone;
       changed = true;
     }
@@ -249,7 +283,7 @@ export function assignColorToMask(
       const offset = py * W + px;
       if (layers.pixels[offset] !== fromColor) continue;
       const current = layers.mask[offset] as SemanticZone;
-      if (layers.lockedZones.has(current) || current === toZone) continue;
+      if (!canAssignZone(layers.pixels[offset], current, toZone, layers.lockedZones)) continue;
       layers.mask[offset] = toZone;
       count++;
     }

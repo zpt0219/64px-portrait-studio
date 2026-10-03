@@ -4,7 +4,7 @@
  * 不进存档；除选区随撤销快照一起恢复外，其余都不进撤销，由 ViewModel 直接修改后广播 onSessionChanged。
  */
 
-import { SemanticZone, RectSelection, PixelTool, MaskTool, EditorMode, BrushSize } from '../types';
+import { SemanticZone, RectSelection, PixelTool, MaskTool, EditorMode, BrushSize, HairPresetKey } from '../types';
 import { TRANSPARENT_INDEX } from '../data/palette';
 import { IMAGE_WIDTH as W, IMAGE_HEIGHT as H } from '../core/pixelGrid';
 
@@ -32,7 +32,7 @@ export interface EditorSession {
   showGrid: boolean;            // 是否显示像素网格
   zoomLevel: number;            // 画布缩放倍数 (见 ZOOM_STEPS)
   selection: RectSelection | null; // 像素模式矩形选区 (随撤销快照恢复)
-  hairDraftPreset: string | null;  // 未固化的发色预览；预览像素由文档实时派生
+  hairDraftPreset: HairPresetKey | null;  // 未固化的发色预览；预览像素由文档实时派生
 }
 
 export function createInitialSession(): EditorSession {
@@ -49,7 +49,7 @@ export function createInitialSession(): EditorSession {
     activeMaskTool: 'pen',
     maskBrushSize: 1,
     maskMatchColors: [],
-    maskMatchPresetKey: 'all_non_trans',
+    maskMatchPresetKey: 'all_colors',
     maskMatchInitialized: false,
     maskOpacity: 0.5,
     showMaskOverlay: false,
