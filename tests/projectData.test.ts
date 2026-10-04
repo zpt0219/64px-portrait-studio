@@ -4,6 +4,7 @@ import {
   documentToProjectData,
   projectDataToDocument,
   uint8ArrayToBase64,
+  CURRENT_PROJECT_VERSION,
 } from '../src/core/projectData';
 import { ProjectData, SemanticZone, HairPresetKey } from '../src/types';
 import { PALETTE_36, TRANSPARENT_INDEX, RAMPS_INFO, isHairPresetKey } from '../src/data/palette';
@@ -126,7 +127,7 @@ describe('Project Data Codec and Validation (T01)', () => {
 
     it('rejects unsupported schema version', () => {
       const raw = createValidRawProject();
-      raw.v = 2;
+      raw.v = 999;
       const res = validateProjectData(raw);
       expect(res.valid).toBe(false);
       expect(res.error).toContain('Schema');
@@ -184,7 +185,7 @@ describe('Project Data Codec and Validation (T01)', () => {
       const projectData = documentToProjectData(doc, fixedTimestamp);
 
       // Verify structure
-      expect(projectData.v).toBe(1);
+      expect(projectData.v).toBe(CURRENT_PROJECT_VERSION);
       expect(projectData.hairPreset).toBe('02_brown_棕');
       expect(projectData.ts).toBe(fixedTimestamp);
 

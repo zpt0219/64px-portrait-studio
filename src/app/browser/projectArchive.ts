@@ -12,7 +12,7 @@
 import JSZip from 'jszip';
 import { SemanticZone, ProjectData } from '../../types';
 import { PortraitDocument, cloneDocument } from '../../model/document';
-import { documentToProjectData, validateProjectData } from '../../core/projectData';
+import { documentToProjectData, validateProjectData, CURRENT_PROJECT_VERSION, upgradeProjectData } from '../../core/projectData';
 import { encodeMinimalIndexedPng } from '../../core/minimalPng';
 import { Rgb, hexToRgb } from '../../core/colorUtils';
 import { drawIndexedPixels } from './pixelCanvas';
@@ -372,4 +372,66 @@ export async function importProjectZip(file: Parameters<typeof JSZip.loadAsync>[
 
   return validation.data;
 }
+
+/**
+ * 直接对 ZIP 归档二进制执行工程 Schema 版本迁移 (纯异步流水线)
+ * 检查 ZIP 中的 imagegem_project.json 版本，并逐步升级到当前 targetVersion (如 v1 -> v2 -> v3)
+ */
+export async function upgradeProjectZip(
+  archiveBytes: Uint8Array,
+  targetVersion: number = CURRENT_PROJECT_VERSION
+): Promise<{ zipBytes: Uint8Array; upgraded: boolean; fromVersion: number; toVersion: number }> {
+  let zip: JSZip;
+  try {
+    zip = await JSZip.loadAsync(archiveBytes);
+  } catch (err) {
+    throw new Error('无法读取 ZIP 文件，可能已损坏或非合法 ZIP 归档');
+  }
+
+  let jsonFile = zip.file('imagegem_project.json');
+  if (!jsonFile) {
+    const jsonFiles = zip.file(/\.json$/i);
+    if (jsonFiles && jsonFiles.length > 0) jsonFile = jsonFiles[0];
+  }
+  if (!jsonFile) {
+    throw new Error('ZIP 归档中未找到工程配置文件 (imagegem_project.json)');
+  }
+
+  let jsonText: string;
+  try {
+    jsonText = await jsonFile.async('string');
+  } catch (err) {
+    throw new Error('读取工程 JSON 文件内容失败');
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(jsonText);
+  } catch (err) {
+    throw new Error('工程 JSON 配置文件解析失败：JSON 语法格式无效');
+  }
+
+  const upgradeResult = upgradeProjectData(parsed, targetVersion);
+
+  if (!upgradeResult.upgraded) {
+    return {
+      zipBytes: archiveBytes,
+      upgraded: false,
+      fromVersion: upgradeResult.fromVersion,
+      toVersion: targetVersion,
+    };
+  }
+
+  // 覆写已升级的 JSON 配置文件
+  zip.file(jsonFile.name, JSON.stringify(upgradeResult.data, null, 2));
+
+  const upgradedZip = await zip.generateAsync({ type: 'uint8array' });
+  return {
+    zipBytes: upgradedZip,
+    upgraded: true,
+    fromVersion: upgradeResult.fromVersion,
+    toVersion: targetVersion,
+  };
+}
+
 

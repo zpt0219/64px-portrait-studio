@@ -4,7 +4,7 @@ import {
   generateProjectZipBlob,
   importProjectZip,
 } from '../src/app/browser/projectArchive';
-import { base64ToUint8Array } from '../src/core/projectData';
+import { base64ToUint8Array, CURRENT_PROJECT_VERSION } from '../src/core/projectData';
 import { cloneDocument } from '../src/model/document';
 import { createValidDocument, VALID_HAIR_PRESET_KEYS } from './helpers/documentFixture';
 import { SemanticZone } from '../src/types';
@@ -165,7 +165,7 @@ describe('ZIP Exporter & Snapshot State Consistency (T07 / B7)', () => {
       const file = new File([zipBlob], 'project.zip');
 
       const imported = await importProjectZip(file);
-      expect(imported.v).toBe(1);
+      expect(imported.v).toBe(CURRENT_PROJECT_VERSION);
       expect(imported.hairPreset).toBe(presetB);
       const importedPixels = base64ToUint8Array(imported.pixels);
       const importedMask = base64ToUint8Array(imported.mask);

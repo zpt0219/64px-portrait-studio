@@ -5,6 +5,7 @@ import {
   documentToProjectData,
   projectDataToDocument,
   uint8ArrayToBase64,
+  CURRENT_PROJECT_VERSION,
 } from '../src/core/projectData';
 import { PALETTE_36, TRANSPARENT_INDEX } from '../src/data/palette';
 import { DecodedImage, SemanticZone, ProjectData } from '../src/types';
@@ -179,10 +180,10 @@ describe('Compatibility & Domain Pipeline Invariants (T11)', () => {
 
       // 3. Encode back to project data
       const encodedData = documentToProjectData(doc1, 1709000000);
-      expect(encodedData.v).toBe(1);
+      expect(encodedData.v).toBe(CURRENT_PROJECT_VERSION);
       expect(encodedData.hairPreset).toBe('01_black_黑');
-      expect(encodedData.pixels).toBe(rawV1Project.pixels);
-      expect(encodedData.mask).toBe(rawV1Project.mask);
+      expect(encodedData.pixels).toBe(validation.data!.pixels);
+      expect(encodedData.mask).toBe(validation.data!.mask);
 
       // 4. Decode again
       const { document: doc2 } = projectDataToDocument(encodedData);

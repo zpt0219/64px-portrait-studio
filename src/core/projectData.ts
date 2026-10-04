@@ -7,6 +7,9 @@ import { ProjectData, SemanticZone } from '../types';
 import { TRANSPARENT_INDEX, isHairPresetKey } from '../data/palette';
 import { PortraitDocument } from '../model/document';
 import { PIXEL_COUNT } from './pixelGrid';
+import { CURRENT_PROJECT_VERSION, upgradeProjectData } from './projectMigration';
+
+export { CURRENT_PROJECT_VERSION, upgradeProjectData };
 
 export function uint8ArrayToBase64(bytes: Uint8Array): string {
   let binary = '';
@@ -38,7 +41,7 @@ export function documentToProjectData(
   timestamp: number = Math.floor(Date.now() / 1000)
 ): ProjectData {
   return {
-    v: 1,
+    v: CURRENT_PROJECT_VERSION,
     palette: [...doc.palette],
     pixels: uint8ArrayToBase64(doc.pixelIndices),
     mask: uint8ArrayToBase64(doc.semanticMask),
@@ -82,15 +85,40 @@ export function projectDataToDocument(data: ProjectData): ProjectDecodeResult {
 /**
  * 严格校验工程数据：版本号、36 色色板格式、4096 像素索引 (0~35 或 255)、4096 遮罩值 (0~4)、发色预设及时间戳
  */
-export function validateProjectData(raw: unknown): { valid: boolean; error?: string; data?: ProjectData } {
+export function validateProjectData(raw: unknown): {
+  valid: boolean;
+  error?: string;
+  data?: ProjectData;
+  upgraded?: boolean;
+  fromVersion?: number;
+} {
   if (!raw || typeof raw !== 'object') {
     return { valid: false, error: '工程数据不是有效的 JSON 对象' };
   }
 
-  const d = raw as Record<string, unknown>;
+  let rawObj = raw as Record<string, unknown>;
+  const rawV = typeof rawObj.v === 'number' && Number.isInteger(rawObj.v) ? rawObj.v : 1;
+  let wasUpgraded = false;
+  let fromVer = rawV;
 
-  if (d.v !== 1) {
-    return { valid: false, error: `不支持的工程 Schema 版本: ${String(d.v)} (当前仅支持 v1)` };
+  // 渐进式版本升级管道：当检测到历史存档版本 (v < CURRENT_PROJECT_VERSION)，逐级向上迁移
+  if (rawV < CURRENT_PROJECT_VERSION) {
+    try {
+      const upgradeRes = upgradeProjectData(rawObj, CURRENT_PROJECT_VERSION);
+      rawObj = upgradeRes.data;
+      wasUpgraded = upgradeRes.upgraded;
+      fromVer = upgradeRes.fromVersion;
+    } catch (err) {
+      return { valid: false, error: (err as Error).message };
+    }
+  } else if (rawV > CURRENT_PROJECT_VERSION || rawV <= 0) {
+    return { valid: false, error: `不支持的工程 Schema 版本: ${rawV} (当前系统最高支持至 v${CURRENT_PROJECT_VERSION})` };
+  }
+
+  const d = rawObj;
+
+  if (d.v !== CURRENT_PROJECT_VERSION) {
+    return { valid: false, error: `不支持的工程 Schema 版本: ${String(d.v)} (当前仅支持 v${CURRENT_PROJECT_VERSION})` };
   }
 
   if (!Array.isArray(d.palette) || d.palette.length !== 36) {
@@ -172,12 +200,14 @@ export function validateProjectData(raw: unknown): { valid: boolean; error?: str
   return {
     valid: true,
     data: {
-      v: 1,
+      v: CURRENT_PROJECT_VERSION,
       palette: (d.palette as string[]).map((hex) => hex.toUpperCase()),
       pixels: d.pixels,
       mask: d.mask,
       hairPreset,
       ts,
     },
+    upgraded: wasUpgraded,
+    fromVersion: fromVer,
   };
 }
