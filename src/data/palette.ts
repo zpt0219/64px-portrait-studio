@@ -26,7 +26,7 @@ export const RAMPS_INFO: Record<HairPresetKey, RampInfo> = {
   "02_brown_棕": { name: "棕色", icon: "🤎", hexes: ["#080821", "#3A2016", "#7B4239", "#DE6B42"] },
   "03_blonde_金": { name: "金色", icon: "💛", hexes: ["#6B0818", "#7B4239", "#FFDE6B", "#FFFFFF"] },
   "04_pink_粉": { name: "粉色", icon: "💗", hexes: ["#6B106B", "#C6218C", "#FFA5B5", "#FFFFFF"] },
-  "05_blue_蓝": { name: "蓝色", icon: "💙", hexes: ["#180852", "#0063CE", "#0884D6", "#DEEFEF"] },
+  "05_blue_蓝": { name: "蓝色", icon: "💙", hexes: ["#180852", "#08219C", "#0884D6", "#DEEFEF"] },
   "06_silver_银白": { name: "银白", icon: "🤍", hexes: ["#080821", "#8473A5", "#DEEFEF", "#FFFFFF"] },
   "07_green_绿": { name: "绿色", icon: "💚", hexes: ["#081039", "#21636B", "#18CEA5", "#DEEFEF"] },
   "08_purple_紫": { name: "紫色", icon: "💜", hexes: ["#180852", "#421084", "#6329BD", "#DEEFEF"] },
