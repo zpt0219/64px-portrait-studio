@@ -419,12 +419,9 @@ npm run typecheck:tests
 # 3. 运行完整 Vitest 单元与集成测试套件 (包含 R1-R7 与边界测试)
 npm test
 
-# 4. 执行历史与审查专项诊断
-node --input-type=module -e "import { build } from 'esbuild'; await build({entryPoints:['docs/review/reproduce-gemini-review.ts'],bundle:true,platform:'node',format:'esm',outfile:'/tmp/portrait-gemini-review.mjs'});" && node /tmp/portrait-gemini-review.mjs
-
-# 5. 生产构建打包验证
+# 4. 生产构建打包验证
 npm run build
 
-# 6. 代码格式与空格规范检查
+# 5. 代码格式与空格规范检查
 git diff --check
 ```
