@@ -139,7 +139,7 @@ export class StrokeCommand extends SnapshotCommand {
 
   private bucket(ctx: CommandContext, x: number, y: number): void {
     const { p } = this;
-    const layers = layersOf(ctx.doc, p.lockedZones);
+    const layers = layersOf(ctx.doc, p.mode === 'mask' ? p.lockedZones : []);
     const scope = p.selection ?? FULL_CANVAS;
     if (p.mode === 'mask') {
       const zone = p.button === 0 ? p.zone : SemanticZone.Background;

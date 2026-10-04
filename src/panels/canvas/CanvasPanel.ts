@@ -184,8 +184,9 @@ export class CanvasPanel extends Panel {
               <div class="dropzone-icon">🖼️</div>
               <div class="dropzone-title">拖入工程 ZIP 或参考图片</div>
               <div class="dropzone-sub">工程 ZIP：完整恢复历史进度与图层遮罩 · 图片 (PNG/JPG/WebP)：新建项目并量化为 36 色</div>
-              <div class="dropzone-actions">
+              <div class="dropzone-actions" style="display: flex; gap: 10px;">
                 <button class="btn btn-primary" id="btn-empty-upload">点击选择文件</button>
+                <button class="btn btn-outline" id="btn-empty-blank" title="新建一张 64×64 空白画布直接绘制">📄 新建空白画布</button>
               </div>
               <div class="restore-banner" id="restore-banner" style="display: none;">
                 <span class="restore-banner-text">⚠️ 检测到上次未完成的编辑进度</span>
@@ -209,6 +210,7 @@ export class CanvasPanel extends Panel {
     new CanvasToolbar(q<HTMLElement>('.canvas-toolbar'), this.vm, this.ctx, this.hooks.onTogglePreview);
 
     q<HTMLElement>('#btn-empty-upload').addEventListener('click', () => this.hooks.onTriggerUpload());
+    q<HTMLElement>('#btn-empty-blank').addEventListener('click', () => this.vm.newBlankProject());
     q<HTMLElement>('#btn-restore-project').addEventListener('click', () => this.vm.restoreFromStorage());
 
     this.contextBar = new ContextBar(q<HTMLElement>('#floating-context-bar'), {

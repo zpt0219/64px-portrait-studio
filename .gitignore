@@ -13,3 +13,8 @@ dist-ssr/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Test reports & outputs
+test-results/
+playwright-report/
+

@@ -472,3 +472,188 @@
   gap: 10px;
 }
 
+/* =========================================================================
+   Help & Shortcuts Modal (教程与快捷键一览)
+   ========================================================================= */
+
+.help-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(10, 12, 20, 0.78);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 10002;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: replaceModalFadeIn 0.15s ease-out;
+}
+
+.help-modal-card {
+  background: #151824;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(124, 58, 237, 0.25);
+  width: 720px;
+  max-width: 95vw;
+  max-height: 85vh;
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: replaceModalPop 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.help-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.03);
+  flex-shrink: 0;
+}
+
+.help-modal-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.help-modal-icon {
+  font-size: 18px;
+}
+
+.help-modal-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-main);
+  letter-spacing: -0.2px;
+}
+
+.help-modal-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  transition: all 0.15s ease;
+  line-height: 1;
+}
+
+.help-modal-close-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-main);
+}
+
+.help-modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.help-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-main);
+  margin: 0 0 10px 0;
+}
+
+.help-grid-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.help-guide-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-md);
+  padding: 12px;
+}
+
+.guide-card-header {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-primary, #a855f7);
+  margin-bottom: 6px;
+}
+
+.guide-card-content {
+  font-size: 12px;
+  color: var(--text-sub);
+  line-height: 1.5;
+}
+
+.help-shortcuts-table-wrap {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.help-shortcuts-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  text-align: left;
+}
+
+.help-shortcuts-table th {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-sub);
+  padding: 8px 12px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.help-shortcuts-table td {
+  padding: 7px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  color: var(--text-main);
+}
+
+.help-shortcuts-table tr:last-child td {
+  border-bottom: none;
+}
+
+.help-shortcuts-table .cat-cell {
+  background: rgba(255, 255, 255, 0.015);
+  font-weight: 600;
+  color: var(--text-sub);
+  border-right: 1px solid var(--border-subtle);
+  vertical-align: middle;
+}
+
+.help-shortcuts-table kbd {
+  display: inline-block;
+  padding: 2px 6px;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text-main);
+  background: #202434;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.help-modal-footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--border-subtle);
+  background: rgba(0, 0, 0, 0.2);
+  display: flex;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+

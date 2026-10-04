@@ -10,12 +10,16 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "typecheck:tests": "tsc --project tsconfig.tests.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "jszip": "^3.10.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "typescript": "^5.4.5",
     "vite": "^5.2.11",
     "vitest": "^2.1.9"

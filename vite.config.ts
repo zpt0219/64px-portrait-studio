@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { defineConfig } from 'vite';
 
 export default defineConfig({
@@ -5,5 +6,10 @@ export default defineConfig({
   server: {
     port: 8089,
     host: '0.0.0.0'
+  },
+  test: {
+    include: ['tests/**/*.test.ts'],
+    exclude: ['e2e/**', 'node_modules/**']
   }
 });
+

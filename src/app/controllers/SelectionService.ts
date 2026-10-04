@@ -30,7 +30,7 @@ export class SelectionService {
   constructor(private readonly host: SelectionHost) {}
 
   moveSelection(patch: Patch, from: RectSelection, toX: number, toY: number, copy: boolean): void {
-    this.host.executeCommand(new MovePatchCommand(patch, from, toX, toY, copy, this.host.getLockedZones()));
+    this.host.executeCommand(new MovePatchCommand(patch, from, toX, toY, copy, []));
   }
 
   /** 翻转：有选区时翻转选区内容，否则翻转整张画布 */
@@ -38,7 +38,7 @@ export class SelectionService {
     const session = this.host.getSession();
     if (!session.isLoaded) return;
     const selection = session.selection;
-    this.host.executeCommand(new FlipCommand(selection ?? FULL_CANVAS, axis, this.host.getLockedZones()));
+    this.host.executeCommand(new FlipCommand(selection ?? FULL_CANVAS, axis, []));
     const label = axis === 'horizontal' ? '↔ 水平' : '↕ 垂直';
     this.host.notify(`${label}翻转${selection ? '选区' : '整张画布'}完成`);
   }
@@ -48,7 +48,7 @@ export class SelectionService {
     const session = this.host.getSession();
     if (!session.isLoaded) return;
     const selection = session.selection;
-    this.host.executeCommand(new RotateCommand(selection ?? FULL_CANVAS, selection !== null, this.host.getLockedZones()));
+    this.host.executeCommand(new RotateCommand(selection ?? FULL_CANVAS, selection !== null, []));
     this.host.notify(`↻ 顺时针旋转${selection ? '选区' : '整张画布'} 90° 完成`);
   }
 
@@ -91,7 +91,7 @@ export class SelectionService {
       return;
     }
     const rect = scope === 'selection' ? session.selection ?? FULL_CANVAS : FULL_CANVAS;
-    const cmd = new ReplaceColorCommand(fromIdx, toIdx, rect, this.host.getLockedZones());
+    const cmd = new ReplaceColorCommand(fromIdx, toIdx, rect, []);
     this.host.executeCommand(cmd);
     if (cmd.count > 0) {
       this.host.notify(`🔄 已成功在${scope === 'selection' ? '选区内' : '整张画布'}替换 ${cmd.count} 个像素点`, 'success');
@@ -123,7 +123,7 @@ export class SelectionService {
     const session = this.host.getSession();
     const selection = session.selection;
     if (!session.isLoaded || !selection) return false;
-    this.clipboard = extractPatch(layersOf(this.host.getDoc(), this.host.getLockedZones()), selection);
+    this.clipboard = extractPatch(layersOf(this.host.getDoc(), []), selection);
     return true;
   }
 
@@ -131,12 +131,12 @@ export class SelectionService {
     return this.copySelection() && this.deleteSelectionContent();
   }
 
-  /** 把选区内容清空为透明 (保护锁定分区的遮罩)，返回是否有变化 */
+  /** 把选区内容清空为透明，返回是否有变化 */
   deleteSelectionContent(): boolean {
     const session = this.host.getSession();
     const selection = session.selection;
     if (!session.isLoaded || !selection) return false;
-    return this.host.executeCommand(new ClearRectCommand(selection, this.host.getLockedZones()));
+    return this.host.executeCommand(new ClearRectCommand(selection, []));
   }
 
   /** 粘贴到当前选区左上角 (无选区时居中)，粘贴结果成为新选区 */

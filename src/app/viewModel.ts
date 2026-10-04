@@ -373,6 +373,26 @@ export class ViewModel implements StudioEvents {
     });
   }
 
+  /** 新建空白画布 (64×64) */
+  newBlankProject(): void {
+    if (this._isDisposed) return;
+    const doc = createEmptyDocument();
+    this.replaceDocument(doc, {
+      visibleMaskZones: [],
+      showMaskOverlay: false,
+      activeMode: 'pixel',
+      activeZone: SemanticZone.Background,
+      lockedMaskZones: [],
+      activeMaskTool: 'pen',
+      maskBrushSize: 1,
+      maskMatchInitialized: false,
+      isLoaded: true,
+      selection: null,
+      hairDraftPreset: null,
+    });
+    this.notify('已新建 64×64 空白画布', 'info');
+  }
+
   private reset(): void {
     if (this._isDisposed) return;
     const result = this.autosave.clear();
@@ -830,7 +850,7 @@ export class ViewModel implements StudioEvents {
       fg: s.activePaletteIndex,
       bg: s.bgPaletteIndex,
       zone: s.activeZone,
-      lockedZones: [...this.lockedZones],
+      lockedZones: s.activeMode === 'mask' ? [...this.lockedZones] : [],
       brushSize: s.maskBrushSize,
       selection: s.selection ? { ...s.selection } : null,
       diagonal: s.bucketConnectivity === 8,

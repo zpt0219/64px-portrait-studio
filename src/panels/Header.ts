@@ -15,7 +15,12 @@ export class Header extends Panel {
   private btnSave: HTMLButtonElement | null = null;
   private btnZip: HTMLButtonElement | null = null;
 
-  constructor(private readonly container: HTMLElement, vm: ViewModel, private readonly onFileSelect: (file: File) => void) {
+  constructor(
+    private readonly container: HTMLElement,
+    vm: ViewModel,
+    private readonly onFileSelect: (file: File) => void,
+    private readonly onOpenHelp?: () => void
+  ) {
     super(vm);
     this.fileInput = document.createElement('input');
     this.fileInput.type = 'file';
@@ -57,15 +62,13 @@ export class Header extends Panel {
 
         <div class="header-center">
           <div class="mode-segmented-control" id="header-mode-switcher" role="tablist">
-            <button type="button" class="mode-segment-btn active" id="btn-mode-pixel" data-mode="pixel" title="切换至【像素修图模式】(快捷键: Q) - 选用 36 色色板、画笔、橡皮、油漆桶、吸管、选区">
+            <button type="button" class="mode-segment-btn active" id="btn-mode-pixel" data-mode="pixel" title="切换至【像素修图模式】 - 选用 36 色色板、画笔、橡皮、油漆桶、吸管、选区">
               <span class="segment-icon">🎨</span>
               <span class="segment-label">像素修图</span>
-              <kbd class="segment-kbd">Q</kbd>
             </button>
-            <button type="button" class="mode-segment-btn" id="btn-mode-mask" data-mode="mask" title="切换至【语义遮罩模式】(快捷键: W) - 编辑 5 分区语义遮罩、智能框选匹配色、发色置换">
+            <button type="button" class="mode-segment-btn" id="btn-mode-mask" data-mode="mask" title="切换至【语义遮罩模式】 - 编辑 5 分区语义遮罩、智能框选匹配色、发色置换">
               <span class="segment-icon">🎭</span>
               <span class="segment-label">语义遮罩</span>
-              <kbd class="segment-kbd">W</kbd>
             </button>
           </div>
         </div>
@@ -75,6 +78,14 @@ export class Header extends Panel {
             <span class="indicator-dot"></span>
             <span class="indicator-text">已就绪</span>
           </div>
+
+          <button class="btn btn-outline" id="btn-header-help" title="查看精简使用教程与全局快捷键一览">
+            <span class="btn-icon">📖</span> 教程
+          </button>
+
+          <button class="btn btn-outline" id="btn-header-new" title="新建 64×64 空白画布">
+            <span class="btn-icon">📄</span> 新建
+          </button>
 
           <button class="btn btn-outline" id="btn-import-file" title="支持导入工程 ZIP (完整恢复历史进度与遮罩) 或任意图片 PNG/JPG/WebP (作为新项目载入并量化为 36 色)">
             <span class="btn-icon">📁</span> 导入图片 / 工程
@@ -104,6 +115,8 @@ export class Header extends Panel {
     this.btnModePixel?.addEventListener('click', () => this.vm.setMode('pixel'));
     this.btnModeMask?.addEventListener('click', () => this.vm.setMode('mask'));
 
+    this.container.querySelector('#btn-header-help')?.addEventListener('click', () => this.onOpenHelp?.());
+    this.container.querySelector('#btn-header-new')?.addEventListener('click', () => this.vm.newBlankProject());
     this.container.querySelector('#btn-import-file')?.addEventListener('click', () => this.triggerUpload());
     this.btnSave?.addEventListener('click', () => this.vm.exportPng());
     this.btnZip?.addEventListener('click', () => this.vm.exportZip());

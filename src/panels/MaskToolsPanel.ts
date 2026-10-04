@@ -110,9 +110,8 @@ export class MaskToolsPanel extends Panel {
 
           <!-- 切回像素修图模式快捷入口 -->
           <div class="mask-mode-switch-row" style="margin-bottom: 12px;">
-            <button class="btn btn-outline btn-block btn-sm" id="btn-switch-to-pixel" type="button" title="退出遮罩编辑，切回 36 色板修图模式 (快捷键: Q)">
+            <button class="btn btn-outline btn-block btn-sm" id="btn-switch-to-pixel" type="button" title="退出遮罩编辑，切回 36 色板修图模式">
               <span>🎨 切回色板修图</span>
-              <kbd class="tool-btn-kbd">Q</kbd>
             </button>
           </div>
 

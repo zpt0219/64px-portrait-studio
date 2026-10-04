@@ -17,6 +17,7 @@ import { RealtimePreview } from '../panels/RealtimePreview';
 import { CanvasPanel } from '../panels/canvas/CanvasPanel';
 import { ReplaceColorModal } from '../panels/modals/ReplaceColorModal';
 import { ConfirmModal } from '../panels/modals/ConfirmModal';
+import { HelpModal } from '../panels/modals/HelpModal';
 import { StudioEvents } from '../command/events';
 import { EditorSession } from '../model/session';
 import { ViewModel } from './viewModel';
@@ -32,6 +33,7 @@ export class App implements StudioEvents {
   private header!: Header;
   private replaceColorModal!: ReplaceColorModal;
   private confirmModal!: ConfirmModal;
+  private helpModal!: HelpModal;
   private palettePanel!: PalettePanel;
   private maskToolsPanel!: MaskToolsPanel;
   private canvasPanel!: CanvasPanel;
@@ -122,7 +124,13 @@ export class App implements StudioEvents {
       onConfirm: (fromIdx, toIdx, scope) => vm.replaceColor(fromIdx, toIdx, scope),
     });
 
-    this.header = new Header(byId('header-mount'), vm, (file) => this.handleIncomingFile(file));
+    this.helpModal = new HelpModal(document.body);
+    this.header = new Header(
+      byId('header-mount'),
+      vm,
+      (file) => this.handleIncomingFile(file),
+      () => this.helpModal.open()
+    );
     this.palettePanel = new PalettePanel(this.palettePanelWrapper, vm, this.ctx);
     this.maskToolsPanel = new MaskToolsPanel(this.maskToolsPanelWrapper, vm);
     this.canvasPanel = new CanvasPanel(byId('canvas-mount'), vm, this.ctx, {
@@ -353,8 +361,6 @@ export class App implements StudioEvents {
     };
 
     const singleKeyActions: [string[], Action][] = [
-      [['q'], () => vm.setMode('pixel')],
-      [['w'], () => vm.setMode('mask')],
       [['m', 's'], toolKey('box_select', '🔲 已切换为智能框选 (左键加匹配色，Shift去杂色，Alt去匹配色，右键去所有色)', () => {
         vm.setActiveTool('select');
         vm.notify('⬚ 矩形选区工具：拖拽框选，选区内拖动平移 (原位透明)，按住 Ctrl 复制');
@@ -385,7 +391,7 @@ export class App implements StudioEvents {
         vm.notify('🧼 已切换为橡皮擦工具 (原生透明删除)');
       })],
       [['i'], () => {
-        if (inMask) vm.notify('吸管工具仅在像素画图模式下有效 (按 Q 切换)', 'info');
+        if (inMask) vm.notify('吸管工具仅在像素修图模式下有效', 'info');
         else vm.setActiveTool('eyedropper');
       }],
       [['g'], () => vm.setGrid(!s.showGrid)],
@@ -476,6 +482,7 @@ export class App implements StudioEvents {
     this.maskPanel?.dispose();
     this.confirmModal?.dispose();
     this.replaceColorModal?.dispose();
+    this.helpModal?.dispose();
 
     this.vm.unregisterListener(this);
     this.vm.dispose();

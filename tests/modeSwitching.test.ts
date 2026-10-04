@@ -243,4 +243,39 @@ describe('Mode Switching and Mask Visibility', () => {
       expect(vm.session.visibleMaskZones).not.toContain(SemanticZone.Hair);
     });
   });
+
+  describe('Mask Lock Decoupling (Mask locked zones never restrict Pixel mode)', () => {
+    it('allows painting, bucket fill, and selection operations in pixel mode even when zones are locked', () => {
+      const vm = createTestViewModel();
+      const hairIndex = 10 * 64 + 10;
+      const doc = (vm as any).doc;
+      // Set pixel at (10, 10) to Hair mask zone
+      doc.semanticMask[hairIndex] = SemanticZone.Hair;
+      doc.pixelIndices[hairIndex] = 1;
+
+      // Lock Hair mask zone and mark session as loaded
+      vm.patchSession({ isLoaded: true, lockedMaskZones: [SemanticZone.Hair] });
+
+      // In pixel mode, painting on (10, 10) should succeed!
+      expect(vm.session.activeMode).toBe('pixel');
+      vm.selectPaletteIndex(5);
+      vm.beginStroke(0, false);
+      vm.strokeAt(10, 10);
+      vm.endStroke();
+
+      expect(doc.pixelIndices[hairIndex]).toBe(5);
+
+      // In mask mode, locked zone should NOT allow painting over Hair with Skin
+      vm.setMode('mask');
+      vm.setActiveZone(SemanticZone.Skin);
+      expect(vm.session.activeMode).toBe('mask');
+      vm.beginStroke(0, false);
+      vm.strokeAt(10, 10);
+      vm.endStroke();
+
+      // Mask should remain Hair because Hair zone is locked in mask mode
+      expect(doc.semanticMask[hairIndex]).toBe(SemanticZone.Hair);
+    });
+  });
 });
+
