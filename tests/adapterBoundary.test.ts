@@ -71,7 +71,6 @@ describe('T07 dependency boundary and injected capabilities', () => {
     const entries = Object.keys(sources).filter(path => /\/src\/(core|model|command)\//.test(path) || /\/app\/controllers\//.test(path));
     const graph = inspectGraph([...entries, '../src/app/viewModel.ts', '../src/app/ports.ts', '../src/app/services/AutosaveService.ts']);
     expect(graph).toContain('../src/core/imageImport.ts');
-    expect(graph).toContain('../src/core/projectArchive.ts');
     for (const path of Object.keys(sources).filter(path => /\/app\/controllers\//.test(path))) {
       expect(sources[path]).not.toMatch(/from\s+['"][^'"]*viewModel['"]/);
     }
@@ -140,7 +139,7 @@ describe('T07 dependency boundary and injected capabilities', () => {
   });
 
   it('reads a ZIP from bytes without File, Canvas or a browser storage adapter', async () => {
-    const { importProjectZip } = await import('../src/core/projectArchive');
+    const { importProjectZip } = await import('../src/app/browser/projectArchive');
     const data = documentToProjectData(createValidDocument(), 1700000000);
     const zip = new JSZip();
     zip.file('imagegem_project.json', JSON.stringify(data));

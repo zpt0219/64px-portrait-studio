@@ -6,8 +6,7 @@
 import { ZONE_CONFIG, ALL_ZONES, MaskTool } from '../types';
 import { AutosaveService, KeyValueStore } from './services/AutosaveService';
 import { createBrowserStorage } from './adapters/BrowserStorage';
-import { exportProjectPng, exportProjectZip, exportMaskPng } from './browser/projectArchive';
-import { importProjectZip } from '../core/projectArchive';
+import { exportProjectPng, exportProjectZip, exportMaskPng, importProjectZip } from './browser/projectArchive';
 import { decodeImageFile } from './browser/imageDecode';
 import { Header } from '../panels/Header';
 import { PalettePanel } from '../panels/PalettePanel';

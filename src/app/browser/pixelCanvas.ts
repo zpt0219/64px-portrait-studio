@@ -20,20 +20,3 @@ export function drawIndexedPixels(ctx: CanvasRenderingContext2D, indices: Uint8A
   }
   ctx.putImageData(imgData, 0, 0);
 }
-
-/** 新建 64×64 canvas 并用 paint 绘制，scale > 1 时最近邻放大 */
-export function createScaledCanvas(paint: (ctx: CanvasRenderingContext2D) => void, scale = 1): HTMLCanvasElement {
-  const canvas64 = document.createElement('canvas');
-  canvas64.width = IMAGE_WIDTH;
-  canvas64.height = IMAGE_HEIGHT;
-  paint(canvas64.getContext('2d')!);
-  if (scale === 1) return canvas64;
-
-  const target = document.createElement('canvas');
-  target.width = IMAGE_WIDTH * scale;
-  target.height = IMAGE_HEIGHT * scale;
-  const ctx = target.getContext('2d')!;
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(canvas64, 0, 0, target.width, target.height);
-  return target;
-}

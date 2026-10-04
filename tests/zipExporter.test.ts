@@ -1,8 +1,8 @@
-import { importProjectZip } from '../src/core/projectArchive';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import JSZip from 'jszip';
 import {
   generateProjectZipBlob,
+  importProjectZip,
 } from '../src/app/browser/projectArchive';
 import { base64ToUint8Array } from '../src/core/projectData';
 import { cloneDocument } from '../src/model/document';
@@ -141,15 +141,15 @@ describe('ZIP Exporter & Snapshot State Consistency (T07 / B7)', () => {
       expect(parsed.hairPreset).toBe(presetA);
       // The original B7 bug mixed correct JSON with later render/mask data.
       // Inspect actual Canvas inputs instead of treating dummy blobs as pixels.
-      expect(renderedImages).toHaveLength(10);
-      for (const image of renderedImages.slice(0, 3)) {
-        expect([...image.slice(0, 4)]).toEqual(originalHairRgba);
-        expect([...image.slice(4, 8)]).toEqual(originalClothesRgba);
-      }
-      for (const image of renderedImages.slice(3, 5)) {
-        expect([...image.slice(0, 4)]).toEqual([0, 229, 255, 255]);
-        expect([...image.slice(4, 8)]).toEqual([255, 214, 0, 255]);
-      }
+      // 1 avatar render (64px) + 1 composite mask (64px) + 5 binary masks (64px) = 7
+      expect(renderedImages).toHaveLength(7);
+      const renderImage = renderedImages[0];
+      expect([...renderImage.slice(0, 4)]).toEqual(originalHairRgba);
+      expect([...renderImage.slice(4, 8)]).toEqual(originalClothesRgba);
+
+      const maskImage = renderedImages[1];
+      expect([...maskImage.slice(0, 4)]).toEqual([0, 229, 255, 255]);
+      expect([...maskImage.slice(4, 8)]).toEqual([255, 214, 0, 255]);
     });
 
     it('roundtrips project through ZIP import', async () => {

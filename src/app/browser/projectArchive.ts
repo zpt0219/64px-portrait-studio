@@ -4,18 +4,18 @@
  * 1. imagegem_project_64x64.png (8-bit 索引色极简 PNG，无元数据)
  * 2. imagegem_project.json (原始工程 JSON)
  * 3. README.txt (包含色板信息、图层说明、复原指南)
- * 4. renders/ (1x 64px, 4x 256px, 8x 512px 纯净渲染图，保留原生透明度)
- * 5. masks/ (5 色综合语义遮罩 1x & 8x，以及 5 个独立分区的单通道黑白二值图层遮罩)
+ * 4. renders/ (64px 纯净渲染图，保留原生透明度)
+ * 5. masks/ (64px 5 色综合语义遮罩，以及 5 个独立分区的单通道黑白二值图层遮罩)
  * 6. palette/ (36 色 JSON、Aseprite/GIMP 规范 .gpl 色板、色板色卡预览图)
  */
 
 import JSZip from 'jszip';
-import { SemanticZone } from '../../types';
+import { SemanticZone, ProjectData } from '../../types';
 import { PortraitDocument, cloneDocument } from '../../model/document';
-import { documentToProjectData } from '../../core/projectData';
+import { documentToProjectData, validateProjectData } from '../../core/projectData';
 import { encodeMinimalIndexedPng } from '../../core/minimalPng';
 import { Rgb, hexToRgb } from '../../core/colorUtils';
-import { drawIndexedPixels, createScaledCanvas } from './pixelCanvas';
+import { drawIndexedPixels } from './pixelCanvas';
 import { zoneRgbTable } from '../../core/maskColors';
 import { IMAGE_WIDTH, IMAGE_HEIGHT, PIXEL_COUNT } from '../../core/pixelGrid';
 
@@ -38,30 +38,37 @@ export function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
 }
 
 /**
- * 指定缩放倍率的像素头像 (保留透明)
+ * 64×64 像素头像 Canvas (保留透明)
  */
-function createPixelCanvas(doc: PortraitDocument, scale = 1): HTMLCanvasElement {
-  return createScaledCanvas((ctx) => drawIndexedPixels(ctx, doc.pixelIndices, doc.palette), scale);
+function createPixelCanvas(doc: PortraitDocument): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = IMAGE_WIDTH;
+  canvas.height = IMAGE_HEIGHT;
+  drawIndexedPixels(canvas.getContext('2d')!, doc.pixelIndices, doc.palette);
+  return canvas;
 }
 
 /**
- * 按 SemanticZone 值逐像素填色的遮罩画布
+ * 按 SemanticZone 值逐像素填色的 64×64 遮罩画布
  */
-function createMaskCanvas(doc: PortraitDocument, colorOf: (zone: SemanticZone) => Rgb, scale = 1): HTMLCanvasElement {
-  return createScaledCanvas((ctx) => {
-    const imgData = ctx.createImageData(IMAGE_WIDTH, IMAGE_HEIGHT);
-    for (let i = 0; i < PIXEL_COUNT; i++) {
-      const rgb = colorOf(doc.semanticMask[i] as SemanticZone) || [0, 0, 0];
-      imgData.data.set([rgb[0], rgb[1], rgb[2], 255], i * 4);
-    }
-    ctx.putImageData(imgData, 0, 0);
-  }, scale);
+function createMaskCanvas(doc: PortraitDocument, colorOf: (zone: SemanticZone) => Rgb): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = IMAGE_WIDTH;
+  canvas.height = IMAGE_HEIGHT;
+  const ctx = canvas.getContext('2d')!;
+  const imgData = ctx.createImageData(IMAGE_WIDTH, IMAGE_HEIGHT);
+  for (let i = 0; i < PIXEL_COUNT; i++) {
+    const rgb = colorOf(doc.semanticMask[i] as SemanticZone) || [0, 0, 0];
+    imgData.data.set([rgb[0], rgb[1], rgb[2], 255], i * 4);
+  }
+  ctx.putImageData(imgData, 0, 0);
+  return canvas;
 }
 
-/** 5 色互斥综合语义遮罩 (背景为纯黑) */
-function createCompositeMaskCanvas(doc: PortraitDocument, scale = 1): HTMLCanvasElement {
+/** 5 色互斥综合语义遮罩 (64×64，背景为纯黑) */
+function createCompositeMaskCanvas(doc: PortraitDocument): HTMLCanvasElement {
   const table = zoneRgbTable([0, 0, 0]);
-  return createMaskCanvas(doc, (zone) => table[zone], scale);
+  return createMaskCanvas(doc, (zone) => table[zone]);
 }
 
 /**
@@ -183,14 +190,11 @@ function generateReadme(doc: PortraitDocument): string {
    - 包含色板、像素索引 Base64、遮罩数据 Base64 及元数据的纯净完整工程配置。
    - 拖拽本 ZIP 压缩包至 64px Portrait Studio即可 100% 原样复原所有进度与遮罩！
 
-3. renders/ (全尺寸纯净头像渲染图，支持透明背景)
-   - avatar_64x64_1x.png     : 原寸 1× (64 × 64) 标准像素头像。
-   - avatar_256x256_4x.png   : 最近邻无损放大 4× (256 × 256)。
-   - avatar_512x512_8x.png   : 最近邻无损放大 8× (512 × 512) 高清像素头像。
+3. renders/ (纯净头像渲染图，支持透明背景)
+   - avatar_64x64.png        : 标准 64 × 64 像素头像。
 
 4. masks/ (5 色语义互斥遮罩)
    - mask_5zone_composite_64x64.png     : 64×64 综合遮罩 (黑:背景, 青:头发, 绿:皮肤, 紫:眼睛, 黄:衣服)。
-   - mask_5zone_composite_512x512_8x.png : 8× 512×512 高清综合遮罩。
    - layers/ (各分区独立单通道黑白二值图，白=当前分区，黑=其他):
      * mask_hair_64x64.png       : 头发图层二值遮罩 (方便针对头发进行重绘/调色)
      * mask_skin_64x64.png       : 皮肤图层二值遮罩
@@ -231,7 +235,7 @@ export async function exportProjectPng(
 }
 
 /**
- * 导出 5 色综合语义遮罩 PNG (1x 或指定倍率)
+ * 导出 5 色综合语义遮罩 PNG (64×64)
  */
 export async function exportMaskPng(
   doc: PortraitDocument,
@@ -239,7 +243,7 @@ export async function exportMaskPng(
   downloader: (blob: Blob, filename: string) => void = downloadBlob
 ): Promise<void> {
   const snapshot = cloneDocument(doc);
-  const canvas = createCompositeMaskCanvas(snapshot, scale);
+  const canvas = createCompositeMaskCanvas(snapshot);
   const blob = await canvasToBlob(canvas);
   downloader(blob, `mask_composite_${scale}x_${Date.now()}.png`);
 }
@@ -256,37 +260,21 @@ export async function generateProjectZipBlob(doc: PortraitDocument): Promise<Blo
 
   // 1. 核心工程文件
   const minimalPngBlob = await encodeMinimalIndexedPng(snapshot.pixelIndices, snapshot.palette);
-  const canvas64 = createPixelCanvas(snapshot, 1);
+  const canvas64 = createPixelCanvas(snapshot);
   const blob64 = await canvasToBlob(canvas64);
 
   zip.file('imagegem_project_64x64.png', minimalPngBlob);
   zip.file('imagegem_project.json', JSON.stringify(projectData, null, 2));
   zip.file('README.txt', generateReadme(snapshot));
 
-  // 2. 渲染图 (1x, 4x, 8x)
-  const canvas256 = createPixelCanvas(snapshot, 4);
-  const canvas512 = createPixelCanvas(snapshot, 8);
+  // 2. 渲染图 (仅提供 64px 标准原寸)
+  zip.file('renders/avatar_64x64.png', blob64);
 
-  const [blob256, blob512] = await Promise.all([
-    canvasToBlob(canvas256),
-    canvasToBlob(canvas512),
-  ]);
-
-  zip.file('renders/avatar_64x64_1x.png', blob64);
-  zip.file('renders/avatar_256x256_4x.png', blob256);
-  zip.file('renders/avatar_512x512_8x.png', blob512);
-
-  // 3. 语义遮罩 (综合遮罩 + 5 个独立分区二值遮罩)
-  const maskComposite64 = createCompositeMaskCanvas(snapshot, 1);
-  const maskComposite512 = createCompositeMaskCanvas(snapshot, 8);
-
-  const [blobMask64, blobMask512] = await Promise.all([
-    canvasToBlob(maskComposite64),
-    canvasToBlob(maskComposite512),
-  ]);
+  // 3. 语义遮罩 (64px 综合遮罩 + 5 个独立分区 64px 二值遮罩)
+  const maskComposite64 = createCompositeMaskCanvas(snapshot);
+  const blobMask64 = await canvasToBlob(maskComposite64);
 
   zip.file('masks/mask_5zone_composite_64x64.png', blobMask64);
-  zip.file('masks/mask_5zone_composite_512x512_8x.png', blobMask512);
 
   // 各分区二值遮罩
   const [blobHair, blobSkin, blobEyes, blobClothes, blobBg] = await Promise.all([
@@ -334,5 +322,54 @@ export async function exportProjectZip(
   const snapshot = cloneDocument(doc);
   const zipBlob = await generateProjectZipBlob(snapshot);
   downloader(zipBlob, `portrait_studio_project_${Date.now()}.zip`);
+}
+
+/**
+ * 从 ZIP 归档文件中解包提取工程数据
+ * @returns 经过合法性严格校验的 ProjectData
+ */
+export async function importProjectZip(file: Parameters<typeof JSZip.loadAsync>[0]): Promise<ProjectData> {
+  let zip: JSZip;
+  try {
+    zip = await JSZip.loadAsync(file);
+  } catch (err) {
+    throw new Error('无法读取 ZIP 文件，可能已损坏或非合法 ZIP 归档');
+  }
+
+  // 1. 优先读取根目录下的 imagegem_project.json
+  let jsonFile = zip.file('imagegem_project.json');
+
+  // 2. 容错搜索：若文件名有变动，查找任意以 .json 结尾的文件
+  if (!jsonFile) {
+    const jsonFiles = zip.file(/\.json$/i);
+    if (jsonFiles && jsonFiles.length > 0) {
+      jsonFile = jsonFiles[0];
+    }
+  }
+
+  if (!jsonFile) {
+    throw new Error('ZIP 归档中未找到工程配置文件 (imagegem_project.json)');
+  }
+
+  let jsonText: string;
+  try {
+    jsonText = await jsonFile.async('string');
+  } catch (err) {
+    throw new Error('读取工程 JSON 文件内容失败');
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(jsonText);
+  } catch (err) {
+    throw new Error('工程 JSON 配置文件解析失败：JSON 语法格式无效');
+  }
+
+  const validation = validateProjectData(parsed);
+  if (!validation.valid || !validation.data) {
+    throw new Error(validation.error || '工程数据校验失败');
+  }
+
+  return validation.data;
 }
 

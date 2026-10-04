@@ -103,7 +103,6 @@ src/
 │   ├── imageImport.ts       # 纯图像导入裁切、量化与遮罩自动生成入口
 │   ├── maskColors.ts        # 遮罩图层视觉半透明着色查表
 │   ├── projectData.ts       # 工程 JSON 规范编解码器与校验器 (validateProjectData)
-│   ├── projectArchive.ts    # 纯 Uint8Array 工程 ZIP 读取与合法性校验
 │   ├── recolorEngine.ts     # GBA 发色 5 阶梯度非破坏性重着色计算引擎
 │   └── segmentation/        # 自动语义分割器 (8 区域特征提取与残差合并为 5 大分区)
 ├── app/
@@ -123,7 +122,7 @@ src/
 │   ├── browser/             # 具体浏览器实现
 │   │   ├── imageDecode.ts           # 浏览器 Canvas/Image 二进制解码
 │   │   ├── pixelCanvas.ts           # HTMLCanvasElement 物理像素渲染
-│   │   └── projectArchive.ts        # ZIP 压缩包生成与浏览器自动下载
+│   │   └── projectArchive.ts        # ZIP 工程压缩包打包导出与解包导入适配器
 │   └── utils/
 │       └── download.ts              # 浏览器 Blob 触发文件下载封装
 └── panels/                  # UI 面板视图组件 (继承自 Panel 基类)
