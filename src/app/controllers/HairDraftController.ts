@@ -130,7 +130,7 @@ export class HairDraftController {
     return this.host.getDoc().currentHairPreset || (Object.keys(RAMPS_INFO)[0] as HairPresetKey);
   }
 
-  /** 获取指定或当前发色预设的 5 阶颜色在色板中的索引列表 */
+  /** 获取指定或当前发色预设的 4 阶颜色在色板中的索引列表 */
   getHairRampIndices(presetKey?: HairPresetKey): number[] {
     const key = presetKey || this.getHairPresetKey();
     if (!isHairPresetKey(key)) return [];

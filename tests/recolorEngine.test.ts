@@ -4,7 +4,7 @@ import { RAMPS_INFO, PALETTE_36, TRANSPARENT_INDEX } from '../src/data/palette';
 import { SemanticZone, HairPresetKey } from '../src/types';
 import { PIXEL_COUNT } from '../src/core/pixelGrid';
 
-describe('recolorEngine', () => {
+describe('recolorEngine (4-tier hair system)', () => {
   const palette = [...PALETTE_36];
 
   function createHairTestBuffer(presetKey: HairPresetKey): { pixels: Uint8Array; mask: Uint8Array } {
@@ -12,8 +12,8 @@ describe('recolorEngine', () => {
     const mask = new Uint8Array(PIXEL_COUNT).fill(SemanticZone.Background);
     const ramp = RAMPS_INFO[presetKey].hexes;
 
-    // Put 5 pixels for the 5 tiers at indices 0..4
-    for (let tier = 0; tier < 5; tier++) {
+    // Put 4 pixels for the 4 tiers at indices 0..3
+    for (let tier = 0; tier < 4; tier++) {
       const hex = ramp[tier];
       const pIdx = palette.findIndex((c) => c.toUpperCase() === hex.toUpperCase());
       pixels[tier] = pIdx;
@@ -22,12 +22,13 @@ describe('recolorEngine', () => {
     return { pixels, mask };
   }
 
-  it('correctly maps 5 tiers from Brown to Red by tier index', () => {
+  it('correctly maps 4 tiers from Brown to Red by tier index', () => {
     const { pixels, mask } = createHairTestBuffer('02_brown_棕');
     const recolored = recolorHair(pixels, mask, palette, '02_brown_棕', '09_red_红');
 
     const redRamp = RAMPS_INFO['09_red_红'].hexes;
-    for (let tier = 0; tier < 5; tier++) {
+    expect(redRamp.length).toBe(4);
+    for (let tier = 0; tier < 4; tier++) {
       const expectedHex = redRamp[tier];
       const actualHex = palette[recolored[tier]];
       expect(actualHex.toUpperCase()).toBe(expectedHex.toUpperCase());
@@ -56,19 +57,19 @@ describe('recolorEngine', () => {
       currentPreset = targetPreset;
     }
 
-    // After full round-trip back to brown, pixels 0..4 must exactly match initial brown tiers
-    for (let tier = 0; tier < 5; tier++) {
+    // After full round-trip back to brown, pixels 0..3 must exactly match initial brown tiers
+    for (let tier = 0; tier < 4; tier++) {
       expect(currentPixels[tier]).toBe(initial.pixels[tier]);
     }
   });
 
   it('auto-detects sourcePreset if sourcePreset is null when pixels match a ramp', () => {
     const { pixels, mask } = createHairTestBuffer('02_brown_棕');
-    // When sourcePreset is null, it detects Brown and maps all 5 tiers 1:1 to Red
+    // When sourcePreset is null, it detects Brown and maps all 4 tiers 1:1 to Red
     const recolored = recolorHair(pixels, mask, palette, null, '09_red_红');
     const redRamp = RAMPS_INFO['09_red_红'].hexes;
 
-    for (let tier = 0; tier < 5; tier++) {
+    for (let tier = 0; tier < 4; tier++) {
       const actualHex = palette[recolored[tier]];
       expect(actualHex.toUpperCase()).toBe(redRamp[tier].toUpperCase());
     }
@@ -84,8 +85,8 @@ describe('recolorEngine', () => {
     const recolored = recolorHair(pixels, mask, palette, '02_brown_棕', '09_red_红');
     const redRamp = RAMPS_INFO['09_red_红'].hexes;
 
-    // Ramp colors 0..4 must strictly map to Red tiers 0..4
-    for (let tier = 0; tier < 5; tier++) {
+    // Ramp colors 0..3 must strictly map to Red tiers 0..3
+    for (let tier = 0; tier < 4; tier++) {
       expect(palette[recolored[tier]].toUpperCase()).toBe(redRamp[tier].toUpperCase());
     }
 
@@ -103,7 +104,7 @@ describe('recolorEngine', () => {
     docPixels = recolorHair(docPixels, mask, palette, docPreset, '02_brown_棕');
     docPreset = '02_brown_棕';
     const brownRamp = RAMPS_INFO['02_brown_棕'].hexes;
-    for (let tier = 0; tier < 5; tier++) {
+    for (let tier = 0; tier < 4; tier++) {
       expect(palette[docPixels[tier]].toUpperCase()).toBe(brownRamp[tier].toUpperCase());
     }
 
@@ -111,7 +112,7 @@ describe('recolorEngine', () => {
     docPixels = recolorHair(docPixels, mask, palette, docPreset, '09_red_红');
     docPreset = '09_red_红';
     const redRamp = RAMPS_INFO['09_red_红'].hexes;
-    for (let tier = 0; tier < 5; tier++) {
+    for (let tier = 0; tier < 4; tier++) {
       expect(palette[docPixels[tier]].toUpperCase()).toBe(redRamp[tier].toUpperCase());
     }
 
@@ -119,7 +120,7 @@ describe('recolorEngine', () => {
     docPixels = recolorHair(docPixels, mask, palette, docPreset, '03_blonde_金');
     docPreset = '03_blonde_金';
     const blondeRamp = RAMPS_INFO['03_blonde_金'].hexes;
-    for (let tier = 0; tier < 5; tier++) {
+    for (let tier = 0; tier < 4; tier++) {
       expect(palette[docPixels[tier]].toUpperCase()).toBe(blondeRamp[tier].toUpperCase());
     }
 
@@ -127,8 +128,14 @@ describe('recolorEngine', () => {
     docPixels = recolorHair(docPixels, mask, palette, docPreset, '01_black_黑');
     docPreset = '01_black_黑';
     const blackRamp = RAMPS_INFO['01_black_黑'].hexes;
-    for (let tier = 0; tier < 5; tier++) {
+    for (let tier = 0; tier < 4; tier++) {
       expect(palette[docPixels[tier]].toUpperCase()).toBe(blackRamp[tier].toUpperCase());
+    }
+  });
+
+  it('all 9 presets strictly define exactly 4 color tiers', () => {
+    for (const [key, info] of Object.entries(RAMPS_INFO)) {
+      expect(info.hexes.length, `${key} must have exactly 4 tiers`).toBe(4);
     }
   });
 });

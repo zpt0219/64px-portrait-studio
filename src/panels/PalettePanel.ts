@@ -150,12 +150,12 @@ export class PalettePanel extends Panel {
             <input type="color" id="palette-color-picker" title="点击微调当前色块颜色" style="display:none;">
           </div>
 
-          <!-- 💇 独立发色卡区 (Hair Color Ramp: 下拉选择 9 大发色系 + 5 阶颜色行) -->
+          <!-- 💇 独立发色卡区 (Hair Color Ramp: 下拉选择 9 大发色系 + 4 阶颜色行) -->
           <div class="hair-ramp-section">
             <div class="hair-ramp-header">
               <div class="hair-ramp-title-group">
                 <span class="hair-ramp-title">💇 发色卡</span>
-                <span class="hair-ramp-tier-hint">(5色阶)</span>
+                <span class="hair-ramp-tier-hint">(4色阶)</span>
               </div>
               <div class="hair-ramp-actions">
                 <button type="button" class="hair-highlight-btn" id="btn-highlight-hair-ramp" title="全发色高亮探针 (快捷键: F，按住预览或短按切换锁定，在画布上高亮所有当前发色)">
@@ -169,7 +169,7 @@ export class PalettePanel extends Panel {
               </div>
             </div>
             <div class="hair-ramp-chips" id="hair-ramp-chips">
-              <!-- 5 个发色卡片在 buildStaticChips 中初始化 -->
+              <!-- 4 个发色卡片在 buildStaticChips 中初始化 -->
             </div>
           </div>
 
@@ -261,12 +261,12 @@ export class PalettePanel extends Panel {
       });
     }
 
-    // 2. 初始化 5 阶独立发色卡 DOM 结构
+    // 2. 初始化 4 阶独立发色卡 DOM 结构
     if (this.hairContainer) {
       this.hairContainer.innerHTML = '';
       this.hairChipElements = [];
 
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 4; i++) {
         const chip = document.createElement('div');
         chip.className = 'hair-chip';
 
@@ -525,14 +525,14 @@ export class PalettePanel extends Panel {
   }
 
   /**
-   * 获取当前选中发色卡的全部 5 阶颜色在色板中的索引列表
+   * 获取当前选中发色卡的全部 4 阶颜色在色板中的索引列表
    */
   private getHairRampIndices(): number[] {
     return this.vm.getHairRampIndices(this.selectedHairRampKey);
   }
 
   /**
-   * 原地修补独立发色卡 5 阶颜色行 (复用 DOM 节点)
+   * 原地修补独立发色卡 4 阶颜色行 (复用 DOM 节点)
    */
   private renderHairRampChips(): void {
     const rampInfo = RAMPS_INFO[this.selectedHairRampKey];
@@ -541,7 +541,7 @@ export class PalettePanel extends Panel {
     const fgIdx = this.vm.session.activePaletteIndex;
     const bgIdx = this.vm.session.bgPaletteIndex;
     const palette = this.vm.doc.palette;
-    const tierShortNames = ['暗', '深', '中', '主', '光'];
+    const tierShortNames = ['暗', '影', '主', '光'];
 
     rampInfo.hexes.forEach((hex, tierIdx) => {
       const cached = this.hairChipElements[tierIdx];

@@ -1,5 +1,5 @@
 /**
- * 发色识别与 5 阶色阶置换 (仅作用于 Hair 分区)
+ * 发色识别与 4 阶色阶置换 (仅作用于 Hair 分区)
  */
 
 import { SemanticZone, HairPresetKey } from '../types';
@@ -59,7 +59,7 @@ export function detectHairPreset(indices: Uint8Array, mask: Uint8Array, palette:
 /**
  * 把 Hair 分区像素从 sourcePreset 的色阶映射到 targetPreset 的同阶颜色。
  * 核心逻辑：
- * 1. 优先检查当前像素是否属于当前发色色板色 (sourceRamp)，若是，则直接按其色阶序号 (0~4) 映射到目标发色色板对应的阶位；
+ * 1. 优先检查当前像素是否属于当前发色色板色 (sourceRamp)，若是，则直接按其色阶序号 (0~3) 映射到目标发色色板对应的阶位；
  * 2. 只有不在当前发色色板里的像素颜色 (或源发色色板未知)，才执行默认算法 (按相对亮度就近匹配目标发色色阶)。
  */
 export function recolorHair(
