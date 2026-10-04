@@ -30,7 +30,7 @@ export const RAMPS_INFO: Record<HairPresetKey, RampInfo> = {
   "06_silver_银白": { name: "银白", icon: "🤍", hexes: ["#080821", "#8473A5", "#DEEFEF", "#FFFFFF"] },
   "07_green_绿": { name: "绿色", icon: "💚", hexes: ["#081039", "#21636B", "#18CEA5", "#DEEFEF"] },
   "08_purple_紫": { name: "紫色", icon: "💜", hexes: ["#180852", "#421084", "#6329BD", "#DEEFEF"] },
-  "09_red_红": { name: "红色", icon: "❤️", hexes: ["#080821", "#8C1031", "#A51831", "#DE6B42"] }
+  "09_red_红": { name: "红色", icon: "❤️", hexes: ["#080821", "#6B0818", "#A51831", "#E8A682"] }
 };
 
 /** 检查给定的键是否为合法的内置发色预设键名 */
