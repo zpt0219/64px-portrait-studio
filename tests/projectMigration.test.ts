@@ -13,7 +13,8 @@ import { SemanticZone } from '../src/types';
 import { PIXEL_COUNT } from '../src/core/pixelGrid';
 
 describe('Project Migration Pipeline (Progressive Version Upgrader)', () => {
-  const palette = [...PALETTE_36];
+  const v1Palette = [...PALETTE_36];
+  v1Palette[17] = '#C68C31';
 
   function createV1BlondeProject(): Record<string, unknown> {
     const pixels = new Uint8Array(PIXEL_COUNT).fill(TRANSPARENT_INDEX);
@@ -27,14 +28,14 @@ describe('Project Migration Pipeline (Progressive Version Upgrader)', () => {
     // 4: #FFFFFF (光)
     const v1Blonde = V1_HAIR_RAMPS['03_blonde_金'];
     for (let i = 0; i < 5; i++) {
-      const pIdx = palette.findIndex((c) => c.toUpperCase() === v1Blonde[i].toUpperCase());
+      const pIdx = v1Palette.findIndex((c) => c.toUpperCase() === v1Blonde[i].toUpperCase());
       pixels[i] = pIdx;
       mask[i] = SemanticZone.Hair;
     }
 
     return {
       v: 1,
-      palette,
+      palette: v1Palette,
       pixels: uint8ArrayToBase64(pixels),
       mask: uint8ArrayToBase64(mask),
       hairPreset: '03_blonde_金',
@@ -66,14 +67,14 @@ describe('Project Migration Pipeline (Progressive Version Upgrader)', () => {
 
     const targetBlonde4 = RAMPS_INFO['03_blonde_金'].hexes;
     // 0 -> #6B0818 (暗)
-    expect(palette[pixels[0]].toUpperCase()).toBe(targetBlonde4[0].toUpperCase());
+    expect(v1Palette[pixels[0]].toUpperCase()).toBe(targetBlonde4[0].toUpperCase());
     // 1 (#7B4239) and 2 (#C68C31) BOTH merged into #7B4239 (Tier 1 影色)!
-    expect(palette[pixels[1]].toUpperCase()).toBe(targetBlonde4[1].toUpperCase());
-    expect(palette[pixels[2]].toUpperCase()).toBe(targetBlonde4[1].toUpperCase());
+    expect(v1Palette[pixels[1]].toUpperCase()).toBe(targetBlonde4[1].toUpperCase());
+    expect(v1Palette[pixels[2]].toUpperCase()).toBe(targetBlonde4[1].toUpperCase());
     // 3 -> #FFDE6B (主)
-    expect(palette[pixels[3]].toUpperCase()).toBe(targetBlonde4[2].toUpperCase());
+    expect(v1Palette[pixels[3]].toUpperCase()).toBe(targetBlonde4[2].toUpperCase());
     // 4 -> #FFFFFF (光)
-    expect(palette[pixels[4]].toUpperCase()).toBe(targetBlonde4[3].toUpperCase());
+    expect(v1Palette[pixels[4]].toUpperCase()).toBe(targetBlonde4[3].toUpperCase());
   });
 
   it('validateProjectData automatically runs upgradeProjectData on legacy v1 archives', () => {
