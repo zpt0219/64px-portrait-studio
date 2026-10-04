@@ -138,4 +138,29 @@ describe('recolorEngine (4-tier hair system)', () => {
       expect(info.hexes.length, `${key} must have exactly 4 tiers`).toBe(4);
     }
   });
+
+  it('correctly maps legacy 5-tier Blonde (containing #C68C31) into 4-tier Black without highlight artifacts', () => {
+    const pixels = new Uint8Array(PIXEL_COUNT).fill(TRANSPARENT_INDEX);
+    const mask = new Uint8Array(PIXEL_COUNT).fill(SemanticZone.Background);
+    // Legacy 5 tiers: 0: 6B0818, 1: 7B4239, 2: C68C31 (shadow), 3: FFDE6B, 4: FFFFFF
+    const legacyBlonde = ['#6B0818', '#7B4239', '#C68C31', '#FFDE6B', '#FFFFFF'];
+    for (let i = 0; i < 5; i++) {
+      const pIdx = palette.findIndex((c) => c.toUpperCase() === legacyBlonde[i].toUpperCase());
+      pixels[i] = pIdx;
+      mask[i] = SemanticZone.Hair;
+    }
+
+    const recolored = recolorHair(pixels, mask, palette, '03_blonde_金', '01_black_黑');
+    const blackRamp = RAMPS_INFO['01_black_黑'].hexes;
+
+    // Tier 0 -> Black 0 (#080821)
+    expect(palette[recolored[0]].toUpperCase()).toBe(blackRamp[0].toUpperCase());
+    // Tier 1 (7B4239) and Tier 2 (C68C31) both merge into Black 1 (#081039 shadow)
+    expect(palette[recolored[1]].toUpperCase()).toBe(blackRamp[1].toUpperCase());
+    expect(palette[recolored[2]].toUpperCase()).toBe(blackRamp[1].toUpperCase());
+    // Tier 3 (FFDE6B) -> Black 2 (#212142 main body)
+    expect(palette[recolored[3]].toUpperCase()).toBe(blackRamp[2].toUpperCase());
+    // Tier 4 (FFFFFF) -> Black 3 (#8473A5 highlight)
+    expect(palette[recolored[4]].toUpperCase()).toBe(blackRamp[3].toUpperCase());
+  });
 });

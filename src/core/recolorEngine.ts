@@ -26,9 +26,25 @@ export function nearestTierForColor(hex: string, ramp: string[]): number {
   return best;
 }
 
+/** 兼容历史 5 色阶色板定义 (用于将旧版工程/外部图像平滑确定性收敛为新 4 阶体系) */
+export const LEGACY_5_RAMPS: Record<HairPresetKey, string[]> = {
+  "01_black_黑": ["#000000", "#080821", "#081039", "#212142", "#8473A5"],
+  "02_brown_棕": ["#080821", "#3A2016", "#7B4239", "#DE6B42", "#FFFFFF"],
+  "03_blonde_金": ["#6B0818", "#7B4239", "#C68C31", "#FFDE6B", "#FFFFFF"],
+  "04_pink_粉": ["#6B106B", "#B5106B", "#C6218C", "#FFA5B5", "#FFFFFF"],
+  "05_blue_蓝": ["#180852", "#08219C", "#0063CE", "#0884D6", "#DEEFEF"],
+  "06_silver_银白": ["#080821", "#212142", "#8473A5", "#DEEFEF", "#FFFFFF"],
+  "07_green_绿": ["#081039", "#21636B", "#3FA836", "#18CEA5", "#DEEFEF"],
+  "08_purple_紫": ["#180852", "#421084", "#6329BD", "#8473A5", "#FFFFFF"],
+  "09_red_红": ["#080821", "#6B0818", "#8C1031", "#A51831", "#DE6B42"]
+};
+
+/** 5 色阶到 4 色阶的经典收敛映射：0->0(暗), 1->1(影), 2->1(深中合并为影), 3->2(主), 4->3(光) */
+const LEGACY_5_TO_4_MAP = [0, 1, 1, 2, 3];
+
 /**
  * 头发区域核心发色投票，识别图像当前属于哪个发色预设 (纯白高光不参与)。
- * 命中像素不足 50 时视为无法识别。
+ * 自动同时兼容 4 阶新规范与历史 5 阶色板。命中像素不足 50 时视为无法识别。
  */
 export function detectHairPreset(indices: Uint8Array, mask: Uint8Array, palette: string[]): HairPresetKey | null {
   const hairCounts: Record<string, number> = {};
@@ -44,8 +60,11 @@ export function detectHairPreset(indices: Uint8Array, mask: Uint8Array, palette:
   let bestPreset: HairPresetKey | null = null;
   let bestScore = 0;
   for (const [presetKey, info] of Object.entries(RAMPS_INFO) as [HairPresetKey, (typeof RAMPS_INFO)[HairPresetKey]][]) {
-    const score = info.hexes.reduce((sum, h) => {
-      const uh = h.toUpperCase();
+    const candidateHexes = new Set([
+      ...info.hexes.map((h) => h.toUpperCase()),
+      ...(LEGACY_5_RAMPS[presetKey] || []).map((h) => h.toUpperCase()),
+    ]);
+    const score = Array.from(candidateHexes).reduce((sum, uh) => {
       return sum + (uh === '#FFFFFF' ? 0 : hairCounts[uh] || 0);
     }, 0);
     if (score > bestScore) {
@@ -59,8 +78,9 @@ export function detectHairPreset(indices: Uint8Array, mask: Uint8Array, palette:
 /**
  * 把 Hair 分区像素从 sourcePreset 的色阶映射到 targetPreset 的同阶颜色。
  * 核心逻辑：
- * 1. 优先检查当前像素是否属于当前发色色板色 (sourceRamp)，若是，则直接按其色阶序号 (0~3) 映射到目标发色色板对应的阶位；
- * 2. 只有不在当前发色色板里的像素颜色 (或源发色色板未知)，才执行默认算法 (按相对亮度就近匹配目标发色色阶)。
+ * 1. 优先检查当前像素是否属于当前 4 阶发色色板 (sourceRamp)，若是，直接按色阶序号 (0~3) 映射；
+ * 2. 若源图像包含旧版 5 色阶历史像素 (如旧工程导入)，按标准 5->4 收敛规则 (深与中合并为影色) 映射；
+ * 3. 只有不在任何已知发色色板里的杂色，才执行默认算法 (按相对亮度就近匹配目标发色色阶)。
  */
 export function recolorHair(
   basePixels: Uint8Array,
@@ -87,12 +107,20 @@ export function recolorHair(
     const colorHex = rawHex ? rawHex.toUpperCase() : '';
 
     let tier = -1;
-    // 1. 先看是不是当前发色色板色，是的话根据色板序号映射到要换的发色色板色
+    // 1. 先看是不是当前发色 4 色阶色板色，是的话直接按序号 (0~3) 映射到目标发色对应阶位
     if (sourceRamp && sourceRamp.length === targetRamp.length) {
       tier = sourceRamp.findIndex((h) => h.toUpperCase() === colorHex);
     }
 
-    // 2. 不在当前发色色板里的颜色才进行默认算法 (按相对亮度匹配到目标发色色阶)
+    // 2. 若当前像素来自旧版 5 色阶工程 (如历史归档)，通过 5->4 确定性收敛规则合并 (深与影合并为新影色)
+    if (tier < 0 && effectiveSourceKey && LEGACY_5_RAMPS[effectiveSourceKey]) {
+      const legacyIdx = LEGACY_5_RAMPS[effectiveSourceKey].findIndex((h) => h.toUpperCase() === colorHex);
+      if (legacyIdx >= 0) {
+        tier = LEGACY_5_TO_4_MAP[legacyIdx];
+      }
+    }
+
+    // 3. 不在已知色板里的杂色才走相对亮度就近算法
     if (tier < 0 || tier >= targetRamp.length) {
       tier = nearestTierForColor(colorHex, targetRamp);
     }
