@@ -119,4 +119,42 @@ describe('Project Migration Pipeline (Progressive Version Upgrader)', () => {
     const reloadedJson = JSON.parse(await reloadedZip.file('imagegem_project.json')!.async('string'));
     expect(reloadedJson.v).toBe(2);
   });
+
+  it('verifies real backup 5-tier zip file if present in Downloads', async () => {
+    const fs = await import('fs');
+    const path = 'C:/Users/grand/Downloads/portrait_studio_project_1791009874949_backup_5tier.zip';
+    if (!fs.existsSync(path)) {
+      return;
+    }
+
+    const { importProjectZip } = await import('../src/app/browser/projectArchive');
+    const { projectDataToDocument } = await import('../src/core/projectData');
+    const { recolorHair } = await import('../src/core/recolorEngine');
+    const { HAIR_COLOR_PRESETS } = await import('../src/data/palette');
+
+    const fileBuf = fs.readFileSync(path);
+    const arrayBuf = fileBuf.buffer.slice(fileBuf.byteOffset, fileBuf.byteOffset + fileBuf.byteLength);
+    const projectData = await importProjectZip(arrayBuf);
+    const { document: doc } = projectDataToDocument(projectData);
+
+    // Verify all hair pixels in the imported doc belong ONLY to the 4-tier blonde palette
+    const blonde4Hexes = new Set(RAMPS_INFO['03_blonde_金'].hexes.map((h) => h.toUpperCase()));
+    for (let i = 0; i < PIXEL_COUNT; i++) {
+      if (doc.semanticMask[i] === SemanticZone.Hair) {
+        const hex = doc.palette[doc.pixelIndices[i]].toUpperCase();
+        expect(blonde4Hexes.has(hex)).toBe(true);
+      }
+    }
+
+    // Now recolor to black
+    const blackPixels = recolorHair(doc.pixelIndices, doc.semanticMask, doc.palette, doc.currentHairPreset, '01_black_黑');
+    const black4Hexes = new Set(RAMPS_INFO['01_black_黑'].hexes.map((h) => h.toUpperCase()));
+    for (let i = 0; i < PIXEL_COUNT; i++) {
+      if (doc.semanticMask[i] === SemanticZone.Hair) {
+        const hex = doc.palette[blackPixels[i]].toUpperCase();
+        // Zero unexpected colors or highlight artifacts! Every hair pixel must be in the 4-tier black ramp.
+        expect(black4Hexes.has(hex)).toBe(true);
+      }
+    }
+  });
 });
