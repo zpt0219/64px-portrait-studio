@@ -17,6 +17,7 @@ export { SemanticZone };
 export const IMAGE_WIDTH = 64;
 export const IMAGE_HEIGHT = 64;
 export const PIXEL_COUNT = IMAGE_WIDTH * IMAGE_HEIGHT; // 4096
+export const MAX_CANVAS_COORD = IMAGE_WIDTH - 1; // 63
 
 // ===================== 特殊色彩与索引 =====================
 export const WHITE_PALETTE_INDEX = 1; // #FFFFFF 纯白色 (眼白 / 高光 / 服饰白)

@@ -4,7 +4,7 @@
  */
 
 import { RectSelection } from '../../core/types';
-import { ZONE_CONFIG } from '../../core/constants';
+import { ZONE_CONFIG, IMAGE_WIDTH, IMAGE_HEIGHT } from '../../core/constants';
 import { Patch } from '../../core/editOps';
 import { drawIndexedPixels } from '../../app/browser/pixelCanvas';
 import { brushRect } from '../../command/pixelCommands';
@@ -17,6 +17,8 @@ import {
   drawColorHighlight,
   drawMarchingAnts,
 } from './overlays';
+
+export const MIN_ZOOM_FOR_GRID = 8;
 
 /** 画布面板传入的交互状态 */
 interface CanvasOverlay {
@@ -38,8 +40,8 @@ export class CanvasRenderer {
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d')!;
     this.offscreen = document.createElement('canvas');
-    this.offscreen.width = 64;
-    this.offscreen.height = 64;
+    this.offscreen.width = IMAGE_WIDTH;
+    this.offscreen.height = IMAGE_HEIGHT;
     this.offscreenCtx = this.offscreen.getContext('2d')!;
   }
 
@@ -47,7 +49,7 @@ export class CanvasRenderer {
     const { doc, session } = vm;
     const ctx = this.ctx;
     const zoom = session.zoomLevel;
-    const size = 64 * zoom;
+    const size = IMAGE_WIDTH * zoom;
 
     if (this.canvas.width !== size || this.canvas.height !== size) {
       this.canvas.width = size;
@@ -60,7 +62,7 @@ export class CanvasRenderer {
     // 1. 像素画 (发色预览时为预览像素) 放大绘制
     drawIndexedPixels(this.offscreenCtx, vm.displayPixels(), doc.palette);
     ctx.clearRect(0, 0, size, size);
-    ctx.drawImage(this.offscreen, 0, 0, 64, 64, 0, 0, size, size);
+    ctx.drawImage(this.offscreen, 0, 0, IMAGE_WIDTH, IMAGE_HEIGHT, 0, 0, size, size);
 
     // 2. 半透明分区遮罩
     const showMask = session.showMaskOverlay && session.maskOpacity > 0.01;
@@ -76,8 +78,8 @@ export class CanvasRenderer {
       drawColorHighlight(ctx, doc.pixelIndices, overlay.highlightedPaletteIndex, zoom);
     }
 
-    // 4. 像素网格 (放大倍数 >= 8 时)
-    if (session.showGrid && zoom >= 8) drawGrid(ctx, zoom);
+    // 4. 像素网格 (放大倍数 >= MIN_ZOOM_FOR_GRID 时)
+    if (session.showGrid && zoom >= MIN_ZOOM_FOR_GRID) drawGrid(ctx, zoom);
 
     // 5. 选区：拖动中的浮动块 / 正在框选 / 已有选区的走马灯
     const { floating, boxSelect } = overlay;

@@ -23,6 +23,9 @@ interface MovingSelectionState {
   };
 }
 
+export const MARCHING_ANTS_INTERVAL_MS = 120;
+export const MARCHING_ANTS_DASH_CYCLE = 8;
+
 export class SelectionInteraction {
   private _boxSelect: BoxSelectState | null = null;
   private _moving: MovingSelectionState | null = null;
@@ -119,9 +122,9 @@ export class SelectionInteraction {
   manageMarchingAnts(active: boolean, onTick: () => void): void {
     if (active && this.antsTimer === null) {
       this.antsTimer = setInterval(() => {
-        this.antsOffset = (this.antsOffset + 1) % 8;
+        this.antsOffset = (this.antsOffset + 1) % MARCHING_ANTS_DASH_CYCLE;
         onTick();
-      }, 120);
+      }, MARCHING_ANTS_INTERVAL_MS);
     } else if (!active && this.antsTimer !== null) {
       clearInterval(this.antsTimer);
       this.antsTimer = null;

@@ -37,6 +37,7 @@ import {
 } from '../../core/projectData';
 
 export const STORAGE_KEY = 'imagegem_project_autosave_v2';
+export const DEFAULT_AUTOSAVE_DEBOUNCE_MS = 300;
 
 export interface KeyValueStore {
   getItem(key: string): string | null;
@@ -76,7 +77,8 @@ export class AutosaveService {
 
   constructor(
     private readonly store: KeyValueStore = unavailableStore,
-    private readonly storageKey: string = STORAGE_KEY
+    private readonly storageKey: string = STORAGE_KEY,
+    private readonly debounceMs: number = DEFAULT_AUTOSAVE_DEBOUNCE_MS
   ) {}
 
   public saveImmediate(doc: PortraitDocument): StorageSaveResult {
@@ -114,7 +116,7 @@ export class AutosaveService {
         const result = this.saveImmediate(docToSave);
         if (callback) callback(result);
       }
-    }, 300);
+    }, this.debounceMs);
   }
 
   public cancel(): void {

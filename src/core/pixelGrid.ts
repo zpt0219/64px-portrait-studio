@@ -5,6 +5,15 @@
 export const IMAGE_WIDTH = 64;
 export const IMAGE_HEIGHT = 64;
 export const PIXEL_COUNT = IMAGE_WIDTH * IMAGE_HEIGHT;
+export const MAX_CANVAS_COORD = IMAGE_WIDTH - 1;
+
+export function coordToOffset(x: number, y: number): number {
+  return y * IMAGE_WIDTH + x;
+}
+
+export function isCoordInBounds(x: number, y: number): boolean {
+  return x >= 0 && x < IMAGE_WIDTH && y >= 0 && y < IMAGE_HEIGHT;
+}
 
 const FOUR_NEIGHBOUR_DELTAS: [number, number][] = [
   [-1, 0],

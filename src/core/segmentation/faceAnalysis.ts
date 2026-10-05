@@ -1,5 +1,5 @@
 import { Rgb } from '../../utils/colorUtils';
-import { connectedComponents, maskFromOffsets } from '../pixelGrid';
+import { connectedComponents, maskFromOffsets, IMAGE_HEIGHT, MAX_CANVAS_COORD } from '../pixelGrid';
 import { Bbox, Point, FaceAnalysis } from './types';
 import {
   xOf,
@@ -44,6 +44,10 @@ const FACE_OUTLINE_MODEL = {
   linkedMaxAnchorError: 6,
   linkedHorizontalDeadZone: 2.0,
   linkedVerticalDeadZone: 3.0,
+  minimumFaceSkinComponentPixels: 60,
+  maximumFaceTopY: 54,
+  minimumFaceOffsets: 80,
+  minimumFaceHeight: 8,
 };
 
 function deadZoneShift(error: number, tolerance: number): number {
@@ -56,13 +60,13 @@ export function analyzeFace(pixels: Rgb[], outlineColors: Rgb[]): FaceAnalysis |
 
   // 最大的、顶部不太靠下的肤色连通域即面部
   const component = connectedComponents(pixels.map(isFaceSkin), true)
-    .filter((comp) => comp.length >= 60 && Math.min(...comp.map(yOf)) <= 54)
+    .filter((comp) => comp.length >= FACE_OUTLINE_MODEL.minimumFaceSkinComponentPixels && Math.min(...comp.map(yOf)) <= FACE_OUTLINE_MODEL.maximumFaceTopY)
     .sort((a, b) => b.length - a.length)[0];
   if (!component) return null;
 
   // 按行统计肤色宽度 (3 行中值平滑)，取最宽的连续行段作为脸部核心，再向上下低阈值扩展
-  const counts = Array.from({ length: 64 }, (_, y) => component.filter((o) => yOf(o) === y).length);
-  const smoothed = counts.map((_, y) => median(counts.slice(Math.max(0, y - 1), Math.min(64, y + 2))));
+  const counts = Array.from({ length: IMAGE_HEIGHT }, (_, y) => component.filter((o) => yOf(o) === y).length);
+  const smoothed = counts.map((_, y) => median(counts.slice(Math.max(0, y - 1), Math.min(IMAGE_HEIGHT, y + 2))));
 
   const peak = Math.max(...smoothed);
   const wideThreshold = Math.max(7.0, peak * 0.55);
@@ -82,10 +86,10 @@ export function analyzeFace(pixels: Rgb[], outlineColors: Rgb[]): FaceAnalysis |
 
   const lowThreshold = Math.max(3.0, peak * 0.28);
   while (faceTop > 0 && smoothed[faceTop - 1] >= lowThreshold) faceTop--;
-  while (faceBottom < 63 && smoothed[faceBottom + 1] >= lowThreshold) faceBottom++;
+  while (faceBottom < MAX_CANVAS_COORD && smoothed[faceBottom + 1] >= lowThreshold) faceBottom++;
 
   const faceOffsets = component.filter((o) => yOf(o) >= faceTop && yOf(o) <= faceBottom);
-  if (faceOffsets.length < 80 || faceBottom - faceTop + 1 < 8) return null;
+  if (faceOffsets.length < FACE_OUTLINE_MODEL.minimumFaceOffsets || faceBottom - faceTop + 1 < FACE_OUTLINE_MODEL.minimumFaceHeight) return null;
 
   const faceXs = faceOffsets.map(xOf);
   const faceHeight = faceBottom - faceTop + 1;
@@ -104,11 +108,11 @@ export function analyzeFace(pixels: Rgb[], outlineColors: Rgb[]): FaceAnalysis |
   const baseOutlineWidth = clamp(Math.round(outlineAnchorWidth * M.medianRowWidthScale), M.minimumWidth, M.maximumWidth);
   const geometryEyeLineY = faceTop + Math.round((faceHeight - 1) * M.eyeLineFromFaceTop);
   const outlineHeight = Math.round(baseOutlineWidth * M.heightToWidth);
-  let outlineBottom = Math.min(63, faceBottom + M.chinPadding);
+  let outlineBottom = Math.min(MAX_CANVAS_COORD, faceBottom + M.chinPadding);
   let outlineTop = Math.max(0, outlineBottom - outlineHeight + 1);
   const outlineLeftUnpadded = Math.round(outlineCenterX - (baseOutlineWidth - 1) / 2);
   let outlineLeft = Math.max(0, outlineLeftUnpadded - M.leftEyePadding);
-  let outlineRight = Math.min(63, outlineLeftUnpadded + baseOutlineWidth - 1);
+  let outlineRight = Math.min(MAX_CANVAS_COORD, outlineLeftUnpadded + baseOutlineWidth - 1);
 
   const eyeWidth = clamp(Math.round(outlineAnchorWidth * M.eyeWidthScale), M.minimumEyeWidth, M.maximumEyeWidth);
   const eyeSeparation = Math.max((eyeWidth + 1) / 2, outlineAnchorWidth * M.eyeCenterSeparationScale);

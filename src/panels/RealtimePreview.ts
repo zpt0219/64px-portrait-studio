@@ -2,6 +2,7 @@
  * 画中画实时预览：1×~4× 原寸预览，可切换 GBA 液晶 / 棋盘格背景，可拖拽、可最小化
  */
 
+import { IMAGE_WIDTH, IMAGE_HEIGHT } from '../core/constants';
 import { drawIndexedPixels } from '../app/browser/pixelCanvas';
 import { ViewModel } from '../app/viewModel';
 import { EditorContext } from '../app/editorContext';
@@ -38,8 +39,8 @@ export class RealtimePreview extends Panel {
   constructor(private readonly container: HTMLElement, vm: ViewModel, private readonly ctx: EditorContext) {
     super(vm);
     this.sourceCanvas = document.createElement('canvas');
-    this.sourceCanvas.width = 64;
-    this.sourceCanvas.height = 64;
+    this.sourceCanvas.width = IMAGE_WIDTH;
+    this.sourceCanvas.height = IMAGE_HEIGHT;
     this.sourceCtx = this.sourceCanvas.getContext('2d')!;
 
     this.build();
@@ -120,7 +121,7 @@ export class RealtimePreview extends Panel {
       </div>
     `;
 
-    const initialWidth = Math.max(220, 64 * this.scale + 52);
+    const initialWidth = Math.max(220, IMAGE_WIDTH * this.scale + 52);
     card.style.width = `${initialWidth}px`;
     card.style.display = 'none'; // 未载入图像时默认隐藏
 
@@ -230,7 +231,7 @@ export class RealtimePreview extends Panel {
     if (this.scaleBadge) {
       this.scaleBadge.textContent = `${this.scale}×`;
     }
-    const pxSize = 64 * this.scale;
+    const pxSize = IMAGE_WIDTH * this.scale;
     if (this.dimensionBadge) {
       this.dimensionBadge.textContent = `${pxSize}×${pxSize}`;
     }
@@ -284,7 +285,7 @@ export class RealtimePreview extends Panel {
       if (pillEl) pillEl.style.display = 'flex';
     } else {
       this.rootEl.classList.remove('minimized');
-      const pxSize = 64 * this.scale;
+      const pxSize = IMAGE_WIDTH * this.scale;
       const neededWidth = Math.max(220, pxSize + 52);
       this.rootEl.style.width = `${neededWidth}px`;
       if (bodyEl) bodyEl.style.display = 'block';
@@ -313,7 +314,7 @@ export class RealtimePreview extends Panel {
     if (!this.previewCanvas || !this.previewCtx || !this.vm.session.isLoaded) return;
     if (this.isMinimized || !this.ctx.previewVisible) return;
 
-    const targetSize = 64 * this.scale;
+    const targetSize = IMAGE_WIDTH * this.scale;
 
     if (this.previewCanvas.width !== targetSize || this.previewCanvas.height !== targetSize) {
       this.previewCanvas.width = targetSize;
@@ -330,8 +331,8 @@ export class RealtimePreview extends Panel {
       this.sourceCanvas,
       0,
       0,
-      64,
-      64,
+      IMAGE_WIDTH,
+      IMAGE_HEIGHT,
       0,
       0,
       targetSize,

@@ -1,9 +1,12 @@
 import { Rgb, Lab, rgbToOklab, oklabDistance } from '../../utils/colorUtils';
-import { IMAGE_WIDTH as W, PIXEL_COUNT, connectedComponents } from '../pixelGrid';
+import { IMAGE_WIDTH as W, PIXEL_COUNT, connectedComponents, MAX_CANVAS_COORD } from '../pixelGrid';
 import { SemanticZone } from '../types';
 import { FaceAnalysis, ClaimedRegions } from './types';
 import { xOf, yOf, isFaceSkin, maskInRect } from './stats';
 import { detectMouth } from './mouthDetector';
+
+export const SKIN_OKLAB_DISTANCE_FACE = 0.045;
+export const SKIN_OKLAB_DISTANCE_BODY = 0.035;
 
 function looksLikeExpressionColor(color: Rgb): boolean {
   const [red, green, blue] = color;
@@ -64,7 +67,7 @@ export function claimFaceRegions(
 
   const faceSkin = new Set<number>();
   for (let offset = 0; offset < PIXEL_COUNT; offset++) {
-    if (face.faceModelMask[offset] && !claimed.has(offset) && isSkinLike(pixels[offset], 0.045)) {
+    if (face.faceModelMask[offset] && !claimed.has(offset) && isSkinLike(pixels[offset], SKIN_OKLAB_DISTANCE_FACE)) {
       faceSkin.add(offset);
     }
   }
@@ -73,10 +76,10 @@ export function claimFaceRegions(
   if (faceSkin.size > 0) {
     const left = Math.max(0, Math.min(face.faceBbox[0], face.visibleSkinBbox[0]) - 2);
     const top = Math.max(0, Math.min(face.faceBbox[1], face.visibleSkinBbox[1]) - 1);
-    const right = Math.min(63, Math.max(face.faceBbox[2], face.visibleSkinBbox[2]) + 2);
-    const bottom = Math.min(63, Math.max(face.faceBbox[3], face.visibleSkinBbox[3]) + 1);
+    const right = Math.min(MAX_CANVAS_COORD, Math.max(face.faceBbox[2], face.visibleSkinBbox[2]) + 2);
+    const bottom = Math.min(MAX_CANVAS_COORD, Math.max(face.faceBbox[3], face.visibleSkinBbox[3]) + 1);
 
-    const connectedSkin = maskInRect([left, top, right, bottom], (o) => !claimed.has(o) && isSkinLike(pixels[o], 0.045));
+    const connectedSkin = maskInRect([left, top, right, bottom], (o) => !claimed.has(o) && isSkinLike(pixels[o], SKIN_OKLAB_DISTANCE_FACE));
     for (const comp of connectedComponents(connectedSkin, true)) {
       if (comp.some((o) => faceSkin.has(o))) comp.forEach((o) => faceSkin.add(o));
     }
@@ -85,7 +88,7 @@ export function claimFaceRegions(
 
   const bodySkin = new Set<number>();
   for (let offset = 0; offset < PIXEL_COUNT; offset++) {
-    if (foregroundMask[offset] && yOf(offset) > face.chinY && !claimed.has(offset) && isSkinLike(pixels[offset], 0.035)) {
+    if (foregroundMask[offset] && yOf(offset) > face.chinY && !claimed.has(offset) && isSkinLike(pixels[offset], SKIN_OKLAB_DISTANCE_BODY)) {
       bodySkin.add(offset);
     }
   }

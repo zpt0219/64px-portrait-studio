@@ -5,7 +5,8 @@
  */
 
 import { SemanticZone, RectSelection } from '../../core/types';
-import { ZONE_CONFIG, TRANSPARENT_INDEX } from '../../core/constants';
+import { ZONE_CONFIG, TRANSPARENT_INDEX, IMAGE_WIDTH, IMAGE_HEIGHT, MAX_CANVAS_COORD } from '../../core/constants';
+import { coordToOffset, isCoordInBounds } from '../../core/pixelGrid';
 import { EditorSession, clampToCanvas, isInRect } from '../../core/session';
 import { ViewModel } from '../../app/viewModel';
 import { EditorContext } from '../../app/editorContext';
@@ -262,7 +263,7 @@ export class CanvasPanel extends Panel {
     if (!this.isShiftHeld || !this.hover || this.isMouseDown) return null;
     const s = this.vm.session;
     if (s.activeMode !== 'pixel' && !(s.activeMode === 'mask' && s.activeMaskTool === 'bucket')) return null;
-    return this.vm.doc.pixelIndices[this.hover.y * 64 + this.hover.x];
+    return this.vm.doc.pixelIndices[coordToOffset(this.hover.x, this.hover.y)];
   }
 
   private updateEmptyState(): void {
@@ -490,7 +491,7 @@ export class CanvasPanel extends Panel {
     const s = this.vm.session;
     const isProbeActive = s.activeMode === 'pixel' || (s.activeMode === 'mask' && s.activeMaskTool === 'bucket');
     if (held && this.hover && !this.isMouseDown && isProbeActive) {
-      const probeIdx = this.vm.doc.pixelIndices[this.hover.y * 64 + this.hover.x];
+      const probeIdx = this.vm.doc.pixelIndices[coordToOffset(this.hover.x, this.hover.y)];
       this.ctx.setHighlightedPaletteIndex(probeIdx);
     } else if (!held && this.ctx.highlightedPaletteIndex !== null) {
       this.ctx.setHighlightedPaletteIndex(null);
@@ -546,7 +547,7 @@ export class CanvasPanel extends Panel {
     // 像素模式矩形选区工具
     if (s.activeMode === 'pixel' && s.activeTool === 'select') {
       if (e.altKey) {
-        this.vm.pickColor(this.vm.doc.pixelIndices[y * 64 + x], e.button === 2);
+        this.vm.pickColor(this.vm.doc.pixelIndices[coordToOffset(x, y)], e.button === 2);
         return;
       }
       if (e.button !== 0) return;
@@ -605,7 +606,7 @@ export class CanvasPanel extends Panel {
         const s = this.vm.session;
         const isProbeActive = s.activeMode === 'pixel' || (s.activeMode === 'mask' && s.activeMaskTool === 'bucket');
         if (this.isShiftHeld && isProbeActive) {
-          const probeIdx = this.vm.doc.pixelIndices[y * 64 + x];
+          const probeIdx = this.vm.doc.pixelIndices[coordToOffset(x, y)];
           if (this.ctx.highlightedPaletteIndex !== probeIdx) {
             this.ctx.setHighlightedPaletteIndex(probeIdx);
           }
@@ -728,7 +729,7 @@ export class CanvasPanel extends Panel {
   private applyToolAt(x: number, y: number): void {
     const s = this.vm.session;
     if (this.currentIsAlt || (s.activeMode === 'pixel' && s.activeTool === 'eyedropper')) {
-      this.vm.pickColor(this.vm.doc.pixelIndices[y * 64 + x], this.currentMouseButton === 2);
+      this.vm.pickColor(this.vm.doc.pixelIndices[coordToOffset(x, y)], this.currentMouseButton === 2);
       return;
     }
     this.vm.strokeAt(x, y);
@@ -736,16 +737,16 @@ export class CanvasPanel extends Panel {
 
   // ===================== 坐标、悬停信息与光标 =====================
 
-  /** 屏幕坐标 → 未经边界限制的像素坐标 (可为负或大于 63) */
+  /** 屏幕坐标 → 未经边界限制的像素坐标 (可为负或大于 MAX_CANVAS_COORD) */
   private getPixelCoordsRaw(e: { clientX: number; clientY: number }): [number, number] {
     const rect = this.displayCanvas.getBoundingClientRect();
-    return [Math.floor(((e.clientX - rect.left) * 64) / rect.width), Math.floor(((e.clientY - rect.top) * 64) / rect.height)];
+    return [Math.floor(((e.clientX - rect.left) * IMAGE_WIDTH) / rect.width), Math.floor(((e.clientY - rect.top) * IMAGE_HEIGHT) / rect.height)];
   }
 
-  /** 屏幕坐标 → 限制在 0~63 的像素坐标 */
+  /** 屏幕坐标 → 限制在 0~MAX_CANVAS_COORD 的像素坐标 */
   private getPixelCoords(e: { clientX: number; clientY: number }): [number, number] {
     const [rawX, rawY] = this.getPixelCoordsRaw(e);
-    return [Math.max(0, Math.min(63, rawX)), Math.max(0, Math.min(63, rawY))];
+    return [Math.max(0, Math.min(MAX_CANVAS_COORD, rawX)), Math.max(0, Math.min(MAX_CANVAS_COORD, rawY))];
   }
 
   /** 悬停像素 (未按下时) 或拖动中的最后像素；不在画布上时为 null */
@@ -783,12 +784,12 @@ export class CanvasPanel extends Panel {
       return;
     }
 
-    if (x < 0 || x >= 64 || y < 0 || y >= 64) {
+    if (!isCoordInBounds(x, y)) {
       this.clearHoverInfo();
       return;
     }
 
-    const offset = y * 64 + x;
+    const offset = coordToOffset(x, y);
     const colorIdx = this.vm.displayPixels()[offset];
     const isTrans = colorIdx === TRANSPARENT_INDEX;
     const colorHex = isTrans ? '透明' : doc.palette[colorIdx] || '#000000';

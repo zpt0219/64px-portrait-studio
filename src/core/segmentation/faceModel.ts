@@ -1,4 +1,4 @@
-import { PIXEL_COUNT, IMAGE_WIDTH as W } from '../pixelGrid';
+import { PIXEL_COUNT, IMAGE_WIDTH as W, MAX_CANVAS_COORD } from '../pixelGrid';
 import { Bbox, Point } from './types';
 import { xOf, yOf, percentileInt, median, mean, clamp } from './stats';
 
@@ -109,7 +109,7 @@ export function fitFaceEgg(
   const eyeMidY = (leftEyeCenter[1] + rightEyeCenter[1]) / 2;
   const eyeToChin = Math.max(4.0, chinY - eyeMidY);
   const anchoredHeight = Math.max(10, Math.round(eyeToChin / (1.0 - FACE_EGG_MODEL.eyeLineRatio)) + 1);
-  const bottom = clamp(Math.round(chinY), 0, 63);
+  const bottom = clamp(Math.round(chinY), 0, MAX_CANVAS_COORD);
 
   const skinXs = visibleSkinOffsets.map(xOf);
   const skinRows = new Map<number, number[]>();
@@ -159,8 +159,8 @@ export function fitFaceEgg(
 
     for (const centerShift of [-1, 0, 1]) {
       let left = Math.max(0, Math.round(eyeMidX + centerShift - (candidateWidth - 1) / 2));
-      const right = Math.min(63, left + candidateWidth - 1);
-      if (right === 63) left = right - candidateWidth + 1;
+      const right = Math.min(MAX_CANVAS_COORD, left + candidateWidth - 1);
+      if (right === MAX_CANVAS_COORD) left = right - candidateWidth + 1;
       const bbox: Bbox = [left, candidateTop, right, bottom];
 
       for (const deltaAsym of [-0.05, 0, 0.05]) {

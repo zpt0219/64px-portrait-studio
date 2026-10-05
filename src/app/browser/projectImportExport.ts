@@ -91,7 +91,7 @@ function createPaletteSwatchCanvas(doc: PortraitDocument): HTMLCanvasElement {
   ctx.lineWidth = 1;
   ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
 
-  for (let i = 0; i < 36; i++) {
+  for (let i = 0; i < doc.palette.length; i++) {
     const col = i % cols;
     const row = Math.floor(i / cols);
     const x = padding + col * (chipSize + gap);

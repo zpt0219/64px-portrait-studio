@@ -1,5 +1,5 @@
 import { Rgb } from '../../utils/colorUtils';
-import { IMAGE_WIDTH as W } from '../pixelGrid';
+import { IMAGE_WIDTH as W, MAX_CANVAS_COORD } from '../pixelGrid';
 import { Bbox, FaceAnalysis } from './types';
 import { isFaceSkin } from './stats';
 
@@ -10,17 +10,32 @@ const MOUTH_DETECTION_MODEL = {
   minimumSkinNeighbours: 5,
 };
 
+const MOUTH_COLOR_MODEL = {
+  pinkMinRed: 135,
+  pinkMinRedGreenDelta: 30,
+  pinkMinRedBlueDelta: 15,
+  darkWarmMaxChannel: 155,
+  darkWarmMinRedGreenDelta: 18,
+  darkWarmMinRedBlueDelta: 5,
+};
+
 function isMouthColor(rgb: Rgb): boolean {
   const [red, green, blue] = rgb;
-  const pinkOrRed = red >= 135 && red - green >= 30 && red - blue >= 15;
-  const darkWarm = Math.max(red, green, blue) <= 155 && red - green >= 18 && red - blue >= 5;
+  const pinkOrRed =
+    red >= MOUTH_COLOR_MODEL.pinkMinRed &&
+    red - green >= MOUTH_COLOR_MODEL.pinkMinRedGreenDelta &&
+    red - blue >= MOUTH_COLOR_MODEL.pinkMinRedBlueDelta;
+  const darkWarm =
+    Math.max(red, green, blue) <= MOUTH_COLOR_MODEL.darkWarmMaxChannel &&
+    red - green >= MOUTH_COLOR_MODEL.darkWarmMinRedGreenDelta &&
+    red - blue >= MOUTH_COLOR_MODEL.darkWarmMinRedBlueDelta;
   return (pinkOrRed || darkWarm) && !isFaceSkin(rgb);
 }
 
 function skinNeighbourCount(pixels: Rgb[], x: number, y: number): number {
   let count = 0;
-  for (let ny = Math.max(0, y - 1); ny <= Math.min(63, y + 1); ny++) {
-    for (let nx = Math.max(0, x - 1); nx <= Math.min(63, x + 1); nx++) {
+  for (let ny = Math.max(0, y - 1); ny <= Math.min(MAX_CANVAS_COORD, y + 1); ny++) {
+    for (let nx = Math.max(0, x - 1); nx <= Math.min(MAX_CANVAS_COORD, x + 1); nx++) {
       if ((nx !== x || ny !== y) && isFaceSkin(pixels[ny * W + nx])) count++;
     }
   }
@@ -34,7 +49,7 @@ export function detectMouth(pixels: Rgb[], face: FaceAnalysis): { offsets: numbe
   const eyeChinH = face.chinY - eyeCenterY;
 
   const roiLeft = Math.max(0, Math.round(eyeCenterX) - MOUTH_DETECTION_MODEL.roiHalfWidth);
-  const roiRight = Math.min(63, Math.round(eyeCenterX) + MOUTH_DETECTION_MODEL.roiHalfWidth);
+  const roiRight = Math.min(MAX_CANVAS_COORD, Math.round(eyeCenterX) + MOUTH_DETECTION_MODEL.roiHalfWidth);
   const roiTop = Math.max(0, Math.round(eyeCenterY + eyeChinH * MOUTH_DETECTION_MODEL.roiTopEyeChinRatio));
   const roiBottom = Math.max(
     roiTop,

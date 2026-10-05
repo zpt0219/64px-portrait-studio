@@ -13,7 +13,8 @@ import { guessMimeType, loadImage } from './domUtils';
 export async function decodeImageFile(
   file: File,
   targetWidth: number = IMAGE_WIDTH,
-  targetHeight: number = targetWidth
+  targetHeight: number = targetWidth,
+  maxPixelArtScale: number = 4
 ): Promise<DecodedImage | null> {
   const img = await loadImage(await file.arrayBuffer(), guessMimeType(file));
   const origW = img.naturalWidth || img.width;
@@ -33,8 +34,13 @@ export async function decodeImageFile(
   canvas.height = targetHeight;
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   ctx.clearRect(0, 0, targetWidth, targetHeight);
-  // 像素画整数倍缩放用最近邻保真，其余平滑图像用高质量插值
-  if (origW % targetW === 0 && origH % targetH === 0 && origW <= targetWidth * 4) {
+  // 判定是否属于整数倍放大的像素画素材：宽高均能整除且放大倍数在设定上限以内
+  const isPixelArtScaled =
+    origW % targetW === 0 &&
+    origH % targetH === 0 &&
+    origW <= targetWidth * maxPixelArtScale;
+
+  if (isPixelArtScaled) {
     ctx.imageSmoothingEnabled = false;
   } else {
     ctx.imageSmoothingEnabled = true;

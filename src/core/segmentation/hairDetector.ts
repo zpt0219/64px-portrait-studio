@@ -1,5 +1,5 @@
 import { Rgb, rgbToOklab, oklabDistance } from '../../utils/colorUtils';
-import { IMAGE_WIDTH as W, PIXEL_COUNT, connectedComponents, maskFromOffsets } from '../pixelGrid';
+import { IMAGE_WIDTH as W, PIXEL_COUNT, connectedComponents, maskFromOffsets, MAX_CANVAS_COORD } from '../pixelGrid';
 import { Bbox } from './types';
 import { rgbKey, sameRgb, isFaceSkin } from './stats';
 
@@ -27,8 +27,8 @@ export function analyzeHairMask(
   const seedBbox: Bbox = [
     Math.max(0, left - HAIR_PALETTE_MODEL.seedHorizontalPadding),
     Math.max(0, top - HAIR_PALETTE_MODEL.seedVerticalPadding),
-    Math.min(63, right + HAIR_PALETTE_MODEL.seedHorizontalPadding),
-    Math.min(63, eyeLineY + HAIR_PALETTE_MODEL.seedEyeLineExtension),
+    Math.min(MAX_CANVAS_COORD, right + HAIR_PALETTE_MODEL.seedHorizontalPadding),
+    Math.min(MAX_CANVAS_COORD, eyeLineY + HAIR_PALETTE_MODEL.seedEyeLineExtension),
   ];
 
   const outlineKeys = new Set(outlineColors.map(rgbKey));
