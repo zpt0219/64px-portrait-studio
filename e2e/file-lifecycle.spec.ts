@@ -49,20 +49,11 @@ test.describe('E2E: 文件生命周期闭环 (File Lifecycle Round-trip)', () =>
     await page.mouse.move(box.x + 35.5 * stepX, box.y + 20.5 * stepY, { steps: 5 });
     await page.mouse.up();
 
-    // 4. 应用并固化发色置换 (03_blonde_金)
+    // 4. 应用发色置换 (03_blonde_金)
     const goldCard = page.locator('.hair-preset-card[data-preset="03_blonde_金"]');
     await expect(goldCard).toBeVisible();
     await goldCard.click();
-
-    const openModalBtn = page.locator('#btn-hair-open-modal');
-    await expect(openModalBtn).toBeVisible();
-    await openModalBtn.click();
-
-    const confirmOverlay = page.locator('#confirm-modal-overlay');
-    await expect(confirmOverlay).toBeVisible();
-    const commitBtn = confirmOverlay.locator('button.btn-primary', { hasText: '确认应用并固化' });
-    await commitBtn.click();
-    await expect(confirmOverlay).toBeHidden();
+    await expect(goldCard).toHaveClass(/active/);
 
     // 记录导出前当前文档的 100% 完整状态
     const originalSnapshot = await page.evaluate(() => {

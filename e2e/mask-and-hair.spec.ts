@@ -37,28 +37,13 @@ test.describe('E2E: 语义遮罩与经典发色置换全流程', () => {
     const hairRecolorSection = page.locator('#hair-recolor-section');
     await expect(hairRecolorSection).toBeVisible();
 
-    // 4. 点击选择“03 金发”卡片进行试色草稿
+    // 4. 点击选择“03 金发”卡片进行即时发色置换 (可撤销)
     const goldCard = page.locator('.hair-preset-card[data-preset="03_blonde_金"]');
     await expect(goldCard).toBeVisible();
     await goldCard.click();
 
-    // 断言：当前会话中已经进入了金发试色草稿态
-    const draftPreset = await page.evaluate(() => window.__studio?.vm.session.hairDraftPreset);
-    expect(draftPreset).toBe('03_blonde_金');
-
-    // 5. 点击“固化 / 还原当前发色...”按钮唤起弹窗
-    const openModalBtn = page.locator('#btn-hair-open-modal');
-    await expect(openModalBtn).toBeVisible();
-    await openModalBtn.click();
-
-    // 弹窗可见，点击“✓ 确认应用并固化”
-    const confirmOverlay = page.locator('#confirm-modal-overlay');
-    await expect(confirmOverlay).toBeVisible();
-    const commitBtn = confirmOverlay.locator('button.btn-primary', { hasText: '确认应用并固化' });
-    await commitBtn.click();
-
-    // 验证弹窗关闭，发色成功固化到文档 (currentHairPreset === "03_blonde_金")
-    await expect(confirmOverlay).toBeHidden();
+    // 验证发色成功应用并固化到文档 (currentHairPreset === "03_blonde_金")
+    await expect(goldCard).toHaveClass(/active/);
     const committedPreset = await page.evaluate(() => window.__studio?.vm.doc.currentHairPreset);
     expect(committedPreset).toBe('03_blonde_金');
   });
