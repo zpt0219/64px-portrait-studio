@@ -7,7 +7,7 @@
  * 4. 吸管 (Eyedropper)：经典斜向玻璃吸管，以左下滴管尖端为锚点
  */
 
-export interface ToolCursorMap {
+interface ToolCursorMap {
   pen: string;
   eraser: string;
   bucket: string;

@@ -6,7 +6,7 @@ import { PIXEL_COUNT } from './pixelGrid';
 import { detectHairPreset } from './recolorEngine';
 import { PortraitDocument } from '../model/document';
 
-export interface ImageImportResult {
+interface ImageImportResult {
   document: PortraitDocument;
   importInfo: {
     origW: number;
