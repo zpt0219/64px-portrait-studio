@@ -3,31 +3,7 @@
  */
 
 import { DecodedImage } from '../../core/types';
-
-function guessMimeType(file: File): string {
-  if (file.type) return file.type;
-  const name = file.name.toLowerCase();
-  if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'image/jpeg';
-  if (name.endsWith('.webp')) return 'image/webp';
-  if (name.endsWith('.bmp')) return 'image/bmp';
-  return 'image/png';
-}
-
-function loadImage(buffer: ArrayBuffer, mimeType: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(new Blob([buffer], { type: mimeType }));
-    const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      resolve(img);
-    };
-    img.onerror = (err) => {
-      URL.revokeObjectURL(url);
-      reject(err);
-    };
-    img.src = url;
-  });
-}
+import { guessMimeType, loadImage } from './domUtils';
 
 /**
  * 各维度 ≤ 64 时保持原尺寸，否则等比缩放到 64 以内，居中放入 64×64 透明画布。

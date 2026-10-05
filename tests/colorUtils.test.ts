@@ -6,7 +6,7 @@ import {
   findNearestColor,
   quantizeToPalette,
   Rgb,
-} from '../src/core/colorUtils';
+} from '../src/utils/colorUtils';
 import { PALETTE_36 } from '../src/core/constants';
 
 describe('colorUtils', () => {

@@ -4,7 +4,7 @@
 
 import { PixelTool, HairPresetKey } from '../core/types';
 import { PALETTE_FAMILIES, WHITE_PALETTE_INDEX, TRANSPARENT_INDEX, RAMPS_INFO, TIER_NAMES, isHairPresetKey } from '../core/constants';
-import { findNearestColor } from '../core/colorUtils';
+import { findNearestColor } from '../utils/colorUtils';
 import { ViewModel } from '../app/viewModel';
 import { EditorContext } from '../app/editorContext';
 import { Panel } from './Panel';

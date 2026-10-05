@@ -9,7 +9,7 @@
 
 import { SemanticZone, HairPresetKey } from './types';
 import { RAMPS_INFO, TRANSPARENT_INDEX, isHairPresetKey } from './constants';
-import { findNearestColor } from './colorUtils';
+import { findNearestColor } from '../utils/colorUtils';
 import { PIXEL_COUNT } from './pixelGrid';
 import { uint8ArrayToBase64, base64ToUint8Array } from './projectData';
 

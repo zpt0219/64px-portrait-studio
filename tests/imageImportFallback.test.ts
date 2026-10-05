@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { processDecodedImage } from '../src/core/imageImport';
 import { PALETTE_36 } from '../src/core/constants';
 import { DecodedImage, SemanticZone } from '../src/core/types';
-import { hexToRgb } from '../src/core/colorUtils';
+import { hexToRgb } from '../src/utils/colorUtils';
 
 vi.mock('../src/core/segmentation', () => ({ computeSemanticMask: () => { throw new Error('synthetic segmentation failure'); } }));
 

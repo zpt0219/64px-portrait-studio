@@ -1,6 +1,6 @@
 import { SemanticZone, DecodedImage } from './types';
 import { TRANSPARENT_INDEX } from './constants';
-import { Rgb, hexToRgb, quantizeToPalette } from './colorUtils';
+import { Rgb, hexToRgb, quantizeToPalette } from '../utils/colorUtils';
 import { computeSemanticMask } from './segmentation';
 import { PIXEL_COUNT } from './pixelGrid';
 import { detectHairPreset } from './recolorEngine';

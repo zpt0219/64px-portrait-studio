@@ -1,4 +1,4 @@
-import { Rgb, rgbToOklab, oklabDistance } from '../colorUtils';
+import { Rgb, rgbToOklab, oklabDistance } from '../../utils/colorUtils';
 import { PIXEL_COUNT, getNeighbours, connectedComponents, maskFromOffsets } from '../pixelGrid';
 import { sameRgb, rgbKey } from './stats';
 

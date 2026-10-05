@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { computeSemanticMask } from '../src/core/segmentation';
-import { Rgb } from '../src/core/colorUtils';
+import { Rgb } from '../src/utils/colorUtils';
 import { PIXEL_COUNT, IMAGE_WIDTH as W } from '../src/core/pixelGrid';
 import { SemanticZone } from '../src/core/types';
 

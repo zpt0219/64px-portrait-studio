@@ -4,7 +4,7 @@
 
 import { SemanticZone, HairPresetKey } from './types';
 import { RAMPS_INFO, TRANSPARENT_INDEX, isHairPresetKey } from './constants';
-import { hexToRgb, findNearestColor } from './colorUtils';
+import { hexToRgb, findNearestColor } from '../utils/colorUtils';
 import { PIXEL_COUNT } from './pixelGrid';
 
 /** 按相对亮度找出 ramp 中最接近 hex 的阶位 */

@@ -1,4 +1,4 @@
-import { Rgb } from '../colorUtils';
+import { Rgb } from '../../utils/colorUtils';
 import { IMAGE_WIDTH as W } from '../pixelGrid';
 import { Bbox, FaceAnalysis } from './types';
 import { isFaceSkin } from './stats';

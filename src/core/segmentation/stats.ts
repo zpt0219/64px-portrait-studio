@@ -1,37 +1,15 @@
-import { Rgb } from '../colorUtils';
+import { Rgb } from '../../utils/colorUtils';
 import { IMAGE_WIDTH as W, PIXEL_COUNT, floodMask, sideAndTopOffsets } from '../pixelGrid';
 import { Bbox } from './types';
 
-export function percentile(values: number[], fraction: number): number {
-  if (values.length === 0) return 0;
-  const ordered = [...values].sort((a, b) => a - b);
-  const pos = fraction * (ordered.length - 1);
-  const lower = Math.floor(pos);
-  const upper = Math.ceil(pos);
-  if (lower === upper) return ordered[lower];
-  const weight = pos - lower;
-  return ordered[lower] * (1 - weight) + ordered[upper] * weight;
-}
+import { percentile, percentileInt, median, mean, clamp } from '../../utils/mathUtils';
 
-export function percentileInt(values: number[], fraction: number): number {
-  if (values.length === 0) return 0;
-  const ordered = [...values].sort((a, b) => a - b);
-  return ordered[Math.round((ordered.length - 1) * fraction)];
-}
-
-export function median(values: number[]): number {
-  return percentile(values, 0.5);
-}
-
-export function mean(values: number[]): number {
-  return values.reduce((a, b) => a + b, 0) / values.length;
-}
+export { percentile, percentileInt, median, mean, clamp };
 
 export const xOf = (offset: number) => offset % W;
 export const yOf = (offset: number) => Math.floor(offset / W);
 export const sameRgb = (a: Rgb, b: Rgb) => a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
 export const rgbKey = (c: Rgb) => `${c[0]},${c[1]},${c[2]}`;
-export const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
 export function isFaceSkin(rgb: Rgb): boolean {
   const [red, green, blue] = rgb;

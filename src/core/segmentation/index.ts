@@ -2,7 +2,7 @@
  * 5 分区语义遮罩自动识别流水线入口。
  */
 
-import { Rgb } from '../colorUtils';
+import { Rgb } from '../../utils/colorUtils';
 import { estimateForeground } from './background';
 import { analyzePixelOutline } from './contour';
 import { analyzeFace } from './faceAnalysis';

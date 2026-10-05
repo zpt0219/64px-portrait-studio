@@ -1,4 +1,4 @@
-import { Rgb } from '../colorUtils';
+import { Rgb } from '../../utils/colorUtils';
 import { connectedComponents, maskFromOffsets } from '../pixelGrid';
 import { Bbox, Point, FaceAnalysis } from './types';
 import {

@@ -1,4 +1,4 @@
-import { Rgb } from '../colorUtils';
+import { Rgb } from '../../utils/colorUtils';
 import { IMAGE_WIDTH as W, connectedComponents } from '../pixelGrid';
 import { Bbox, Point, HighlightPair, EyeRegion } from './types';
 import { xOf, yOf, mean, clamp, isFaceSkin, maskInRect } from './stats';

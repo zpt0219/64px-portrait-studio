@@ -1,5 +1,5 @@
 import { TRANSPARENT_INDEX } from './constants';
-import { hexToRgb } from './colorUtils';
+import { hexToRgb } from '../utils/colorUtils';
 import { floodFill, borderOffsets } from './pixelGrid';
 import { SemanticZone } from './types';
 import { PortraitDocument } from './document';

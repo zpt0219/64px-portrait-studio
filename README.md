@@ -119,18 +119,24 @@ src/
 │       ├── ReplaceColorModal.ts
 │       └── ConfirmModal.ts
 ├── core/
-│   ├── segmentation.ts      # 5 分区语义遮罩自动识别 (背景、轮廓、面部/眼睛/嘴、头发)
+│   ├── document.ts          # 文档聚合根 (PortraitDocument、克隆、图层组合)
+│   ├── session.ts           # 编辑器会话态 (工具、选区、色板指针)
+│   ├── constants.ts         # 36 色色板、9 大发色色阶、分区配置常量
+│   ├── types.ts             # 领域类型与接口定义
+│   ├── segmentation/        # 5 分区语义遮罩自动识别 (背景、轮廓、面部/眼睛/嘴、头发)
 │   ├── editOps.ts           # 像素 + 遮罩的纯编辑操作 (泛洪、替换、选区块移动/翻转/旋转)
 │   ├── recolorEngine.ts     # 发色识别与 5 阶色阶置换
-│   ├── colorUtils.ts        # 颜色转换、OKLab 色差、色板量化
 │   ├── pixelGrid.ts         # 64×64 网格常量、邻域、连通域、泛洪
 │   ├── maskColors.ts        # 语义分区 RGB 查表
+│   ├── outerWhite.ts        # 连通性外围白底保护提取
 │   ├── imageImport.ts       # 纯像素量化、语义识别与导入结果
-│   ├── projectData.ts       # 工程数据 Base64 编解码与校验、旧版工程迁移
-│   ├── projectArchive.ts    # 无 DOM 的工程 ZIP 读取与校验
-│   └── minimalPng.ts        # 8-bit 索引 PNG 编码与 CRC32
-├── data/palette.ts          # 36 色色板、9 大发色色阶、色系分组（唯一事实数据源）
-└── types/index.ts           # SemanticZone、ZONE_CONFIG、工具类型、端口契约等
+│   ├── projectData.ts       # 工程数据校验与序列化
+│   └── projectMigration.ts  # 工程版本自动迁移
+└── utils/                   # 纯计算与微型编解码工具 (Zero-DOM)
+    ├── minimalPng.ts        # 8-bit 索引 PNG 二进制编码与 CRC32
+    ├── colorUtils.ts        # 颜色转换、OKLab 感知色差与量化
+    ├── base64.ts            # Uint8Array 与 Base64 互相转换
+    └── mathUtils.ts         # 分位数、中位数、均值与 clamp 工具
 ```
 
 ## 数据模型

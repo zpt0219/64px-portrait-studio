@@ -8,7 +8,7 @@ import { base64ToUint8Array, CURRENT_PROJECT_VERSION } from '../src/core/project
 import { cloneDocument } from '../src/core/document';
 import { createValidDocument, VALID_HAIR_PRESET_KEYS } from './helpers/documentFixture';
 import { SemanticZone } from '../src/core/types';
-import { hexToRgb } from '../src/core/colorUtils';
+import { hexToRgb } from '../src/utils/colorUtils';
 
 describe('ZIP Exporter & Snapshot State Consistency (T07 / B7)', () => {
   let originalDocument: any;

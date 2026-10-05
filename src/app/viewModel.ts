@@ -17,7 +17,7 @@ import {
   RAMPS_INFO,
   isHairPresetKey,
 } from '../core/constants';
-import { Rgb, hexToRgb, findNearestColor } from '../core/colorUtils';
+import { Rgb, hexToRgb, findNearestColor } from '../utils/colorUtils';
 import { computeSemanticMask } from '../core/segmentation';
 import { Patch, FULL_CANVAS, extractPatch } from '../core/editOps';
 import { AutosaveService, StorageSaveResult } from './services/AutosaveService';

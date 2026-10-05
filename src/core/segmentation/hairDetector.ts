@@ -1,4 +1,4 @@
-import { Rgb, rgbToOklab, oklabDistance } from '../colorUtils';
+import { Rgb, rgbToOklab, oklabDistance } from '../../utils/colorUtils';
 import { IMAGE_WIDTH as W, PIXEL_COUNT, connectedComponents, maskFromOffsets } from '../pixelGrid';
 import { Bbox } from './types';
 import { rgbKey, sameRgb, isFaceSkin } from './stats';

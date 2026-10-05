@@ -3,7 +3,7 @@
  */
 
 import { TRANSPARENT_INDEX } from '../../core/constants';
-import { hexToRgb } from '../../core/colorUtils';
+import { hexToRgb } from '../../utils/colorUtils';
 import { IMAGE_WIDTH, IMAGE_HEIGHT, PIXEL_COUNT } from '../../core/pixelGrid';
 
 /** 把 64×64 色板索引写入 ctx 左上角 (透明索引写为全透明) */

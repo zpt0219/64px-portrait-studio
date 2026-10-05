@@ -1,4 +1,4 @@
-import { Rgb, Lab, rgbToOklab, oklabDistance } from '../colorUtils';
+import { Rgb, Lab, rgbToOklab, oklabDistance } from '../../utils/colorUtils';
 import { IMAGE_WIDTH as W, PIXEL_COUNT, connectedComponents } from '../pixelGrid';
 import { SemanticZone } from '../types';
 import { FaceAnalysis, ClaimedRegions } from './types';

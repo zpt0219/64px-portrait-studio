@@ -13,44 +13,15 @@ import JSZip from 'jszip';
 import { SemanticZone, ProjectData, DecodedImage } from '../../core/types';
 import { PortraitDocument, cloneDocument } from '../../core/document';
 import { documentToProjectData, validateProjectData, CURRENT_PROJECT_VERSION, upgradeProjectData } from '../../core/projectData';
-import { encodeMinimalIndexedPng } from '../../core/minimalPng';
-import { Rgb, hexToRgb } from '../../core/colorUtils';
+import { encodeMinimalIndexedPng } from '../../utils/minimalPng';
+import { Rgb, hexToRgb } from '../../utils/colorUtils';
 import { drawIndexedPixels } from './pixelCanvas';
 import { zoneRgbTable } from '../../core/maskColors';
 import { IMAGE_WIDTH, IMAGE_HEIGHT, PIXEL_COUNT } from '../../core/pixelGrid';
 import { decodeImageFile } from './imageDecode';
-/**
- * 浏览器端文件下载工具
- */
-export function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  try {
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
+import { downloadBlob, canvasToBlob } from './domUtils';
 
-/**
- * 将 Canvas 转为 PNG Blob (支持异步 Promise 异常捕获)
- */
-export function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
-  return new Promise((resolve, reject) => {
-    try {
-      canvas.toBlob((blob) => {
-        if (blob) resolve(blob);
-        else reject(new Error('Canvas 导出 Blob 失败'));
-      }, 'image/png');
-    } catch (err) {
-      reject(err);
-    }
-  });
-}
+export { downloadBlob, canvasToBlob };
 
 /**
  * 64×64 像素头像 Canvas (保留透明)

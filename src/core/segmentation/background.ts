@@ -1,4 +1,4 @@
-import { Rgb, Lab, rgbToOklab, oklabDistance } from '../colorUtils';
+import { Rgb, Lab, rgbToOklab, oklabDistance } from '../../utils/colorUtils';
 import { borderOffsets, floodMask } from '../pixelGrid';
 import { median, percentile } from './stats';
 

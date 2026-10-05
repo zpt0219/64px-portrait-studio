@@ -1,5 +1,5 @@
 import { SemanticZone, ZONE_CONFIG, ALL_ZONES } from './constants';
-import { Rgb, hexToRgb } from './colorUtils';
+import { Rgb, hexToRgb } from '../utils/colorUtils';
 
 /** 各分区的 RGB 配色；背景色因用途不同 (画布覆盖层 / 导出遮罩) 由调用方指定 */
 export function zoneRgbTable(backgroundRgb: Rgb): Record<SemanticZone, Rgb> {
