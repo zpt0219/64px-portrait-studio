@@ -1,7 +1,7 @@
 import { expect } from 'vitest';
-import { PortraitDocument } from '../../src/model/document';
-import { SemanticZone, HairPresetKey } from '../../src/types';
-import { TRANSPARENT_INDEX, PALETTE_36, RAMPS_INFO } from '../../src/data/palette';
+import { PortraitDocument } from '../../src/core/document';
+import { SemanticZone, HairPresetKey } from '../../src/core/types';
+import { TRANSPARENT_INDEX, PALETTE_36, RAMPS_INFO } from '../../src/core/constants';
 import { PIXEL_COUNT } from '../../src/core/pixelGrid';
 
 export const VALID_HAIR_PRESET_KEYS = Object.keys(RAMPS_INFO) as HairPresetKey[];

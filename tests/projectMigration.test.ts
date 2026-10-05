@@ -6,10 +6,10 @@ import {
   V1_HAIR_RAMPS,
   migrateV1ToV2,
 } from '../src/core/projectMigration';
-import { upgradeProjectZip } from '../src/app/browser/projectArchive';
+import { upgradeProjectZip } from '../src/app/browser/projectImportExport';
 import { validateProjectData, uint8ArrayToBase64 } from '../src/core/projectData';
-import { PALETTE_36, TRANSPARENT_INDEX, RAMPS_INFO } from '../src/data/palette';
-import { SemanticZone } from '../src/types';
+import { PALETTE_36, TRANSPARENT_INDEX, RAMPS_INFO } from '../src/core/constants';
+import { SemanticZone } from '../src/core/types';
 import { PIXEL_COUNT } from '../src/core/pixelGrid';
 
 describe('Project Migration Pipeline (Progressive Version Upgrader)', () => {
@@ -128,10 +128,9 @@ describe('Project Migration Pipeline (Progressive Version Upgrader)', () => {
       return;
     }
 
-    const { importProjectZip } = await import('../src/app/browser/projectArchive');
+    const { importProjectZip } = await import('../src/app/browser/projectImportExport');
     const { projectDataToDocument } = await import('../src/core/projectData');
     const { recolorHair } = await import('../src/core/recolorEngine');
-    const { HAIR_COLOR_PRESETS } = await import('../src/data/palette');
 
     const fileBuf = fs.readFileSync(path);
     const arrayBuf = fileBuf.buffer.slice(fileBuf.byteOffset, fileBuf.byteOffset + fileBuf.byteLength);

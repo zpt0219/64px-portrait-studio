@@ -9,16 +9,16 @@ import {
   assignColorToMask,
   FULL_CANVAS,
 } from '../src/core/editOps';
-import { layersOf } from '../src/model/document';
+import { layersOf } from '../src/core/document';
 import { CommandContext } from '../src/command/command';
-import { SemanticZone } from '../src/types';
-import { TRANSPARENT_INDEX } from '../src/data/palette';
+import { SemanticZone } from '../src/core/types';
+import { TRANSPARENT_INDEX } from '../src/core/constants';
 import { IMAGE_WIDTH as W } from '../src/core/pixelGrid';
 import {
   createValidDocument,
   assertDocumentInvariant,
 } from './helpers/documentFixture';
-import { createInitialSession } from '../src/model/session';
+import { createInitialSession } from '../src/core/session';
 
 function createContext(doc = createValidDocument()) {
   const session = createInitialSession();

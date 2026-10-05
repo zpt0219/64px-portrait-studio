@@ -2,7 +2,7 @@
  * 画布底部悬停与交互状态条组件
  */
 
-import { RectSelection } from '../../types';
+import { RectSelection } from '../../core/types';
 
 export class HoverInfoBar {
   private coordTag: HTMLElement;

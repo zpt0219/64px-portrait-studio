@@ -4,9 +4,9 @@
  * 所有文档修改都必须经过命令，撤销 / 重做与事件广播才能保持一致。
  */
 
-import { RectSelection, HairPresetKey } from '../types';
-import { PortraitDocument } from '../model/document';
-import { EditorSession } from '../model/session';
+import { RectSelection, HairPresetKey } from '../core/types';
+import { PortraitDocument } from '../core/document';
+import { EditorSession } from '../core/session';
 import { StudioEvents } from './events';
 
 export interface CommandContext {

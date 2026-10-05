@@ -3,9 +3,9 @@
  * localStorage 自动暂存与工程 ZIP 共用同一数据结构。
  */
 
-import { ProjectData, SemanticZone } from '../types';
-import { TRANSPARENT_INDEX, isHairPresetKey } from '../data/palette';
-import { PortraitDocument } from '../model/document';
+import { ProjectData, SemanticZone } from './types';
+import { TRANSPARENT_INDEX, isHairPresetKey } from './constants';
+import { PortraitDocument } from './document';
 import { PIXEL_COUNT } from './pixelGrid';
 import { CURRENT_PROJECT_VERSION, upgradeProjectData } from './projectMigration';
 

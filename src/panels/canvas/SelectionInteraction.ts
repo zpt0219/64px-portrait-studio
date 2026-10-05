@@ -2,10 +2,10 @@
  * 画布矩形选区与选区平移/复制状态机
  */
 
-import { RectSelection } from '../../types';
+import { RectSelection } from '../../core/types';
 import { Patch, extractPatch } from '../../core/editOps';
-import { layersOf, PortraitDocument } from '../../model/document';
-import { isInRect } from '../../model/session';
+import { layersOf, PortraitDocument } from '../../core/document';
+import { isInRect } from '../../core/session';
 
 interface BoxSelectState {
   start: [number, number];

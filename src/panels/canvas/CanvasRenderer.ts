@@ -3,7 +3,8 @@
  * 64×64 整张重绘很便宜，所以不做脏矩形；只负责画，不处理输入。
  */
 
-import { ZONE_CONFIG, RectSelection } from '../../types';
+import { RectSelection } from '../../core/types';
+import { ZONE_CONFIG } from '../../core/constants';
 import { Patch } from '../../core/editOps';
 import { drawIndexedPixels } from '../../app/browser/pixelCanvas';
 import { brushRect } from '../../command/pixelCommands';

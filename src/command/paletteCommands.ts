@@ -2,8 +2,8 @@
  * 色板与发色命令
  */
 
-import { HairPresetKey } from '../types';
-import { PALETTE_36 } from '../data/palette';
+import { HairPresetKey } from '../core/types';
+import { PALETTE_36 } from '../core/constants';
 import { Command, CommandContext, SnapshotCommand } from './command';
 
 let globalGestureCounter = 0;

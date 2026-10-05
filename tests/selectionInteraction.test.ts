@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { SelectionInteraction } from '../src/panels/canvas/SelectionInteraction';
-import { createEmptyDocument } from '../src/model/document';
+import { createEmptyDocument } from '../src/core/document';
 
 describe('SelectionInteraction', () => {
   it('manages box selection coordinate bounding correctly', () => {

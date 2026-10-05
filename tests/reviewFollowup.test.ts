@@ -5,7 +5,7 @@ import { createBrowserStorage } from '../src/app/adapters/BrowserStorage';
 import { AutosaveService, KeyValueStore, STORAGE_KEY } from '../src/app/services/AutosaveService';
 import { createValidDocument } from './helpers/documentFixture';
 import { documentToProjectData } from '../src/core/projectData';
-import { SemanticZone } from '../src/types';
+import { SemanticZone } from '../src/core/types';
 import { App } from '../src/app/app';
 import { CanvasPanel } from '../src/panels/canvas/CanvasPanel';
 import { SelectionInteraction } from '../src/panels/canvas/SelectionInteraction';

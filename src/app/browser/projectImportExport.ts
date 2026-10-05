@@ -10,8 +10,8 @@
  */
 
 import JSZip from 'jszip';
-import { SemanticZone, ProjectData, DecodedImage } from '../../types';
-import { PortraitDocument, cloneDocument } from '../../model/document';
+import { SemanticZone, ProjectData, DecodedImage } from '../../core/types';
+import { PortraitDocument, cloneDocument } from '../../core/document';
 import { documentToProjectData, validateProjectData, CURRENT_PROJECT_VERSION, upgradeProjectData } from '../../core/projectData';
 import { encodeMinimalIndexedPng } from '../../core/minimalPng';
 import { Rgb, hexToRgb } from '../../core/colorUtils';
@@ -19,8 +19,22 @@ import { drawIndexedPixels } from './pixelCanvas';
 import { zoneRgbTable } from '../../core/maskColors';
 import { IMAGE_WIDTH, IMAGE_HEIGHT, PIXEL_COUNT } from '../../core/pixelGrid';
 import { decodeImageFile } from './imageDecode';
-
-import { downloadBlob } from '../utils/download';
+/**
+ * 浏览器端文件下载工具
+ */
+export function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
 
 /**
  * 将 Canvas 转为 PNG Blob (支持异步 Promise 异常捕获)

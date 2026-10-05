@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { recolorHair, nearestTierForColor } from '../src/core/recolorEngine';
-import { RAMPS_INFO, PALETTE_36, TRANSPARENT_INDEX } from '../src/data/palette';
-import { SemanticZone, HairPresetKey } from '../src/types';
+import { RAMPS_INFO, PALETTE_36, TRANSPARENT_INDEX } from '../src/core/constants';
+import { SemanticZone, HairPresetKey } from '../src/core/types';
 import { PIXEL_COUNT } from '../src/core/pixelGrid';
 
 describe('recolorEngine (4-tier hair system)', () => {

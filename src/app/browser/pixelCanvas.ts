@@ -2,7 +2,7 @@
  * 色板索引像素与分区遮罩的 Canvas 渲染工具
  */
 
-import { TRANSPARENT_INDEX } from '../../data/palette';
+import { TRANSPARENT_INDEX } from '../../core/constants';
 import { hexToRgb } from '../../core/colorUtils';
 import { IMAGE_WIDTH, IMAGE_HEIGHT, PIXEL_COUNT } from '../../core/pixelGrid';
 

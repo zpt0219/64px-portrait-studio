@@ -6,23 +6,25 @@
  * - 不接触界面 DOM：提示消息走 onNotify 事件，需要用户确认的流程走注入的 StudioPrompts。
  */
 
-import { SemanticZone, ZONE_CONFIG, ALL_ZONES, ProjectData, RectSelection, PixelTool, MaskTool, EditorMode, BrushSize, DecodedImage, HairPresetKey } from '../types';
+import { SemanticZone, ProjectData, RectSelection, PixelTool, MaskTool, EditorMode, BrushSize, DecodedImage, HairPresetKey } from '../core/types';
 import {
+  ZONE_CONFIG,
+  ALL_ZONES,
   TRANSPARENT_INDEX,
   MATCH_COLOR_PRESETS,
   ZONE_DEFAULT_MATCH_PRESET,
   paletteIndexLabel,
   RAMPS_INFO,
   isHairPresetKey,
-} from '../data/palette';
+} from '../core/constants';
 import { Rgb, hexToRgb, findNearestColor } from '../core/colorUtils';
 import { computeSemanticMask } from '../core/segmentation';
 import { Patch, FULL_CANVAS, extractPatch } from '../core/editOps';
 import { AutosaveService, StorageSaveResult } from './services/AutosaveService';
 import { projectDataToDocument } from '../core/projectData';
 import { ExportBackend, PromptOptions, StudioPrompts, unavailableExports } from './ports';
-import { PortraitDocument, createEmptyDocument, cloneDocument, layersOf } from '../model/document';
-import { EditorSession, createInitialSession, ZOOM_STEPS, clampToCanvas } from '../model/session';
+import { PortraitDocument, createEmptyDocument, cloneDocument, layersOf } from '../core/document';
+import { EditorSession, createInitialSession, ZOOM_STEPS, clampToCanvas } from '../core/session';
 import { Command, CommandContext } from '../command/command';
 import { CommandHandler } from '../command/commandHandler';
 import { StudioEvents, ToastLevel, SaveStatus } from '../command/events';

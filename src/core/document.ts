@@ -3,10 +3,10 @@
  * 只能通过 command/ 下的命令修改；载入 / 重置时由 ViewModel 整体替换并清空历史。
  */
 
-import { SemanticZone, HairPresetKey } from '../types';
-import { PALETTE_36, TRANSPARENT_INDEX } from '../data/palette';
-import { PIXEL_COUNT } from '../core/pixelGrid';
-import { Layers } from '../core/editOps';
+import { SemanticZone, HairPresetKey } from './types';
+import { PALETTE_36, TRANSPARENT_INDEX } from './constants';
+import { PIXEL_COUNT } from './pixelGrid';
+import { Layers } from './editOps';
 
 export interface PortraitDocument {
   palette: string[];            // 当前 36 色色板 (可微调)

@@ -4,9 +4,9 @@
  * 不进存档；除选区随撤销快照一起恢复外，其余都不进撤销，由 ViewModel 直接修改后广播 onSessionChanged。
  */
 
-import { SemanticZone, RectSelection, PixelTool, MaskTool, EditorMode, BrushSize, HairPresetKey } from '../types';
-import { TRANSPARENT_INDEX } from '../data/palette';
-import { IMAGE_WIDTH as W, IMAGE_HEIGHT as H } from '../core/pixelGrid';
+import { SemanticZone, RectSelection, PixelTool, MaskTool, EditorMode, BrushSize, HairPresetKey } from './types';
+import { TRANSPARENT_INDEX } from './constants';
+import { IMAGE_WIDTH as W, IMAGE_HEIGHT as H } from './pixelGrid';
 
 /** 画布缩放档位 (每像素屏幕像素数) */
 export const ZOOM_STEPS = [4, 6, 8, 12, 16, 24, 32] as const;

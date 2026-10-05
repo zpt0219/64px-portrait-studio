@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { ViewModel } from '../src/app/viewModel';
 import { App } from '../src/app/app';
-import { SemanticZone } from '../src/types';
-import { createEmptyDocument } from '../src/model/document';
+import { SemanticZone } from '../src/core/types';
+import { createEmptyDocument } from '../src/core/document';
 import { documentToProjectData, base64ToUint8Array } from '../src/core/projectData';
 import { AutosaveService, KeyValueStore } from '../src/app/services/AutosaveService';
 import { createMemoryStore } from './helpers/viewModelFixture';

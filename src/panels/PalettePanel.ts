@@ -2,8 +2,8 @@
  * 像素模式左栏：修图工具、前景/背景色、发色卡、按色系分组的 36 色色板与颜色微调
  */
 
-import { PixelTool, HairPresetKey } from '../types';
-import { PALETTE_FAMILIES, WHITE_PALETTE_INDEX, TRANSPARENT_INDEX, RAMPS_INFO, TIER_NAMES, isHairPresetKey } from '../data/palette';
+import { PixelTool, HairPresetKey } from '../core/types';
+import { PALETTE_FAMILIES, WHITE_PALETTE_INDEX, TRANSPARENT_INDEX, RAMPS_INFO, TIER_NAMES, isHairPresetKey } from '../core/constants';
 import { findNearestColor } from '../core/colorUtils';
 import { ViewModel } from '../app/viewModel';
 import { EditorContext } from '../app/editorContext';

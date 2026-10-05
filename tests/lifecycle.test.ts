@@ -2,7 +2,6 @@ import { createTestViewModel } from './helpers/viewModelFixture';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Panel, flushDirtyPanelsForTest, getDirtyPanelsCountForTest, clearDirtyPanelsForTest } from '../src/panels/Panel';
 import { ViewModel } from '../src/app/viewModel';
-import { Toaster } from '../src/app/toaster';
 import { SelectionInteraction } from '../src/panels/canvas/SelectionInteraction';
 import { ConfirmModal } from '../src/panels/modals/ConfirmModal';
 import { ReplaceColorModal } from '../src/panels/modals/ReplaceColorModal';
@@ -79,55 +78,6 @@ describe('Lifecycle & Dispose Management (T09)', () => {
       flushDirtyPanelsForTest();
       expect(panel1.renderCount).toBe(0);
       expect(panel2.renderCount).toBe(1);
-    });
-  });
-
-  describe('Toaster Lifecycle', () => {
-    it('dispose clears pending setTimeout timers and clears container', () => {
-      vi.useFakeTimers();
-      const container = {
-        appendChild: vi.fn(),
-        innerHTML: '<div>toast</div>',
-      } as unknown as HTMLElement;
-
-      // Mock createElement
-      const mockElement = {
-        className: '',
-        textContent: '',
-        classList: { add: vi.fn() },
-        remove: vi.fn(),
-      };
-      const origCreateElement = globalThis.document?.createElement;
-      globalThis.document = {
-        ...globalThis.document,
-        createElement: vi.fn().mockReturnValue(mockElement),
-      } as unknown as Document;
-
-      const toaster = new Toaster(container);
-      toaster.onNotify('Hello Toast', 'info');
-
-      // Dispose immediately
-      toaster.dispose();
-      expect(toaster.isDisposed).toBe(true);
-      expect(container.innerHTML).toBe('');
-
-      // Advance timers by 5000ms
-      vi.advanceTimersByTime(5000);
-      // Mock element shouldn't have been faded out or removed via timer
-      expect(mockElement.classList.add).not.toHaveBeenCalled();
-      expect(mockElement.remove).not.toHaveBeenCalled();
-
-      // New notifies after dispose are ignored
-      toaster.onNotify('Should not appear', 'error');
-      expect(container.appendChild).toHaveBeenCalledTimes(1); // Only the first one
-
-      // Dispose again is a no-op
-      toaster.dispose();
-
-      vi.useRealTimers();
-      if (origCreateElement) {
-        globalThis.document.createElement = origCreateElement;
-      }
     });
   });
 

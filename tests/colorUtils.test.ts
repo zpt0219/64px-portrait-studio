@@ -7,7 +7,7 @@ import {
   quantizeToPalette,
   Rgb,
 } from '../src/core/colorUtils';
-import { PALETTE_36 } from '../src/data/palette';
+import { PALETTE_36 } from '../src/core/constants';
 
 describe('colorUtils', () => {
   it('hexToRgb parses hex colors correctly', () => {

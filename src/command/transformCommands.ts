@@ -2,10 +2,10 @@
  * 变换命令：选区或整张画布的翻转、顺时针旋转 90°
  */
 
-import { SemanticZone, RectSelection } from '../types';
+import { SemanticZone, RectSelection } from '../core/types';
 import { flipRect, rotateRectCW } from '../core/editOps';
-import { layersOf } from '../model/document';
-import { clampToCanvas } from '../model/session';
+import { layersOf } from '../core/document';
+import { clampToCanvas } from '../core/session';
 import { CommandContext, SnapshotCommand } from './command';
 
 export class FlipCommand extends SnapshotCommand {

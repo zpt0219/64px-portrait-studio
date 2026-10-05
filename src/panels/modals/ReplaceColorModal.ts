@@ -2,8 +2,8 @@
  * 颜色替换对话框 (Shift+R)：选择原颜色 / 新颜色与作用范围 (选区或整张画布)
  */
 
-import { RectSelection } from '../../types';
-import { TRANSPARENT_INDEX, PALETTE_FAMILIES } from '../../data/palette';
+import { RectSelection } from '../../core/types';
+import { TRANSPARENT_INDEX, PALETTE_FAMILIES } from '../../core/constants';
 
 /** 打开弹窗时需要的状态：色板与当前前景 / 背景色 */
 interface ReplaceColorSource {

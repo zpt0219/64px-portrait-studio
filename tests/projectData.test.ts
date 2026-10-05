@@ -6,8 +6,8 @@ import {
   uint8ArrayToBase64,
   CURRENT_PROJECT_VERSION,
 } from '../src/core/projectData';
-import { ProjectData, SemanticZone, HairPresetKey } from '../src/types';
-import { PALETTE_36, TRANSPARENT_INDEX, RAMPS_INFO, isHairPresetKey } from '../src/data/palette';
+import { ProjectData, SemanticZone, HairPresetKey } from '../src/core/types';
+import { PALETTE_36, TRANSPARENT_INDEX, RAMPS_INFO, isHairPresetKey } from '../src/core/constants';
 import { PIXEL_COUNT } from '../src/core/pixelGrid';
 import {
   createValidDocument,

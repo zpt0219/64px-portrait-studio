@@ -1,9 +1,8 @@
-import { downloadBlob } from '../src/app/utils/download';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { canvasToBlob, exportProjectPng, exportProjectZip } from '../src/app/browser/projectArchive';
+import { downloadBlob, canvasToBlob, exportProjectPng, exportProjectZip } from '../src/app/browser/projectImportExport';
 import { createValidDocument } from './helpers/documentFixture';
 import { createTestViewModel } from './helpers/viewModelFixture';
-import { SemanticZone } from '../src/types';
+import { SemanticZone } from '../src/core/types';
 
 describe('PNG Export & Blob Safety (T06 / B6)', () => {
   let createdUrls: string[] = [];

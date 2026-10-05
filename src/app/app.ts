@@ -3,10 +3,11 @@
  * 拥有 ViewModel、EditorContext 和所有面板；自身不修改文档，只调用 ViewModel。
  */
 
-import { ZONE_CONFIG, ALL_ZONES, MaskTool } from '../types';
+import { ZONE_CONFIG, ALL_ZONES } from '../core/constants';
+import { MaskTool } from '../core/types';
 import { AutosaveService, KeyValueStore } from './services/AutosaveService';
 import { createBrowserStorage } from './adapters/BrowserStorage';
-import { exportProjectPng, exportProjectZip, importAnyFile } from './browser/projectArchive';
+import { exportProjectPng, exportProjectZip, importAnyFile } from './browser/projectImportExport';
 import { Header } from '../panels/Header';
 import { PalettePanel } from '../panels/PalettePanel';
 import { MaskPanel } from '../panels/MaskPanel';
@@ -17,10 +18,9 @@ import { ReplaceColorModal } from '../panels/modals/ReplaceColorModal';
 import { ConfirmModal } from '../panels/modals/ConfirmModal';
 import { HelpModal } from '../panels/modals/HelpModal';
 import { StudioEvents } from '../command/events';
-import { EditorSession } from '../model/session';
+import { EditorSession } from '../core/session';
 import { ViewModel } from './viewModel';
 import { EditorContext } from './editorContext';
-import { Toaster } from './toaster';
 
 export class App implements StudioEvents {
   readonly vm: ViewModel;
@@ -35,7 +35,6 @@ export class App implements StudioEvents {
   private canvasPanel!: CanvasPanel;
   private realtimePreview!: RealtimePreview;
   private maskPanel!: MaskPanel;
-  private toaster!: Toaster;
   private palettePanelWrapper!: HTMLElement;
   private maskToolsPanelWrapper!: HTMLElement;
   private fKeyDownTime = 0;
@@ -89,7 +88,6 @@ export class App implements StudioEvents {
           <div id="mask-mount" class="main-sidebar-pane mask-sidebar"></div>
         </main>
       </div>
-      <div class="toast-container" id="toast-container"></div>
     `;
   }
 
@@ -99,8 +97,6 @@ export class App implements StudioEvents {
     this.palettePanelWrapper = byId('palette-panel-wrapper');
     this.maskToolsPanelWrapper = byId('mask-tools-panel-wrapper');
 
-    this.toaster = new Toaster(byId('toast-container'));
-    vm.registerListener(this.toaster);
     vm.registerListener(this);
 
     this.confirmModal = new ConfirmModal(document.body);
@@ -492,7 +488,6 @@ export class App implements StudioEvents {
     this.abortController.abort();
     document.body.classList.remove('is-resizing');
 
-    this.toaster?.dispose();
     this.header?.dispose();
     this.palettePanel?.dispose();
     this.maskToolsPanel?.dispose();

@@ -2,7 +2,7 @@ import type { ViewModel } from '../src/app/viewModel';
 import { createTestViewModel } from './helpers/viewModelFixture';
 import { describe, it, expect } from 'vitest';
 import { PromptOptions } from '../src/app/ports';
-import { SemanticZone, HairPresetKey } from '../src/types';
+import { SemanticZone, HairPresetKey } from '../src/core/types';
 import { assertDocumentInvariant } from './helpers/documentFixture';
 
 describe('Mode Switching and Mask Visibility', () => {

@@ -7,7 +7,7 @@ import {
 import { CommandHandler } from '../src/command/commandHandler';
 import { CommandContext } from '../src/command/command';
 import { createValidDocument } from './helpers/documentFixture';
-import { createInitialSession } from '../src/model/session';
+import { createInitialSession } from '../src/core/session';
 
 function createContext() {
   const doc = createValidDocument();

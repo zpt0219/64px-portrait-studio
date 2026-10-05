@@ -2,10 +2,10 @@
  * 遮罩模式左栏工具箱：遮罩工具与笔刷尺寸、智能框选匹配色组、画面颜色一键转遮罩
  */
 
-import { ZONE_CONFIG, MaskTool, BrushSize } from '../types';
-import { TRANSPARENT_INDEX, MATCH_COLOR_PRESETS, paletteIndexLabel } from '../data/palette';
+import { MaskTool, BrushSize } from '../core/types';
+import { ZONE_CONFIG, TRANSPARENT_INDEX, MATCH_COLOR_PRESETS, paletteIndexLabel } from '../core/constants';
 import { PIXEL_COUNT } from '../core/pixelGrid';
-import { EditorSession } from '../model/session';
+import { EditorSession } from '../core/session';
 import { ViewModel } from '../app/viewModel';
 import { Panel } from './Panel';
 import { TOOL_ICONS } from './canvas/cursors';

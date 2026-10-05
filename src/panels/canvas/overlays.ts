@@ -2,8 +2,8 @@
  * 主画布上的叠加层绘制函数 (均以像素格为单位，zoom 为每格屏幕像素数)
  */
 
-import { SemanticZone, RectSelection } from '../../types';
-import { TRANSPARENT_INDEX, WHITE_PALETTE_INDEX } from '../../data/palette';
+import { SemanticZone, RectSelection } from '../../core/types';
+import { TRANSPARENT_INDEX, WHITE_PALETTE_INDEX } from '../../core/constants';
 import { hexToRgb } from '../../core/colorUtils';
 import { zoneRgbTable } from '../../core/maskColors';
 import { IMAGE_WIDTH as W, IMAGE_HEIGHT as H } from '../../core/pixelGrid';

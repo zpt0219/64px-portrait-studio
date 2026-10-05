@@ -4,9 +4,9 @@
  * 只读取 ViewModel 状态，所有修改都调用 ViewModel 方法；绘制交给 CanvasRenderer。
  */
 
-import { SemanticZone, ZONE_CONFIG, RectSelection } from '../../types';
-import { TRANSPARENT_INDEX } from '../../data/palette';
-import { EditorSession, clampToCanvas, isInRect } from '../../model/session';
+import { SemanticZone, RectSelection } from '../../core/types';
+import { ZONE_CONFIG, TRANSPARENT_INDEX } from '../../core/constants';
+import { EditorSession, clampToCanvas, isInRect } from '../../core/session';
 import { ViewModel } from '../../app/viewModel';
 import { EditorContext } from '../../app/editorContext';
 import { Panel } from '../Panel';

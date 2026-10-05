@@ -7,8 +7,8 @@
  * 3. 采用链式渐进迁移策略 (如 v1 -> v2 -> v3)，确保历史工程平滑升级。
  */
 
-import { SemanticZone, HairPresetKey } from '../types';
-import { RAMPS_INFO, TRANSPARENT_INDEX, isHairPresetKey } from '../data/palette';
+import { SemanticZone, HairPresetKey } from './types';
+import { RAMPS_INFO, TRANSPARENT_INDEX, isHairPresetKey } from './constants';
 import { findNearestColor } from './colorUtils';
 import { PIXEL_COUNT } from './pixelGrid';
 import { uint8ArrayToBase64, base64ToUint8Array } from './projectData';

@@ -1,15 +1,15 @@
 import { createTestViewModel } from './helpers/viewModelFixture';
 import { describe, it, expect, vi } from 'vitest';
-import { importAnyFile, UnsupportedFileError } from '../src/app/browser/projectArchive';
-import * as projectArchive from '../src/app/browser/projectArchive';
+import { importAnyFile, UnsupportedFileError } from '../src/app/browser/projectImportExport';
+import * as projectImportExport from '../src/app/browser/projectImportExport';
 import * as imageDecode from '../src/app/browser/imageDecode';
-import { SemanticZone } from '../src/types';
+import { SemanticZone } from '../src/core/types';
 import { VALID_HAIR_PRESET_KEYS } from './helpers/documentFixture';
 import JSZip from 'jszip';
 import { documentToProjectData } from '../src/core/projectData';
 import { createEmptyDocument } from './helpers/documentFixture';
 
-describe('projectArchive.importAnyFile & Mode Cancellation Atomicity', () => {
+describe('projectImportExport.importAnyFile & Mode Cancellation Atomicity', () => {
   describe('importAnyFile routing & format validation', () => {
     it('throws UnsupportedFileError for non-zip and non-image files', async () => {
       const textFile = new File(['hello'], 'notes.txt', { type: 'text/plain' });

@@ -1,8 +1,8 @@
-import { TRANSPARENT_INDEX } from '../data/palette';
+import { TRANSPARENT_INDEX } from './constants';
 import { hexToRgb } from './colorUtils';
 import { floodFill, borderOffsets } from './pixelGrid';
-import { SemanticZone } from '../types';
-import { PortraitDocument } from '../model/document';
+import { SemanticZone } from './types';
+import { PortraitDocument } from './document';
 
 /**
  * 计算从画布边缘 4-连通可达的白色背景像素偏移数组 (眼睛分区与锁定分区受保护)

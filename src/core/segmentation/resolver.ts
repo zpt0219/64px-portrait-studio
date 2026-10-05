@@ -1,6 +1,6 @@
 import { Rgb, Lab, rgbToOklab, oklabDistance } from '../colorUtils';
 import { IMAGE_WIDTH as W, PIXEL_COUNT, connectedComponents } from '../pixelGrid';
-import { SemanticZone } from '../../types';
+import { SemanticZone } from '../types';
 import { FaceAnalysis, ClaimedRegions } from './types';
 import { xOf, yOf, isFaceSkin, maskInRect } from './stats';
 import { detectMouth } from './mouthDetector';

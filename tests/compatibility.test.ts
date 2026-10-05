@@ -7,8 +7,8 @@ import {
   uint8ArrayToBase64,
   CURRENT_PROJECT_VERSION,
 } from '../src/core/projectData';
-import { PALETTE_36, TRANSPARENT_INDEX } from '../src/data/palette';
-import { DecodedImage, SemanticZone, ProjectData } from '../src/types';
+import { PALETTE_36, TRANSPARENT_INDEX } from '../src/core/constants';
+import { DecodedImage, SemanticZone, ProjectData } from '../src/core/types';
 import { PIXEL_COUNT, IMAGE_WIDTH as W, IMAGE_HEIGHT as H } from '../src/core/pixelGrid';
 import { assertDocumentInvariant, assertDocumentEqual } from './helpers/documentFixture';
 

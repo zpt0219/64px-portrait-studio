@@ -1,5 +1,75 @@
-import { RampInfo, SemanticZone, HairPresetKey } from '../types';
+/**
+ * 统一核心常量与配置数据表
+ */
 
+import {
+  SemanticZone,
+  ZoneMeta,
+  HairPresetKey,
+  RampInfo,
+  PaletteFamily,
+  MatchColorPreset,
+} from './types';
+
+export { SemanticZone };
+
+// ===================== 画布与像素规格 =====================
+export const IMAGE_WIDTH = 64;
+export const IMAGE_HEIGHT = 64;
+export const PIXEL_COUNT = IMAGE_WIDTH * IMAGE_HEIGHT; // 4096
+
+// ===================== 特殊色彩与索引 =====================
+export const WHITE_PALETTE_INDEX = 1; // #FFFFFF 纯白色 (眼白 / 高光 / 服饰白)
+export const TRANSPARENT_INDEX = 255; // 原生透明色 (Aseprite 空白像素 / 橡皮擦删除值)
+
+// ===================== 5 分区语义遮罩配置 =====================
+export const ZONE_CONFIG: Record<SemanticZone, ZoneMeta> = {
+  [SemanticZone.Background]: {
+    zone: SemanticZone.Background,
+    name: '背景 (Background)',
+    shortName: '背景',
+    color: '#64748B',
+    hotkey: '0',
+  },
+  [SemanticZone.Hair]: {
+    zone: SemanticZone.Hair,
+    name: '头发 (Hair)',
+    shortName: '头发',
+    color: '#00E5FF',
+    hotkey: '1',
+  },
+  [SemanticZone.Skin]: {
+    zone: SemanticZone.Skin,
+    name: '皮肤 (Skin)',
+    shortName: '皮肤',
+    color: '#22C55E',
+    hotkey: '2',
+  },
+  [SemanticZone.Eyes]: {
+    zone: SemanticZone.Eyes,
+    name: '眼睛 (Eyes)',
+    shortName: '眼睛',
+    color: '#A855F7',
+    hotkey: '3',
+  },
+  [SemanticZone.Clothes]: {
+    zone: SemanticZone.Clothes,
+    name: '衣服 (Clothes)',
+    shortName: '衣服',
+    color: '#FFD600',
+    hotkey: '4',
+  },
+};
+
+export const ALL_ZONES: SemanticZone[] = [
+  SemanticZone.Hair,
+  SemanticZone.Skin,
+  SemanticZone.Eyes,
+  SemanticZone.Clothes,
+  SemanticZone.Background,
+];
+
+// ===================== 36 色默认基准色板 =====================
 export const PALETTE_36: string[] = [
   // 1. 基础 (Base: #00 ~ #01, #透 255)
   "#000000", "#FFFFFF",
@@ -21,6 +91,7 @@ export const PALETTE_36: string[] = [
   "#310839", "#6B106B", "#B5106B", "#C6218C", "#DE8C94", "#FFA5B5"
 ];
 
+// ===================== 9 种内置发色方案 =====================
 export const RAMPS_INFO: Record<HairPresetKey, RampInfo> = {
   "01_black_黑": { name: "黑色", icon: "🖤", hexes: ["#080821", "#081039", "#212142", "#8473A5"] },
   "02_brown_棕": { name: "棕色", icon: "🤎", hexes: ["#080821", "#3A2016", "#7B4239", "#DE6B42"] },
@@ -33,92 +104,20 @@ export const RAMPS_INFO: Record<HairPresetKey, RampInfo> = {
   "09_red_红": { name: "红色", icon: "❤️", hexes: ["#080821", "#6B0818", "#A51831", "#E8A682"] }
 };
 
-/** 检查给定的键是否为合法的内置发色预设键名 */
-export function isHairPresetKey(key: unknown): key is HairPresetKey {
-  return typeof key === 'string' && Object.hasOwn(RAMPS_INFO, key);
-}
-
 export const TIER_NAMES: string[] = ["绝墨轮廓", "发丝阴影", "发丝主色", "极光高光"];
 
-export const WHITE_PALETTE_INDEX = 1; // #FFFFFF 纯白色 (眼白 / 高光 / 服饰白)
-export const TRANSPARENT_INDEX = 255; // 原生透明色 (Aseprite 空白像素 / 橡皮擦删除值)
-
-/** 色板索引的简短显示文本：透明色显示为「透」 */
-export function paletteIndexLabel(index: number): string {
-  return index === TRANSPARENT_INDEX ? '透' : String(index);
-}
-
-/** 36 色按色相环自然流序分类划分与规范 (连续 0~35 单调递增序号，黑白双色与透明独立排在首行) */
-interface PaletteFamily {
-  id: string;
-  name: string;
-  icon: string;
-  indices: number[];
-}
-
+// ===================== 色系分组与匹配预设 =====================
 export const PALETTE_FAMILIES: PaletteFamily[] = [
-  {
-    id: "base",
-    name: "基础",
-    icon: "⚪",
-    indices: [0, 1, 255] // 纯黑(#00)、纯白(#01)、透明色(255)
-  },
-  {
-    id: "mono",
-    name: "中性",
-    icon: "🖤",
-    indices: [2, 3, 4, 5, 6] // 深暗中性与冷灰/银灰阶
-  },
-  {
-    id: "skin",
-    name: "肤色",
-    icon: "🧑",
-    indices: [7, 8, 9] // 暖肤阴影(#07) -> 润肤色(#08) -> 极浅肤白(#09)
-  },
-  {
-    id: "red",
-    name: "绯红",
-    icon: "❤️",
-    indices: [10, 11, 12, 13] // 暗血红(#10) -> 深宝石红(#11) -> 鲜正红(#12) -> 亮赤红(#13)
-  },
-  {
-    id: "gold",
-    name: "金棕",
-    icon: "💛",
-    indices: [14, 15, 16, 17, 18] // 黑巧栗褐(#14) -> 暖褐棕(#15) -> 焦糖(#16) -> 耀金/金属金(#17) -> 灿金黄(#18)
-  },
-  {
-    id: "green",
-    name: "青翠",
-    icon: "💚",
-    indices: [19, 20, 21, 22] // 深青墨绿(#19) -> 森林深绿(#20) -> 翡翠中绿(#21) -> 薄荷亮绿(#22)
-  },
-  {
-    id: "blue",
-    name: "蔚蓝",
-    icon: "💙",
-    indices: [23, 24, 25, 26] // 海蓝(#23) -> 正蓝(#24) -> 纯净蔚蓝(#25) -> 淡月冷灰(#26)
-  },
-  {
-    id: "purple",
-    name: "魅紫",
-    icon: "💜",
-    indices: [27, 28, 29] // 午夜深紫(#27) -> 皇家暗紫(#28) -> 电光亮紫(#29)
-  },
-  {
-    id: "pink",
-    name: "粉樱",
-    icon: "💗",
-    indices: [30, 31, 32, 33, 34, 35] // 暗紫黑底(#30) -> 深紫红(#31) -> 宝石玫红(#32) -> 艳玫粉(#33) -> 灰樱粉(#34) -> 柔粉白(#35)
-  }
+  { id: "base", name: "基础", icon: "⚪", indices: [0, 1, 255] },
+  { id: "mono", name: "中性", icon: "🖤", indices: [2, 3, 4, 5, 6] },
+  { id: "skin", name: "肤色", icon: "🧑", indices: [7, 8, 9] },
+  { id: "red", name: "绯红", icon: "❤️", indices: [10, 11, 12, 13] },
+  { id: "gold", name: "金棕", icon: "💛", indices: [14, 15, 16, 17, 18] },
+  { id: "green", name: "青翠", icon: "💚", indices: [19, 20, 21, 22] },
+  { id: "blue", name: "蔚蓝", icon: "💙", indices: [23, 24, 25, 26] },
+  { id: "purple", name: "魅紫", icon: "💜", indices: [27, 28, 29] },
+  { id: "pink", name: "粉樱", icon: "💗", indices: [30, 31, 32, 33, 34, 35] },
 ];
-
-interface MatchColorPreset {
-  id: string;
-  name: string;
-  icon: string;
-  getIndices: (palette: string[], currentHairPreset?: HairPresetKey | null) => number[];
-}
 
 export const MATCH_COLOR_PRESETS: MatchColorPreset[] = [
   {
@@ -162,9 +161,17 @@ export const MATCH_COLOR_PRESETS: MatchColorPreset[] = [
   })),
 ];
 
-/** 蒙版语义分区与框选匹配预设的默认映射关系 (头发->发色，皮肤->肤色，眼睛->瞳孔色) */
 export const ZONE_DEFAULT_MATCH_PRESET: Partial<Record<SemanticZone, string>> = {
   [SemanticZone.Hair]: 'current_hair',
   [SemanticZone.Skin]: 'skin',
   [SemanticZone.Eyes]: 'eyes',
 };
+
+// ===================== 辅助判断纯函数 =====================
+export function isHairPresetKey(key: unknown): key is HairPresetKey {
+  return typeof key === 'string' && Object.hasOwn(RAMPS_INFO, key);
+}
+
+export function paletteIndexLabel(index: number): string {
+  return index === TRANSPARENT_INDEX ? '透' : String(index);
+}

@@ -2,8 +2,8 @@
  * 像素类命令：笔划 (画笔 / 橡皮 / 油漆桶，像素与遮罩模式共用)、选区剪贴与移动、替换色、扣外围白底
  */
 
-import { SemanticZone, RectSelection, EditorMode, PixelTool, MaskTool, BrushSize } from '../types';
-import { TRANSPARENT_INDEX } from '../data/palette';
+import { SemanticZone, RectSelection, EditorMode, PixelTool, MaskTool, BrushSize } from '../core/types';
+import { TRANSPARENT_INDEX } from '../core/constants';
 import { IMAGE_WIDTH as W, IMAGE_HEIGHT as H } from '../core/pixelGrid';
 import {
   Patch,
@@ -17,8 +17,8 @@ import {
   assignColorToMask,
   canAssignZone,
 } from '../core/editOps';
-import { layersOf } from '../model/document';
-import { clampToCanvas, isInRect } from '../model/session';
+import { layersOf } from '../core/document';
+import { clampToCanvas, isInRect } from '../core/session';
 import { CommandContext, SnapshotCommand } from './command';
 
 /** 方形笔刷覆盖的矩形 (锚点为鼠标所在像素，1~10 均居中覆盖) */

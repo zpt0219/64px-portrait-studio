@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { findOuterWhiteOffsets } from '../src/core/outerWhite';
-import { createEmptyDocument } from '../src/model/document';
-import { SemanticZone } from '../src/types';
-import { TRANSPARENT_INDEX } from '../src/data/palette';
+import { createEmptyDocument } from '../src/core/document';
+import { SemanticZone } from '../src/core/types';
+import { TRANSPARENT_INDEX } from '../src/core/constants';
 
 describe('findOuterWhiteOffsets', () => {
   it('identifies outer border white pixels but stops at non-white boundaries', () => {

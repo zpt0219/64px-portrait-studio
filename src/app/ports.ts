@@ -1,4 +1,4 @@
-import type { PortraitDocument } from '../model/document';
+import type { PortraitDocument } from '../core/document';
 
 interface PromptButton {
   label: string;

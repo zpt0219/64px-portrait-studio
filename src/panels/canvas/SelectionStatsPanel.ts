@@ -3,10 +3,10 @@
  * 左键行 → 设为前景色，右键 → 设为背景色，悬停 → 在画布上高亮该颜色。
  */
 
-import { RectSelection } from '../../types';
-import { PortraitDocument } from '../../model/document';
-import { EditorSession } from '../../model/session';
-import { TRANSPARENT_INDEX, WHITE_PALETTE_INDEX } from '../../data/palette';
+import { RectSelection } from '../../core/types';
+import { PortraitDocument } from '../../core/document';
+import { EditorSession } from '../../core/session';
+import { TRANSPARENT_INDEX, WHITE_PALETTE_INDEX } from '../../core/constants';
 import { IMAGE_WIDTH as W, IMAGE_HEIGHT as H } from '../../core/pixelGrid';
 
 interface SelectionStatsCallbacks {

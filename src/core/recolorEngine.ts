@@ -2,8 +2,8 @@
  * 发色识别与 4 阶色阶置换 (仅作用于 Hair 分区)
  */
 
-import { SemanticZone, HairPresetKey } from '../types';
-import { RAMPS_INFO, TRANSPARENT_INDEX, isHairPresetKey } from '../data/palette';
+import { SemanticZone, HairPresetKey } from './types';
+import { RAMPS_INFO, TRANSPARENT_INDEX, isHairPresetKey } from './constants';
 import { hexToRgb, findNearestColor } from './colorUtils';
 import { PIXEL_COUNT } from './pixelGrid';
 

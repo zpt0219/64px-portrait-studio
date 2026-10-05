@@ -2,10 +2,10 @@
  * 右栏：5 分区遮罩列表 (显隐 / 锁定 / 像素统计)、遮罩透明度、重新识别、9 大发色预设置换
  */
 
-import { SemanticZone, ZONE_CONFIG, ALL_ZONES } from '../types';
-import { RAMPS_INFO, isHairPresetKey } from '../data/palette';
+import { SemanticZone } from '../core/types';
+import { ZONE_CONFIG, ALL_ZONES, RAMPS_INFO, isHairPresetKey } from '../core/constants';
 import { PIXEL_COUNT } from '../core/pixelGrid';
-import { EditorSession } from '../model/session';
+import { EditorSession } from '../core/session';
 import { ViewModel } from '../app/viewModel';
 import { Panel } from './Panel';
 

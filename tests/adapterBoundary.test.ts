@@ -7,7 +7,7 @@ import { createMemoryStore } from './helpers/viewModelFixture';
 import { documentToProjectData } from '../src/core/projectData';
 import { AutosaveService } from '../src/app/services/AutosaveService';
 import { ExportBackend } from '../src/app/ports';
-import { PortraitDocument } from '../src/model/document';
+import { PortraitDocument } from '../src/core/document';
 
 const sources = import.meta.glob<string>('../src/**/*.ts', { query: '?raw', import: 'default', eager: true });
 
@@ -68,7 +68,7 @@ describe('T07 dependency boundary and injected capabilities', () => {
   });
 
   it('keeps the full domain and ViewModel import graph free of browser implementations', () => {
-    const entries = Object.keys(sources).filter(path => /\/src\/(core|model|command)\//.test(path));
+    const entries = Object.keys(sources).filter(path => /\/src\/(core|command)\//.test(path));
     const graph = inspectGraph([...entries, '../src/app/viewModel.ts', '../src/app/ports.ts', '../src/app/services/AutosaveService.ts']);
     expect(graph).toContain('../src/core/imageImport.ts');
   });
@@ -132,7 +132,7 @@ describe('T07 dependency boundary and injected capabilities', () => {
   });
 
   it('reads a ZIP from bytes without File, Canvas or a browser storage adapter', async () => {
-    const { importProjectZip } = await import('../src/app/browser/projectArchive');
+    const { importProjectZip } = await import('../src/app/browser/projectImportExport');
     const data = documentToProjectData(createValidDocument(), 1700000000);
     const zip = new JSZip();
     zip.file('imagegem_project.json', JSON.stringify(data));

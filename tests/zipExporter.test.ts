@@ -3,11 +3,11 @@ import JSZip from 'jszip';
 import {
   generateProjectZipBlob,
   importProjectZip,
-} from '../src/app/browser/projectArchive';
+} from '../src/app/browser/projectImportExport';
 import { base64ToUint8Array, CURRENT_PROJECT_VERSION } from '../src/core/projectData';
-import { cloneDocument } from '../src/model/document';
+import { cloneDocument } from '../src/core/document';
 import { createValidDocument, VALID_HAIR_PRESET_KEYS } from './helpers/documentFixture';
-import { SemanticZone } from '../src/types';
+import { SemanticZone } from '../src/core/types';
 import { hexToRgb } from '../src/core/colorUtils';
 
 describe('ZIP Exporter & Snapshot State Consistency (T07 / B7)', () => {

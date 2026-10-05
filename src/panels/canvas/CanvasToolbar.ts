@@ -3,7 +3,7 @@
  * 右侧的悬停坐标条由 CanvasPanel 按鼠标位置直接更新。
  */
 
-import { ZOOM_STEPS, DEFAULT_ZOOM } from '../../model/session';
+import { ZOOM_STEPS, DEFAULT_ZOOM } from '../../core/session';
 import { ViewModel } from '../../app/viewModel';
 import { EditorContext } from '../../app/editorContext';
 import { Panel } from '../Panel';

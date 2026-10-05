@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { CommandHandler, UNDO_LIMIT } from '../src/command/commandHandler';
 import { Command, CommandContext } from '../src/command/command';
-import { createEmptyDocument } from '../src/model/document';
-import { createInitialSession } from '../src/model/session';
+import { createEmptyDocument } from '../src/core/document';
+import { createInitialSession } from '../src/core/session';
 
 class MockCommand extends Command {
   readonly name: string;

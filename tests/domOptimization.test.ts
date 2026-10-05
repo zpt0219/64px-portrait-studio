@@ -4,10 +4,10 @@ import { SelectionStatsPanel } from '../src/panels/canvas/SelectionStatsPanel';
 import { HoverInfoBar } from '../src/panels/canvas/HoverInfoBar';
 import { StrokeCommand, StrokeParams } from '../src/command/pixelCommands';
 import { CommandContext } from '../src/command/command';
-import { SemanticZone } from '../src/types';
-import { TRANSPARENT_INDEX } from '../src/data/palette';
+import { SemanticZone } from '../src/core/types';
+import { TRANSPARENT_INDEX } from '../src/core/constants';
 import { createValidDocument } from './helpers/documentFixture';
-import { createInitialSession } from '../src/model/session';
+import { createInitialSession } from '../src/core/session';
 
 describe('DOM Refresh & Event Optimization (T10)', () => {
   describe('SelectionStatsPanel DOM Caching', () => {

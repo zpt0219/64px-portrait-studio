@@ -6,8 +6,8 @@
  * 同一形态下只更新文字/状态而不重建 DOM，避免拖拽中按钮闪烁。
  */
 
-import { RectSelection } from '../../types';
-import { EditorSession } from '../../model/session';
+import { RectSelection } from '../../core/types';
+import { EditorSession } from '../../core/session';
 
 interface ContextBarCallbacks {
   onFlipHorizontal: () => void;

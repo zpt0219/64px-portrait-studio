@@ -2,8 +2,8 @@
  * 遮罩类命令：智能框选、颜色一键转遮罩、重新识别语义遮罩。锁定分区的像素一律跳过。
  */
 
-import { SemanticZone, RectSelection } from '../types';
-import { TRANSPARENT_INDEX } from '../data/palette';
+import { SemanticZone, RectSelection } from '../core/types';
+import { TRANSPARENT_INDEX } from '../core/constants';
 import { IMAGE_WIDTH as W, IMAGE_HEIGHT as H, PIXEL_COUNT } from '../core/pixelGrid';
 import { canAssignZone } from '../core/editOps';
 import { CommandContext, SnapshotCommand } from './command';

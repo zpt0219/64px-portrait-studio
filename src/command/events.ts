@@ -4,7 +4,7 @@
  * 监听者只实现自己关心的方法。
  */
 
-import { EditorSession } from '../model/session';
+import { EditorSession } from '../core/session';
 
 export type ToastLevel = 'info' | 'success' | 'warning' | 'error';
 export type SaveStatus = 'saving' | 'saved' | 'error';

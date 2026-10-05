@@ -3,8 +3,8 @@
  * 被锁定分区的遮罩值在「清空 / 擦除」类操作中保持不变 (像素本身仍会被清空)。
  */
 
-import { SemanticZone, RectSelection } from '../types';
-import { TRANSPARENT_INDEX } from '../data/palette';
+import { SemanticZone, RectSelection } from './types';
+import { TRANSPARENT_INDEX } from './constants';
 import { IMAGE_WIDTH as W, IMAGE_HEIGHT as H, floodFill } from './pixelGrid';
 
 export interface Layers {

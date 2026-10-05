@@ -11,8 +11,8 @@ import {
   FULL_CANVAS,
   Layers,
 } from '../src/core/editOps';
-import { SemanticZone } from '../src/types';
-import { TRANSPARENT_INDEX } from '../src/data/palette';
+import { SemanticZone } from '../src/core/types';
+import { TRANSPARENT_INDEX } from '../src/core/constants';
 import { PIXEL_COUNT, IMAGE_WIDTH as W } from '../src/core/pixelGrid';
 
 function createTestLayers(): Layers {
