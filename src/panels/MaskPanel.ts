@@ -319,23 +319,16 @@ export class MaskPanel extends Panel {
       }
     });
 
-    // 发色预设卡片：点击预览；点击正在预览的卡片则打开固化/还原弹窗
+    // 发色预设卡片：点击直接应用发色 (支持 Ctrl+Z 撤销)
     this.hairGridEl?.addEventListener('click', (e) => {
       const key = (e.target as HTMLElement).closest<HTMLElement>('.hair-preset-card')?.dataset.preset;
       if (!key || !isHairPresetKey(key)) return;
-      if (key === this.vm.session.hairDraftPreset) this.vm.openHairRecolorPrompt();
-      else this.vm.applyHairPreset(key);
-    });
-
-    // 发色草稿：点击打开居中确认弹窗
-    this.container.querySelector('#btn-hair-open-modal')?.addEventListener('click', () => {
-      this.vm.openHairRecolorPrompt();
+      this.vm.applyHairPreset(key);
     });
   }
 
   render(): void {
     const state = { ...this.vm.session, ...this.vm.doc };
-    const draftHairPreset = state.hairDraftPreset;
 
     // 1. 活跃状态指示徽章
     const isMaskActive = state.activeMode === 'mask';
@@ -418,29 +411,25 @@ export class MaskPanel extends Panel {
       this.hairSectionEl.style.display = isHairMaskSelected ? 'block' : 'none';
     }
 
-    // 5.5 更新发色操作入口显隐
+    // 5.5 发色草稿操作框隐藏 (改色已作为即时撤销命令)
     if (this.actionBox) {
-      this.actionBox.style.display = draftHairPreset ? 'block' : 'none';
+      this.actionBox.style.display = 'none';
     }
 
     // 6. 原地修补 9 大发色预设卡片 (零 innerHTML 重建，状态变化才写 badge DOM)
     this.hairPresetCardElements.forEach((cached, key) => {
       const isCommitted = state.currentHairPreset === key;
-      const isDraft = draftHairPreset === key;
-      const isActive = isDraft || (isCommitted && !draftHairPreset);
 
-      cached.card.className = `hair-preset-card ${isActive ? 'active' : ''} ${isDraft ? 'previewing' : ''}`;
-      cached.card.title = isDraft
-        ? `当前正在预览: ${cached.name} (点击可打开固化/还原弹窗)`
-        : (isCommitted ? `已固化发色: ${cached.name}` : `置换发色为: ${cached.name}`);
+      cached.card.className = `hair-preset-card ${isCommitted ? 'active' : ''}`;
+      cached.card.title = isCommitted
+        ? `当前发色: ${cached.name}`
+        : `置换发色为: ${cached.name} (可撤销)`;
 
-      const newBadgeState: 'draft' | 'committed' | 'none' = isDraft ? 'draft' : isCommitted ? 'committed' : 'none';
+      const newBadgeState: 'committed' | 'none' = isCommitted ? 'committed' : 'none';
       if (cached.badgeState !== newBadgeState) {
         cached.badgeState = newBadgeState;
-        if (newBadgeState === 'draft') {
-          cached.badgeWrap.innerHTML = '<span class="preset-badge badge-preview">预览中</span>';
-        } else if (newBadgeState === 'committed') {
-          cached.badgeWrap.innerHTML = '<span class="preset-badge">已固化</span>';
+        if (newBadgeState === 'committed') {
+          cached.badgeWrap.innerHTML = '<span class="preset-badge">当前</span>';
         } else {
           cached.badgeWrap.innerHTML = '';
         }

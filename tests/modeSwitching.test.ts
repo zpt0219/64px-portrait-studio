@@ -70,145 +70,88 @@ describe('Mode Switching and Mask Visibility', () => {
     expect(vm.session.visibleMaskZones).toEqual([SemanticZone.Hair]);
   });
 
-  describe('Hair Recolor Confirmation Before Switching to Pixel Mode', () => {
-    function setupHairDraft(vm: ViewModel, preset: HairPresetKey = '06_silver_银白') {
-      vm.patchSession({ isLoaded: true });
+  describe('Direct Hair Recolor as Undoable Command', () => {
+    function setupHairTestDoc(vm: ViewModel) {
+      vm.patchSession({ isLoaded: true, activeMode: 'mask', visibleMaskZones: [SemanticZone.Hair] });
       // Mark some pixels as non-transparent Hair so document invariant holds
       vm.doc.pixelIndices[0] = 0;
       vm.doc.pixelIndices[1] = 0;
       vm.doc.semanticMask[0] = SemanticZone.Hair;
       vm.doc.semanticMask[1] = SemanticZone.Hair;
       assertDocumentInvariant(vm.doc);
-      vm.applyHairPreset(preset);
-      expect(vm.session.activeMode).toBe('mask');
-      expect(vm.session.hairDraftPreset).toBe(preset);
     }
 
-    function createPromptCapture() {
-      let latest: PromptOptions | null = null;
-      return {
-        capture: (opts: PromptOptions) => {
-          latest = opts;
-        },
-        getLatest(): PromptOptions {
-          if (!latest) throw new Error('Expected prompt to have been called');
-          return latest;
-        },
-      };
-    }
-
-    it('prompts confirmation modal before switching to pixel mode and commits recolor upon confirm', () => {
+    it('immediately recolors hair pixels and can be undone cleanly with undo()', () => {
       const vm = createTestViewModel();
-      setupHairDraft(vm, '06_silver_银白');
+      setupHairTestDoc(vm);
+      const originalPreset = vm.doc.currentHairPreset;
+      const originalPixel0 = vm.doc.pixelIndices[0];
 
-      const prompt = createPromptCapture();
-      vm.setPrompts({ confirm: prompt.capture });
+      vm.applyHairPreset('06_silver_银白');
+      expect(vm.doc.currentHairPreset).toBe('06_silver_银白');
 
-      vm.setMode('pixel');
-      const promptOptions = prompt.getLatest();
-      expect(promptOptions.title).toBe('切换至画板模式前发色确认');
-      expect(promptOptions.message).toContain('银白');
-      expect(promptOptions.buttons).toHaveLength(3);
-      expect(promptOptions.buttons[0].label).toBe('✓ 确认替换并切换');
-      expect(promptOptions.buttons[1].label).toBe('✕ 放弃替换并切换');
-      expect(promptOptions.buttons[2].label).toBe('继续试色');
+      // Undo reverts hair recolor and preset
+      vm.undo();
+      expect(vm.doc.currentHairPreset).toBe(originalPreset);
+      expect(vm.doc.pixelIndices[0]).toBe(originalPixel0);
 
-      // Modal is open, mode has not switched yet
-      expect(vm.session.activeMode).toBe('mask');
-      expect(vm.session.hairDraftPreset).toBe('06_silver_银白');
-
-      // Click confirm: commits recolor and enters pixel mode
-      promptOptions.buttons[0].onClick();
-      expect(vm.session.activeMode).toBe('pixel');
-      expect(vm.session.hairDraftPreset).toBeNull();
+      // Redo restores hair recolor
+      vm.redo();
       expect(vm.doc.currentHairPreset).toBe('06_silver_银白');
     });
 
-    it('discards hair recolor when user clicks discard and enters pixel mode', () => {
+    it('switches between mask and pixel mode without prompting any modal', () => {
       const vm = createTestViewModel();
-      setupHairDraft(vm, '06_silver_银白');
-      const originalPreset = vm.doc.currentHairPreset;
+      setupHairTestDoc(vm);
+      let promptCalled = false;
+      vm.setPrompts({ confirm: () => { promptCalled = true; } });
 
-      const prompt = createPromptCapture();
-      vm.setPrompts({ confirm: prompt.capture });
-
+      vm.applyHairPreset('06_silver_银白');
       vm.setMode('pixel');
-      const promptOptions = prompt.getLatest();
 
-      // Click discard button
-      promptOptions.buttons[1].onClick();
+      expect(promptCalled).toBe(false);
       expect(vm.session.activeMode).toBe('pixel');
-      expect(vm.session.hairDraftPreset).toBeNull();
-      expect(vm.doc.currentHairPreset).toBe(originalPreset);
+      expect(vm.doc.currentHairPreset).toBe('06_silver_银白');
     });
 
-    it('stays in mask mode when user clicks continue testing', () => {
+    it('switches mode to pixel without prompts when clearing all mask visibility', () => {
       const vm = createTestViewModel();
-      setupHairDraft(vm, '06_silver_银白');
+      setupHairTestDoc(vm);
+      let promptCalled = false;
+      vm.setPrompts({ confirm: () => { promptCalled = true; } });
 
-      const prompt = createPromptCapture();
-      vm.setPrompts({ confirm: prompt.capture });
-
-      vm.setMode('pixel');
-      const promptOptions = prompt.getLatest();
-
-      // Click cancel/continue testing
-      promptOptions.buttons[2].onClick();
-      expect(vm.session.activeMode).toBe('mask');
-      expect(vm.session.hairDraftPreset).toBe('06_silver_银白');
-    });
-
-    it('prompts confirmation when clearing all mask visibility with active hair draft', () => {
-      const vm = createTestViewModel();
-      setupHairDraft(vm, '06_silver_银白');
-
-      const prompt = createPromptCapture();
-      vm.setPrompts({ confirm: prompt.capture });
-
+      vm.applyHairPreset('06_silver_银白');
       vm.setAllZonesVisibility(false);
-      const promptOptions = prompt.getLatest();
-      expect(vm.session.activeMode).toBe('mask');
 
-      // Click confirm
-      promptOptions.buttons[0].onClick();
+      expect(promptCalled).toBe(false);
       expect(vm.session.activeMode).toBe('pixel');
-      expect(vm.session.hairDraftPreset).toBeNull();
     });
 
-    it('prompts confirmation when unchecking last visible mask zone with active hair draft', () => {
+    it('switches mode to pixel without prompts when unchecking last visible mask zone', () => {
       const vm = createTestViewModel();
-      setupHairDraft(vm, '06_silver_银白');
-      vm.patchSession({ visibleMaskZones: [SemanticZone.Hair] });
+      setupHairTestDoc(vm);
+      let promptCalled = false;
+      vm.setPrompts({ confirm: () => { promptCalled = true; } });
 
-      const prompt = createPromptCapture();
-      vm.setPrompts({ confirm: prompt.capture });
-
+      vm.applyHairPreset('06_silver_银白');
       vm.toggleZoneVisibility(SemanticZone.Hair, false);
-      const promptOptions = prompt.getLatest();
-      expect(vm.session.activeMode).toBe('mask');
 
-      // Click confirm
-      promptOptions.buttons[0].onClick();
+      expect(promptCalled).toBe(false);
       expect(vm.session.activeMode).toBe('pixel');
-      expect(vm.session.hairDraftPreset).toBeNull();
     });
 
-    it('prompts confirmation when selecting palette color with active hair draft', () => {
+    it('switches mode to pixel without prompts when selecting palette color', () => {
       const vm = createTestViewModel();
-      setupHairDraft(vm, '06_silver_银白');
+      setupHairTestDoc(vm);
+      let promptCalled = false;
+      vm.setPrompts({ confirm: () => { promptCalled = true; } });
 
-      const prompt = createPromptCapture();
-      vm.setPrompts({ confirm: prompt.capture });
-
+      vm.applyHairPreset('06_silver_银白');
       vm.selectPaletteIndex(5);
-      const promptOptions = prompt.getLatest();
-      expect(vm.session.activeMode).toBe('mask');
 
-      // Click confirm
-      promptOptions.buttons[0].onClick();
+      expect(promptCalled).toBe(false);
       expect(vm.session.activeMode).toBe('pixel');
       expect(vm.session.activePaletteIndex).toBe(5);
-      expect(vm.session.hairDraftPreset).toBeNull();
     });
   });
 

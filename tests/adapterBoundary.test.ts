@@ -68,12 +68,9 @@ describe('T07 dependency boundary and injected capabilities', () => {
   });
 
   it('keeps the full domain and ViewModel import graph free of browser implementations', () => {
-    const entries = Object.keys(sources).filter(path => /\/src\/(core|model|command)\//.test(path) || /\/app\/controllers\//.test(path));
+    const entries = Object.keys(sources).filter(path => /\/src\/(core|model|command)\//.test(path));
     const graph = inspectGraph([...entries, '../src/app/viewModel.ts', '../src/app/ports.ts', '../src/app/services/AutosaveService.ts']);
     expect(graph).toContain('../src/core/imageImport.ts');
-    for (const path of Object.keys(sources).filter(path => /\/app\/controllers\//.test(path))) {
-      expect(sources[path]).not.toMatch(/from\s+['"][^'"]*viewModel['"]/);
-    }
   });
 
   it('imports, constructs and edits headlessly without reading browser globals or reporting saved', async () => {

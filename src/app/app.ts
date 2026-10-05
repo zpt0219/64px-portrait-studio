@@ -6,8 +6,7 @@
 import { ZONE_CONFIG, ALL_ZONES, MaskTool } from '../types';
 import { AutosaveService, KeyValueStore } from './services/AutosaveService';
 import { createBrowserStorage } from './adapters/BrowserStorage';
-import { exportProjectPng, exportProjectZip, importProjectZip } from './browser/projectArchive';
-import { decodeImageFile } from './browser/imageDecode';
+import { exportProjectPng, exportProjectZip, importAnyFile } from './browser/projectArchive';
 import { Header } from '../panels/Header';
 import { PalettePanel } from '../panels/PalettePanel';
 import { MaskPanel } from '../panels/MaskPanel';
@@ -22,13 +21,11 @@ import { EditorSession } from '../model/session';
 import { ViewModel } from './viewModel';
 import { EditorContext } from './editorContext';
 import { Toaster } from './toaster';
-import { ImportCoordinator } from './controllers/ImportCoordinator';
 
 export class App implements StudioEvents {
   readonly vm: ViewModel;
   private readonly browserStorage: KeyValueStore;
   private readonly ctx = new EditorContext(() => this.vm.onContextChanged());
-  private readonly importCoordinator: ImportCoordinator;
   private header!: Header;
   private replaceColorModal!: ReplaceColorModal;
   private confirmModal!: ConfirmModal;
@@ -51,11 +48,6 @@ export class App implements StudioEvents {
       autosave: new AutosaveService(this.browserStorage),
       exports: { exportPng: exportProjectPng, exportZip: exportProjectZip },
     });
-    this.importCoordinator = new ImportCoordinator({
-      loadProject: (data) => this.vm.loadProject(data),
-      importImage: (image) => this.vm.importImage(image),
-      notify: (msg, lvl) => this.vm.notify(msg, lvl),
-    }, { importProjectZip, decodeImageFile });
 
     this.buildDomLayout();
     this.createPanels();
@@ -151,7 +143,6 @@ export class App implements StudioEvents {
   }
 
   onDocumentReplaced(): void {
-    this.importCoordinator.cancelPending();
     this.confirmModal.dismiss();
     this.replaceColorModal.close();
   }
@@ -160,8 +151,39 @@ export class App implements StudioEvents {
 
   /** 处理拖入或选择的文件：工程 ZIP 完整恢复，普通图片作为新项目载入 */
   private async handleIncomingFile(file: File): Promise<void> {
-    if (this.isDisposed) return;
-    await this.importCoordinator.handleFile(file);
+    if (this.isDisposed || !file) return;
+
+    const executeImport = async () => {
+      try {
+        const result = await importAnyFile(file);
+        if (result.kind === 'project') {
+          this.vm.loadProject(result.data);
+          this.vm.notify('🎉 成功载入工程 ZIP！已完整恢复画布、遮罩与色板', 'success');
+        } else {
+          this.vm.importImage(result.image);
+        }
+      } catch (err) {
+        console.error('File load error:', err);
+        const message = err instanceof Error ? err.message : String(err);
+        this.vm.notify(message, 'error');
+      }
+    };
+
+    if (this.vm.session.isLoaded) {
+      this.confirmModal.show({
+        icon: '📁',
+        title: '载入新文件确认',
+        message: '当前画布已有正在编辑的项目，是否确认载入新文件？',
+        subMessage: '未导出的像素修图与修改将被新内容覆盖。',
+        buttons: [
+          { label: '覆盖并载入', className: 'btn-danger', onClick: () => { void executeImport(); } },
+          { label: '取消', className: 'btn-ghost', onClick: () => {} },
+        ],
+      });
+      return;
+    }
+
+    await executeImport();
   }
 
   // ===================== 弹窗与画中画 =====================
@@ -469,8 +491,6 @@ export class App implements StudioEvents {
 
     this.abortController.abort();
     document.body.classList.remove('is-resizing');
-
-    this.importCoordinator.cancelPending();
 
     this.toaster?.dispose();
     this.header?.dispose();

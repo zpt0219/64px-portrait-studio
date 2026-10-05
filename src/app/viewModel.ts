@@ -7,26 +7,47 @@
  */
 
 import { SemanticZone, ZONE_CONFIG, ALL_ZONES, ProjectData, RectSelection, PixelTool, MaskTool, EditorMode, BrushSize, DecodedImage, HairPresetKey } from '../types';
-import { TRANSPARENT_INDEX, MATCH_COLOR_PRESETS, ZONE_DEFAULT_MATCH_PRESET, paletteIndexLabel } from '../data/palette';
-import { Rgb, hexToRgb } from '../core/colorUtils';
+import {
+  TRANSPARENT_INDEX,
+  MATCH_COLOR_PRESETS,
+  ZONE_DEFAULT_MATCH_PRESET,
+  paletteIndexLabel,
+  RAMPS_INFO,
+  isHairPresetKey,
+} from '../data/palette';
+import { Rgb, hexToRgb, findNearestColor } from '../core/colorUtils';
 import { computeSemanticMask } from '../core/segmentation';
-import { Patch } from '../core/editOps';
+import { Patch, FULL_CANVAS, extractPatch } from '../core/editOps';
 import { AutosaveService, StorageSaveResult } from './services/AutosaveService';
 import { projectDataToDocument } from '../core/projectData';
 import { ExportBackend, PromptOptions, StudioPrompts, unavailableExports } from './ports';
-import { PortraitDocument, createEmptyDocument, cloneDocument } from '../model/document';
-import { EditorSession, createInitialSession, ZOOM_STEPS } from '../model/session';
+import { PortraitDocument, createEmptyDocument, cloneDocument, layersOf } from '../model/document';
+import { EditorSession, createInitialSession, ZOOM_STEPS, clampToCanvas } from '../model/session';
 import { Command, CommandContext } from '../command/command';
 import { CommandHandler } from '../command/commandHandler';
 import { StudioEvents, ToastLevel, SaveStatus } from '../command/events';
-import { StrokeCommand } from '../command/pixelCommands';
+import {
+  StrokeCommand,
+  MovePatchCommand,
+  PastePatchCommand,
+  ClearRectCommand,
+  ReplaceColorCommand,
+  ClearPixelsCommand,
+} from '../command/pixelCommands';
+import { FlipCommand, RotateCommand } from '../command/transformCommands';
 import { MaskBoxSelectCommand, AssignColorToZoneCommand, SetMaskCommand } from '../command/maskCommands';
-import { SetPaletteColorCommand, ResetPaletteCommand, nextGestureId } from '../command/paletteCommands';
+import {
+  SetPaletteColorCommand,
+  ResetPaletteCommand,
+  SetHairPresetCommand,
+  CommitHairRecolorCommand,
+  nextGestureId,
+} from '../command/paletteCommands';
+import { IMAGE_WIDTH, IMAGE_HEIGHT } from '../core/pixelGrid';
+import { findOuterWhiteOffsets } from '../core/outerWhite';
+import { recolorHair } from '../core/recolorEngine';
 
 import { processDecodedImage } from '../core/imageImport';
-import { HairDraftController } from './controllers/HairDraftController';
-import { SelectionService } from './controllers/SelectionService';
-import { ExportService } from './controllers/ExportService';
 
 export class ViewModel implements StudioEvents {
   readonly doc: PortraitDocument = createEmptyDocument();
@@ -35,6 +56,8 @@ export class ViewModel implements StudioEvents {
   private documentGeneration = 0;
   private strokeGeneration = 0;
   private readonly autosave: AutosaveService;
+  private clipboard: Patch | null = null;
+  private readonly exports: ExportBackend;
 
   private readonly ctx: CommandContext;
   private readonly handler: CommandHandler;
@@ -52,48 +75,11 @@ export class ViewModel implements StudioEvents {
     return this.documentGeneration;
   }
 
-  // 领域子控制器
-  private readonly hairDraft: HairDraftController;
-  private readonly selectionService: SelectionService;
-  private readonly exportService: ExportService;
-
   constructor(options?: { autosave?: AutosaveService; exports?: ExportBackend }) {
     this.autosave = options?.autosave ?? new AutosaveService();
+    this.exports = options?.exports ?? unavailableExports;
     this.ctx = { doc: this.doc, session: this.session, events: this };
     this.handler = new CommandHandler(this.ctx);
-
-    this.hairDraft = new HairDraftController({
-      getDoc: () => this.doc,
-      getSession: () => this.session,
-      patchSession: (patch) => this.patch(patch),
-      setMode: (mode) => this.setMode(mode),
-      setActiveZone: (zone) => this.setActiveZone(zone),
-      executeCommand: (cmd) => this.execute(cmd),
-      notify: (msg, lvl) => this.notify(msg, lvl),
-      confirm: (opts) => this.confirmWithGeneration(opts),
-    });
-
-    this.selectionService = new SelectionService({
-      getDoc: () => this.doc,
-      getSession: () => this.session,
-      getLockedZones: () => this.lockedZones,
-      executeCommand: (cmd) => this.execute(cmd),
-      patchSession: (patch) => this.patch(patch),
-      notify: (msg, lvl) => this.notify(msg, lvl),
-    });
-
-    const exports = options?.exports ?? unavailableExports;
-    this.exportService = new ExportService({
-      exportPng: doc => exports.exportPng(doc),
-      exportZip: doc => exports.exportZip(doc),
-      isLoaded: () => !this._isDisposed && this.session.isLoaded,
-      hasHairDraft: () => this.hasHairDraft(),
-      hairDraftName: () => this.hairDraftName(),
-      confirmHairDraft: (opts) => this.confirmHairDraft(opts),
-      getDocumentGeneration: () => this.documentGeneration,
-      captureDocument: () => cloneDocument(this.doc),
-      notify: (msg, lvl) => this.notify(msg, lvl),
-    });
   }
 
   // ===================== 命令执行与会话管理 =====================
@@ -196,27 +182,21 @@ export class ViewModel implements StudioEvents {
   }
 
   onDocumentReplaced(): void {
-    this.hairDraft.invalidatePreview();
     this.documentChanged((l) => l.onDocumentReplaced?.());
   }
   onPixelsChanged(): void {
-    this.hairDraft.invalidatePreview();
     this.documentChanged((l) => l.onPixelsChanged?.());
   }
   onMaskChanged(): void {
-    this.hairDraft.invalidatePreview();
     this.documentChanged((l) => l.onMaskChanged?.());
   }
   onPaletteChanged(): void {
-    this.hairDraft.invalidatePreview();
     this.documentChanged((l) => l.onPaletteChanged?.());
   }
   onHairPresetChanged(): void {
-    this.hairDraft.invalidatePreview();
     this.documentChanged((l) => l.onHairPresetChanged?.());
   }
   onSessionChanged(keys: (keyof EditorSession)[]): void {
-    if (keys.includes('hairDraftPreset')) this.hairDraft.invalidatePreview();
     this.fanOut((l) => l.onSessionChanged?.(keys));
   }
   onHistoryChanged(): void {
@@ -266,7 +246,7 @@ export class ViewModel implements StudioEvents {
     const strokeFields: (keyof EditorSession)[] = [
       'activeMode', 'activeTool', 'activeMaskTool', 'activePaletteIndex', 'bgPaletteIndex',
       'activeZone', 'maskBrushSize', 'bucketConnectivity', 'lockedMaskZones', 'selection',
-      'maskMatchColors', 'hairDraftPreset',
+      'maskMatchColors',
     ];
     if (keys.some(k => strokeFields.includes(k))) this.endStroke();
     Object.assign(this.session, changes);
@@ -375,6 +355,24 @@ export class ViewModel implements StudioEvents {
   /** 新建空白画布 (64×64) */
   newBlankProject(): void {
     if (this._isDisposed) return;
+    if (this.session.isLoaded) {
+      this.confirmWithGeneration({
+        icon: '📄',
+        title: '新建空白项目',
+        message: '确定要新建空白画布吗？',
+        subMessage: '当前编辑中的未导出像素修图将被覆盖。',
+        buttons: [
+          { label: '新建画布', className: 'btn-danger', onClick: () => this.doNewBlankProject() },
+          { label: '取消', className: 'btn-ghost', onClick: () => {} },
+        ],
+      });
+      return;
+    }
+    this.doNewBlankProject();
+  }
+
+  private doNewBlankProject(): void {
+    if (this._isDisposed) return;
     const doc = createEmptyDocument();
     this.replaceDocument(doc, {
       visibleMaskZones: [],
@@ -405,29 +403,6 @@ export class ViewModel implements StudioEvents {
   setMode(mode: EditorMode, onProceed?: () => void): void {
     if (this._isDisposed) return;
     this.endStroke();
-    if (mode === 'pixel' && this.session.hairDraftPreset !== null) {
-      const draftName = this.hairDraft.hairDraftName();
-      this.confirmHairDraft({
-        icon: '💇',
-        title: '切换至画板模式前发色确认',
-        message: `当前正在试色新发色【${draftName}】，尚未固化到画面。`,
-        subMessage: '切换到画板模式前，请选择是否将此发色替换应用到画面中：',
-        applyLabel: '✓ 确认替换并切换',
-        onApplied: () => {
-          this.applyMode(mode);
-          onProceed?.();
-        },
-        otherLabel: '✕ 放弃替换并切换',
-        onOther: () => {
-          this.discardHairRecolor();
-          this.applyMode(mode);
-          onProceed?.();
-        },
-        cancelLabel: '继续试色',
-      });
-      return;
-    }
-
     if (this.session.activeMode === mode) {
       onProceed?.();
       return;
@@ -474,7 +449,6 @@ export class ViewModel implements StudioEvents {
       this.ensureMaskMode(changes, false);
       this.notify('🎭 已切换至【语义遮罩模式】(快捷键: W)');
     } else {
-      changes.hairDraftPreset = null;
       this.notify('🎨 已切换至【像素修图模式】(快捷键: Q)');
     }
     this.patch(changes);
@@ -600,40 +574,23 @@ export class ViewModel implements StudioEvents {
     const visibleMaskZones = ALL_ZONES.filter((z) => current.has(z));
     const showMaskOverlay = visibleMaskZones.length > 0;
 
-    if (visibleMaskZones.length === 0 && this.session.activeMode === 'mask') {
-      if (this.session.hairDraftPreset !== null) {
-        this.setMode('pixel', () => {
-          this.patch({ visibleMaskZones, showMaskOverlay });
-        });
-        return;
-      }
-      this.patch({ visibleMaskZones, showMaskOverlay });
-      this.setMode('pixel');
-      return;
-    }
-
     this.patch({ visibleMaskZones, showMaskOverlay });
+
+    if (visibleMaskZones.length === 0 && this.session.activeMode === 'mask') {
+      this.setMode('pixel');
+    }
   }
 
   setAllZonesVisibility(visible: boolean): void {
     const visibleMaskZones = visible ? [...ALL_ZONES] : [];
     const showMaskOverlay = visible;
 
-    if (!visible && this.session.activeMode === 'mask') {
-      if (this.session.hairDraftPreset !== null) {
-        this.setMode('pixel', () => {
-          this.patch({ visibleMaskZones, showMaskOverlay });
-        });
-        return;
-      }
-      this.patch({ visibleMaskZones, showMaskOverlay });
-      this.setMode('pixel');
-      return;
-    }
-
     this.patch({ visibleMaskZones, showMaskOverlay });
     if (!visible) {
       this.notify('已隐藏全部遮罩图层');
+      if (this.session.activeMode === 'mask') {
+        this.setMode('pixel');
+      }
     } else {
       this.notify('已显示全部 5 个遮罩图层');
     }
@@ -766,57 +723,83 @@ export class ViewModel implements StudioEvents {
     }
   }
 
-  // ===================== 发色草稿 (委托给 HairDraftController) =====================
+  // ===================== 发色与预设 =====================
 
   hasHairDraft(): boolean {
-    return this.hairDraft.hasHairDraft();
+    return false;
   }
 
   hairDraftName(): string {
-    return this.hairDraft.hairDraftName();
+    return '';
   }
 
   displayPixels(): Uint8Array {
-    return this.hairDraft.displayPixels();
+    return this.doc.pixelIndices;
   }
 
+  /** 一键置换发色 (生成 CommitHairRecolorCommand，所见即所得，支持 Ctrl+Z 撤销) */
   applyHairPreset(presetKey: HairPresetKey): void {
-    this.hairDraft.applyHairPreset(presetKey);
+    if (this._isDisposed || !this.session.isLoaded) return;
+    if (!isHairPresetKey(presetKey)) return;
+    const ramp = RAMPS_INFO[presetKey];
+    if (!ramp) return;
+    const doc = this.doc;
+    if (!doc.semanticMask.includes(SemanticZone.Hair)) {
+      this.notify('当前遮罩中未标记任何头发 (Hair) 区域，请先涂抹遮罩', 'warning');
+      return;
+    }
+    const { pixelIndices, semanticMask, palette, currentHairPreset } = doc;
+    const newPixels = recolorHair(pixelIndices, semanticMask, palette, currentHairPreset, presetKey);
+    this.execute(new CommitHairRecolorCommand(newPixels, presetKey));
+
+    if (this.session.maskMatchPresetKey === 'current_hair') {
+      const preset = MATCH_COLOR_PRESETS.find((p) => p.id === 'current_hair');
+      if (preset) {
+        this.patch({ maskMatchColors: preset.getIndices(doc.palette, doc.currentHairPreset) });
+      }
+    }
+    this.notify(`✓ 发色【${ramp.name}】(${ramp.icon})已成功应用！(可按 Ctrl+Z 撤销)`, 'success');
   }
 
-  discardHairRecolor(): void {
-    this.hairDraft.discardHairRecolor();
-  }
+  discardHairRecolor(): void {}
 
-  openHairRecolorPrompt(): void {
-    this.hairDraft.openHairRecolorPrompt();
-  }
+  openHairRecolorPrompt(): void {}
 
   setHairPreset(presetKey: HairPresetKey): void {
-    this.hairDraft.setHairPreset(presetKey);
+    if (this._isDisposed || !isHairPresetKey(presetKey)) return;
+    this.execute(new SetHairPresetCommand(presetKey));
+    if (this.session.maskMatchPresetKey === 'current_hair') {
+      const preset = MATCH_COLOR_PRESETS.find((p) => p.id === 'current_hair');
+      if (preset) {
+        this.patch({ maskMatchColors: preset.getIndices(this.doc.palette, this.doc.currentHairPreset) });
+      }
+    }
+  }
+
+  getHairPresetKey(): HairPresetKey {
+    return this.doc.currentHairPreset || (Object.keys(RAMPS_INFO)[0] as HairPresetKey);
   }
 
   getHairRampIndices(presetKey?: HairPresetKey): number[] {
-    return this.hairDraft.getHairRampIndices(presetKey);
+    const key = presetKey || this.getHairPresetKey();
+    if (!isHairPresetKey(key)) return [];
+    const rampInfo = RAMPS_INFO[key];
+    if (!rampInfo) return [];
+    const palette = this.doc.palette;
+    const indices: number[] = [];
+    rampInfo.hexes.forEach((hex: string) => {
+      let idx = palette.findIndex((c) => c.toLowerCase() === hex.toLowerCase());
+      if (idx === -1) {
+        const nearest = findNearestColor(hex, palette);
+        idx = palette.findIndex((c) => c.toLowerCase() === nearest.toLowerCase());
+      }
+      if (idx >= 0 && !indices.includes(idx)) indices.push(idx);
+    });
+    return indices;
   }
 
-  confirmHairDraft(o: {
-    icon: string;
-    title: string;
-    message: string;
-    subMessage: string;
-    applyLabel: string;
-    onApplied: () => void;
-    otherLabel: string;
-    onOther: () => void;
-    cancelLabel: string;
-    onCancel?: () => void;
-  }): void {
-    if (this._isDisposed) {
-      o.onCancel?.();
-      return;
-    }
-    this.hairDraft.confirmHairDraft(o);
+  confirmHairDraft(o: { onApplied?: () => void; onCancel?: () => void }): void {
+    o.onApplied?.();
   }
 
   // ===================== 笔划手势 =====================
@@ -824,10 +807,6 @@ export class ViewModel implements StudioEvents {
   /** 鼠标按下：按当前工具开始一次笔划 (之后逐点 strokeAt，松开时 endStroke) */
   beginStroke(button: 0 | 2, shiftKey: boolean): void {
     if (this._isDisposed || !this.session.isLoaded) return;
-    if (this.session.activeMode === 'pixel' && this.session.hairDraftPreset !== null) {
-      this.setMode('pixel');
-      return;
-    }
     if (this.stroke) {
       this.endStroke();
     }
@@ -866,58 +845,112 @@ export class ViewModel implements StudioEvents {
     if (s.end(this.ctx)) this.handler.commitExecuted(s);
   }
 
-  // ===================== 选区与剪贴板 (委托给 SelectionService) =====================
+  // ===================== 选区与剪贴板 =====================
 
   moveSelection(patch: Patch, from: RectSelection, toX: number, toY: number, copy: boolean): void {
-    this.selectionService.moveSelection(patch, from, toX, toY, copy);
+    this.execute(new MovePatchCommand(patch, from, toX, toY, copy, []));
   }
 
+  /** 翻转：有选区时翻转选区内容，否则翻转整张画布 */
   flipContent(axis: 'horizontal' | 'vertical'): void {
-    this.selectionService.flipContent(axis);
+    if (!this.session.isLoaded) return;
+    const selection = this.session.selection;
+    this.execute(new FlipCommand(selection ?? FULL_CANVAS, axis, []));
+    const label = axis === 'horizontal' ? '↔ 水平' : '↕ 垂直';
+    this.notify(`${label}翻转${selection ? '选区' : '整张画布'}完成`);
   }
 
+  /** 顺时针旋转 90°：有选区时旋转选区内容 (选区随之变形)，否则旋转整张画布 */
   rotateContentCW(): void {
-    this.selectionService.rotateContentCW();
+    if (!this.session.isLoaded) return;
+    const selection = this.session.selection;
+    this.execute(new RotateCommand(selection ?? FULL_CANVAS, selection !== null, []));
+    this.notify(`↻ 顺时针旋转${selection ? '选区' : '整张画布'} 90° 完成`);
   }
 
+  /** 把从画布边缘 4-连通可达的白色像素改为透明 (眼睛分区与锁定分区不受影响) */
   removeOuterWhite(): void {
-    this.selectionService.removeOuterWhite();
+    if (!this.session.isLoaded) {
+      this.notify('请先载入 64×64 像素头像后再扣除白底', 'warning');
+      return;
+    }
+    const toClear = findOuterWhiteOffsets(this.doc, this.lockedZones);
+    if (toClear.length === 0) {
+      this.notify('ℹ️ 未检测到外围连通的白色背景像素', 'info');
+      return;
+    }
+    this.execute(new ClearPixelsCommand(toClear));
+    this.notify(`✂️ 已扣除 ${toClear.length} 个外围背景白像素为原生透明色 (人物眼白与高光完好)`, 'success');
   }
 
+  /** 在选区 (scope 为 selection 时) 或整张画布内把 from 色替换为 to 色 */
   replaceColor(fromIdx: number, toIdx: number, scope: 'selection' | 'all'): void {
-    this.selectionService.replaceColor(fromIdx, toIdx, scope);
+    if (!this.session.isLoaded) return;
+    if (fromIdx === toIdx) {
+      this.notify('原颜色与目标颜色相同，无需替换', 'warning');
+      return;
+    }
+    const rect = scope === 'selection' ? this.session.selection ?? FULL_CANVAS : FULL_CANVAS;
+    const cmd = new ReplaceColorCommand(fromIdx, toIdx, rect, []);
+    this.execute(cmd);
+    if (cmd.count > 0) {
+      this.notify(`🔄 已成功在${scope === 'selection' ? '选区内' : '整张画布'}替换 ${cmd.count} 个像素点`, 'success');
+    } else {
+      this.notify('未找到匹配的原颜色像素点', 'info');
+    }
   }
 
   setSelection(selection: RectSelection | null): void {
-    this.selectionService.setSelection(selection);
+    this.patch({ selection: selection ? clampToCanvas(selection) : null });
   }
 
+  /** 取消选区，返回之前是否有选区 */
   clearSelection(): boolean {
-    return this.selectionService.clearSelection();
+    if (!this.session.selection) return false;
+    this.patch({ selection: null });
+    return true;
   }
 
   selectAll(): void {
-    this.selectionService.selectAll();
+    this.setSelection({ x: 0, y: 0, w: IMAGE_WIDTH, h: IMAGE_HEIGHT });
   }
 
   hasClipboard(): boolean {
-    return this.selectionService.hasClipboard();
+    return this.clipboard !== null;
   }
 
   copySelection(): boolean {
-    return this.selectionService.copySelection();
+    const selection = this.session.selection;
+    if (!this.session.isLoaded || !selection) return false;
+    this.clipboard = extractPatch(layersOf(this.doc, []), selection);
+    return true;
   }
 
   cutSelection(): boolean {
-    return this.selectionService.cutSelection();
+    return this.copySelection() && this.deleteSelectionContent();
   }
 
+  /** 把选区内容清空为透明，返回是否有变化 */
   deleteSelectionContent(): boolean {
-    return this.selectionService.deleteSelectionContent();
+    const selection = this.session.selection;
+    if (!this.session.isLoaded || !selection) return false;
+    return this.execute(new ClearRectCommand(selection, []));
   }
 
+  /** 粘贴到当前选区左上角 (无选区时居中)，粘贴结果成为新选区 */
   pasteClipboard(): boolean {
-    return this.selectionService.pasteClipboard();
+    const clip = this.clipboard;
+    if (!clip || !this.session.isLoaded) return false;
+    const selection = this.session.selection;
+    const x = Math.min(
+      selection ? selection.x : Math.max(0, Math.floor((IMAGE_WIDTH - clip.w) / 2)),
+      Math.max(0, IMAGE_WIDTH - clip.w)
+    );
+    const y = Math.min(
+      selection ? selection.y : Math.max(0, Math.floor((IMAGE_HEIGHT - clip.h) / 2)),
+      Math.max(0, IMAGE_HEIGHT - clip.h)
+    );
+    return this.execute(new PastePatchCommand(clip, x, y));
   }
 
   // ===================== 撤销与重做 =====================
@@ -946,39 +979,43 @@ export class ViewModel implements StudioEvents {
     this.stepHistory(() => this.handler.redo(), '重做');
   }
 
-  private stepHistory(step: () => boolean, message: string): void {
+  private stepHistory(step: () => boolean, _message: string): void {
     if (this._isDisposed) return;
-    if (this.session.hairDraftPreset !== null) {
-      this.confirmHairDraft({
-        icon: '↩️',
-        title: `${message}前发色确认`,
-        message: '当前有正在试色的新发色尚未固化。',
-        subMessage: `${message}前，请选择是否将此发色固化应用到画面中：`,
-        applyLabel: '✓ 应用发色后继续',
-        onApplied: () => step(),
-        otherLabel: '✕ 放弃预览后继续',
-        onOther: () => {
-          this.discardHairRecolor();
-          step();
-        },
-        cancelLabel: `取消${message}`,
-      });
-      return;
-    }
     step();
   }
 
-  // ===================== 导出 (委托给 ExportService) =====================
+  // ===================== 导出 =====================
 
   exportPng(): Promise<void> {
-    if (this._isDisposed) return Promise.resolve();
-    this.endStroke();
-    return this.exportService.exportPng();
+    return this.runExport('png');
   }
 
   exportZip(): Promise<void> {
-    if (this._isDisposed) return Promise.resolve();
+    return this.runExport('zip');
+  }
+
+  private async runExport(kind: 'png' | 'zip'): Promise<void> {
+    if (this._isDisposed || !this.session.isLoaded) return;
     this.endStroke();
-    return this.exportService.exportZip();
+    this.flushAutosave();
+    const snapshot = cloneDocument(this.doc);
+    try {
+      if (kind === 'zip') {
+        this.notify('正在打包工程 ZIP...', 'info');
+        await this.exports.exportZip(snapshot);
+        this.notify('🎉 成功导出完整工程 ZIP 包！', 'success');
+      } else {
+        await this.exports.exportPng(snapshot);
+        this.notify('🎉 PNG 导出成功！', 'success');
+      }
+    } catch (err: unknown) {
+      console.error(`Export ${kind} failed:`, err);
+      const message = err instanceof Error ? err.message : String(err);
+      if (kind === 'zip') {
+        this.notify('导出工程 ZIP 失败，请重试', 'error');
+      } else {
+        this.notify(`PNG 导出失败: ${message}`, 'error');
+      }
+    }
   }
 }

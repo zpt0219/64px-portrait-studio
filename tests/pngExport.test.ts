@@ -1,8 +1,8 @@
 import { downloadBlob } from '../src/app/utils/download';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { canvasToBlob, exportProjectPng, exportProjectZip } from '../src/app/browser/projectArchive';
-import { ExportService, ExportPorts } from '../src/app/controllers/ExportService';
 import { createValidDocument } from './helpers/documentFixture';
+import { createTestViewModel } from './helpers/viewModelFixture';
 import { SemanticZone } from '../src/types';
 
 describe('PNG Export & Blob Safety (T06 / B6)', () => {
@@ -147,93 +147,85 @@ describe('PNG Export & Blob Safety (T06 / B6)', () => {
     });
   });
 
-  describe('ExportService UI orchestration & notifications', () => {
-    function createMockVm(options?: { isLoaded?: boolean; hairDraftPreset?: any }) {
-      const doc = createValidDocument();
-      const notifications: Array<{ message: string; type: string }> = [];
-
-      const ports: ExportPorts = {
-        exportPng: exportProjectPng, exportZip: exportProjectZip,
-        isLoaded: () => options?.isLoaded ?? true,
-        hasHairDraft: () => (options?.hairDraftPreset ?? null) !== null,
-        hairDraftName: () => '红发预设',
-        confirmHairDraft: vi.fn(),
-        captureDocument: () => doc,
-        notify: vi.fn((message: string, type?: any) => {
-          notifications.push({ message, type: type ?? 'info' });
-        }),
-      };
-
-      return { vm: ports, doc, notifications };
-    }
-
+  describe('ViewModel export orchestration & notifications', () => {
     it('does not export if document is not loaded', async () => {
-      const { vm } = createMockVm({ isLoaded: false });
-      const service = new ExportService(vm);
+      const exportPngFn = vi.fn();
+      const vm = createTestViewModel({ exports: { exportPng: exportPngFn, exportZip: vi.fn() } });
+      vm.patchSession({ isLoaded: false });
+      const notifySpy = vi.fn();
+      vm.registerListener({ onNotify: notifySpy });
 
-      await service.exportPng();
+      await vm.exportPng();
 
-      expect(vm.notify).not.toHaveBeenCalled();
+      expect(exportPngFn).not.toHaveBeenCalled();
+      expect(notifySpy).not.toHaveBeenCalled();
+    });
+
+    it('flushes autosave before exporting PNG to maintain persistence sync', async () => {
+      const order: string[] = [];
+      const fakeAutosave = {
+        flush: vi.fn(() => {
+          order.push('flush');
+          return null;
+        }),
+        dispose: vi.fn(),
+        cancel: vi.fn(),
+        saveDebounced: vi.fn(),
+        hasSaved: vi.fn(() => false),
+      } as any;
+      const fakeExports = {
+        exportPng: vi.fn(async () => {
+          order.push('export');
+        }),
+        exportZip: vi.fn(),
+      };
+      const vm = createTestViewModel({ autosave: fakeAutosave, exports: fakeExports });
+      vm.patchSession({ isLoaded: true });
+
+      await vm.exportPng();
+
+      expect(order).toEqual(['flush', 'export']);
     });
 
     it('notifies success when PNG export succeeds', async () => {
-      const { vm } = createMockVm({ isLoaded: true });
-      const service = new ExportService(vm);
+      const exportPngFn = vi.fn().mockResolvedValue(undefined);
+      const vm = createTestViewModel({ exports: { exportPng: exportPngFn, exportZip: vi.fn() } });
+      vm.patchSession({ isLoaded: true });
+      const notifySpy = vi.fn();
+      vm.registerListener({ onNotify: notifySpy });
 
-      await service.exportPng();
+      await vm.exportPng();
 
-      expect(vm.notify).toHaveBeenCalledWith('🎉 PNG 导出成功！', 'success');
+      expect(notifySpy).toHaveBeenCalledWith('🎉 PNG 导出成功！', 'success');
     });
 
     it('notifies error when PNG export fails (catches rejected Promise)', async () => {
-      const { vm } = createMockVm({ isLoaded: true });
-      const service = new ExportService(vm);
+      const exportPngFn = vi.fn().mockRejectedValue(new Error('Disk quota exceeded'));
+      const vm = createTestViewModel({ exports: { exportPng: exportPngFn, exportZip: vi.fn() } });
+      vm.patchSession({ isLoaded: true });
+      const notifySpy = vi.fn();
+      vm.registerListener({ onNotify: notifySpy });
 
-      // Force canvasToBlob / exportProjectPng to fail
-      vi.spyOn(document.body, 'appendChild').mockImplementation(() => {
-        throw new Error('Disk quota exceeded');
-      });
+      await vm.exportPng();
 
-      await service.exportPng();
-
-      expect(vm.notify).toHaveBeenCalledWith(
+      expect(notifySpy).toHaveBeenCalledWith(
         expect.stringContaining('PNG 导出失败: Disk quota exceeded'),
         'error'
       );
     });
 
-    it('prompts user if hair draft preset is active during exportPng', async () => {
-      const { vm } = createMockVm({
-        isLoaded: true,
-        hairDraftPreset: 'preset_red',
-      });
-      const service = new ExportService(vm);
+    it('flushes autosave and exports ZIP successfully', async () => {
+      const exportZipFn = vi.fn().mockResolvedValue(undefined);
+      const vm = createTestViewModel({ exports: { exportPng: vi.fn(), exportZip: exportZipFn } });
+      vm.patchSession({ isLoaded: true });
+      const notifySpy = vi.fn();
+      vm.registerListener({ onNotify: notifySpy });
 
-      (vm.confirmHairDraft as any).mockImplementation(({ onApplied }: any) => {
-        onApplied();
-      });
+      await vm.exportZip();
 
-      await service.exportPng();
-
-      expect(vm.confirmHairDraft).toHaveBeenCalledTimes(1);
-      expect(vm.notify).toHaveBeenCalledWith('🎉 PNG 导出成功！', 'success');
-    });
-
-    it('aborts export if user cancels hair draft prompt', async () => {
-      const { vm } = createMockVm({
-        isLoaded: true,
-        hairDraftPreset: 'preset_red',
-      });
-      const service = new ExportService(vm);
-
-      (vm.confirmHairDraft as any).mockImplementation(({ onCancel }: any) => {
-        onCancel();
-      });
-
-      await service.exportPng();
-
-      expect(vm.confirmHairDraft).toHaveBeenCalledTimes(1);
-      expect(vm.notify).not.toHaveBeenCalled();
+      expect(exportZipFn).toHaveBeenCalledTimes(1);
+      expect(notifySpy).toHaveBeenCalledWith('🎉 成功导出完整工程 ZIP 包！', 'success');
     });
   });
 });
+

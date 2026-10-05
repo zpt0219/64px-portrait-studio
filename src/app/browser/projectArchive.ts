@@ -10,7 +10,7 @@
  */
 
 import JSZip from 'jszip';
-import { SemanticZone, ProjectData } from '../../types';
+import { SemanticZone, ProjectData, DecodedImage } from '../../types';
 import { PortraitDocument, cloneDocument } from '../../model/document';
 import { documentToProjectData, validateProjectData, CURRENT_PROJECT_VERSION, upgradeProjectData } from '../../core/projectData';
 import { encodeMinimalIndexedPng } from '../../core/minimalPng';
@@ -18,6 +18,7 @@ import { Rgb, hexToRgb } from '../../core/colorUtils';
 import { drawIndexedPixels } from './pixelCanvas';
 import { zoneRgbTable } from '../../core/maskColors';
 import { IMAGE_WIDTH, IMAGE_HEIGHT, PIXEL_COUNT } from '../../core/pixelGrid';
+import { decodeImageFile } from './imageDecode';
 
 import { downloadBlob } from '../utils/download';
 
@@ -311,28 +312,16 @@ export async function exportProjectZip(
 }
 
 /**
- * 从 ZIP 归档文件中解包提取工程数据
- * @returns 经过合法性严格校验的 ProjectData
+ * 从 ZIP 归档中提取并解析 imagegem_project.json
  */
-export async function importProjectZip(file: Parameters<typeof JSZip.loadAsync>[0]): Promise<ProjectData> {
-  let zip: JSZip;
-  try {
-    zip = await JSZip.loadAsync(file);
-  } catch (err) {
-    throw new Error('无法读取 ZIP 文件，可能已损坏或非合法 ZIP 归档');
-  }
-
-  // 1. 优先读取根目录下的 imagegem_project.json
+async function readProjectJson(zip: JSZip): Promise<{ jsonFile: JSZip.JSZipObject; parsed: unknown }> {
   let jsonFile = zip.file('imagegem_project.json');
-
-  // 2. 容错搜索：若文件名有变动，查找任意以 .json 结尾的文件
   if (!jsonFile) {
     const jsonFiles = zip.file(/\.json$/i);
     if (jsonFiles && jsonFiles.length > 0) {
       jsonFile = jsonFiles[0];
     }
   }
-
   if (!jsonFile) {
     throw new Error('ZIP 归档中未找到工程配置文件 (imagegem_project.json)');
   }
@@ -351,6 +340,22 @@ export async function importProjectZip(file: Parameters<typeof JSZip.loadAsync>[
     throw new Error('工程 JSON 配置文件解析失败：JSON 语法格式无效');
   }
 
+  return { jsonFile, parsed };
+}
+
+/**
+ * 从 ZIP 归档文件中解包提取工程数据
+ * @returns 经过合法性严格校验的 ProjectData
+ */
+export async function importProjectZip(file: Parameters<typeof JSZip.loadAsync>[0]): Promise<ProjectData> {
+  let zip: JSZip;
+  try {
+    zip = await JSZip.loadAsync(file);
+  } catch (err) {
+    throw new Error('无法读取 ZIP 文件，可能已损坏或非合法 ZIP 归档');
+  }
+
+  const { parsed } = await readProjectJson(zip);
   const validation = validateProjectData(parsed);
   if (!validation.valid || !validation.data) {
     throw new Error(validation.error || '工程数据校验失败');
@@ -374,29 +379,7 @@ export async function upgradeProjectZip(
     throw new Error('无法读取 ZIP 文件，可能已损坏或非合法 ZIP 归档');
   }
 
-  let jsonFile = zip.file('imagegem_project.json');
-  if (!jsonFile) {
-    const jsonFiles = zip.file(/\.json$/i);
-    if (jsonFiles && jsonFiles.length > 0) jsonFile = jsonFiles[0];
-  }
-  if (!jsonFile) {
-    throw new Error('ZIP 归档中未找到工程配置文件 (imagegem_project.json)');
-  }
-
-  let jsonText: string;
-  try {
-    jsonText = await jsonFile.async('string');
-  } catch (err) {
-    throw new Error('读取工程 JSON 文件内容失败');
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(jsonText);
-  } catch (err) {
-    throw new Error('工程 JSON 配置文件解析失败：JSON 语法格式无效');
-  }
-
+  const { jsonFile, parsed } = await readProjectJson(zip);
   const upgradeResult = upgradeProjectData(parsed, targetVersion);
 
   if (!upgradeResult.upgraded) {
@@ -419,5 +402,44 @@ export async function upgradeProjectZip(
     toVersion: targetVersion,
   };
 }
+
+export type ImportFileResult =
+  | { kind: 'project'; data: ProjectData }
+  | { kind: 'image'; image: DecodedImage };
+
+export class UnsupportedFileError extends Error {
+  constructor(message = '仅支持工程 ZIP 包或图片格式文件 (PNG, JPG, WebP 等)') {
+    super(message);
+    this.name = 'UnsupportedFileError';
+  }
+}
+
+/**
+ * 统一文件导入分流：根据文件类型自动分流为工程恢复或图像解码
+ */
+export async function importAnyFile(file: File): Promise<ImportFileResult> {
+  if (!file) {
+    throw new UnsupportedFileError();
+  }
+  const lowerName = file.name.toLowerCase();
+  const isZip = lowerName.endsWith('.zip') || file.type.includes('zip');
+  const isImage = file.type.startsWith('image/') || /\.(png|jpe?g|webp|bmp|gif)$/i.test(lowerName);
+
+  if (!isZip && !isImage) {
+    throw new UnsupportedFileError();
+  }
+
+  if (isZip) {
+    const data = await importProjectZip(file);
+    return { kind: 'project', data };
+  }
+
+  const image = await decodeImageFile(file);
+  if (!image) {
+    throw new Error('无法读取有效图片尺寸，请重试');
+  }
+  return { kind: 'image', image };
+}
+
 
 

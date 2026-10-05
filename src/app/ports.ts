@@ -20,7 +20,7 @@ export interface StudioPrompts {
   dismiss?(): void;
 }
 
-/** App supplies the browser implementation; controllers only see this port. */
+/** App supplies the browser implementation; ViewModel only sees this port. */
 export interface ExportBackend {
   exportPng(document: PortraitDocument): Promise<void>;
   exportZip(document: PortraitDocument): Promise<void>;

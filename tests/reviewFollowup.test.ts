@@ -93,28 +93,22 @@ describe('Follow-up review: persistence, gestures and stale requests', () => {
   });
 
   for (const format of ['png', 'zip'] as const) {
-    for (const action of ['load', 'dispose'] as const) {
-      it(`settles a pending ${format} export when the document is ${action === 'load' ? 'replaced' : 'disposed'}`, async () => {
-        const vm = loaded();
-        const { prompts, dismiss } = capturePrompts(vm);
-        vm.applyHairPreset('03_blonde_金');
-        let settled = false;
-        const pending = format === 'png' ? vm.exportPng() : vm.exportZip();
-        void pending.then(() => { settled = true; });
-        const oldPrompt = prompts[0];
-        if (action === 'load') vm.loadProject(documentToProjectData(createValidDocument()));
-        else vm.dispose();
-        await Promise.resolve();
-        await Promise.resolve();
-        expect(settled).toBe(true);
-        expect(dismiss).toHaveBeenCalled();
-        oldPrompt.buttons[0].onClick();
-        oldPrompt.buttons[1].onClick();
-        oldPrompt.onDismiss?.();
-        expect(exportProjectPng).not.toHaveBeenCalled();
-        expect(exportProjectZip).not.toHaveBeenCalled();
-      });
-    }
+    it(`exports ${format} directly without draft prompts and flushes autosave`, async () => {
+      const store = memoryStore();
+      const vm = loaded(store);
+      vm.applyHairPreset('03_blonde_金');
+      const { prompts } = capturePrompts(vm);
+
+      if (format === 'png') {
+        await vm.exportPng();
+        expect(exportProjectPng).toHaveBeenCalled();
+      } else {
+        await vm.exportZip();
+        expect(exportProjectZip).toHaveBeenCalled();
+      }
+      expect(prompts).toHaveLength(0);
+      expect(store.map.get(STORAGE_KEY)).not.toBeNull();
+    });
   }
   it('does not export any format after ViewModel disposal', async () => {
     const vm = loaded();

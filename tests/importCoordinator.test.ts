@@ -1,212 +1,79 @@
 import { createTestViewModel } from './helpers/viewModelFixture';
 import { describe, it, expect, vi } from 'vitest';
-import { ImportCoordinator, ImportCoordinatorHost, ImportLoaders } from '../src/app/controllers/ImportCoordinator';
+import { importAnyFile, UnsupportedFileError } from '../src/app/browser/projectArchive';
+import * as projectArchive from '../src/app/browser/projectArchive';
+import * as imageDecode from '../src/app/browser/imageDecode';
 import { SemanticZone } from '../src/types';
 import { VALID_HAIR_PRESET_KEYS } from './helpers/documentFixture';
+import JSZip from 'jszip';
+import { documentToProjectData } from '../src/core/projectData';
+import { createEmptyDocument } from './helpers/documentFixture';
 
-describe('ImportCoordinator & Mode Cancellation Atomicity (T08)', () => {
-  describe('ImportCoordinator race-condition & cancellation defense', () => {
-    it('discards delayed earlier import when newer import resolves first', async () => {
-      const appliedProjects: string[] = [];
-      const notifications: string[] = [];
-
-      const host: ImportCoordinatorHost = {
-        loadProject: vi.fn((data: any) => {
-          appliedProjects.push(data.hairPreset);
-        }),
-        importImage: vi.fn(),
-        notify: vi.fn((msg: string) => {
-          notifications.push(msg);
-        }),
-      };
-
-      let resolveA!: (data: any) => void;
-      const promiseA = new Promise<any>((r) => {
-        resolveA = r;
-      });
-
-      let resolveB!: (data: any) => void;
-      const promiseB = new Promise<any>((r) => {
-        resolveB = r;
-      });
-
-      const loaders: ImportLoaders = {
-        importProjectZip: vi.fn((file: File) => {
-          if (file.name === 'projectA.zip') return promiseA;
-          if (file.name === 'projectB.zip') return promiseB;
-          return Promise.reject(new Error('Unknown file'));
-        }),
-        decodeImageFile: vi.fn(),
-      };
-
-      const coordinator = new ImportCoordinator(host, loaders);
-
-      const fileA = new File([''], 'projectA.zip');
-      const fileB = new File([''], 'projectB.zip');
-
-      // User initiates import A, then import B
-      const opA = coordinator.handleFile(fileA);
-      const opB = coordinator.handleFile(fileB);
-
-      // B finishes first
-      resolveB({ hairPreset: 'Project_B' });
-      await opB;
-
-      expect(appliedProjects).toEqual(['Project_B']);
-      expect(notifications).toContain('🎉 成功载入工程 ZIP！已完整恢复画布、遮罩与色板');
-
-      // Now A finishes late
-      resolveA({ hairPreset: 'Project_A' });
-      await opA;
-
-      // Project_A must be discarded and NOT applied!
-      expect(appliedProjects).toEqual(['Project_B']);
+describe('projectArchive.importAnyFile & Mode Cancellation Atomicity', () => {
+  describe('importAnyFile routing & format validation', () => {
+    it('throws UnsupportedFileError for non-zip and non-image files', async () => {
+      const textFile = new File(['hello'], 'notes.txt', { type: 'text/plain' });
+      await expect(importAnyFile(textFile)).rejects.toThrow(UnsupportedFileError);
     });
 
-    it('suppresses error notifications from superseded expired requests', async () => {
-      const notifications: Array<{ msg: string; level?: string }> = [];
+    it('routes zip files to importProjectZip', async () => {
+      const zip = new JSZip();
+      const projectData = documentToProjectData(createEmptyDocument());
+      zip.file('imagegem_project.json', JSON.stringify(projectData));
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const zipFile = new File([blob], 'avatar.zip', { type: 'application/zip' });
 
-      const host: ImportCoordinatorHost = {
-        loadProject: vi.fn(),
-        importImage: vi.fn(),
-        notify: vi.fn((msg: string, level?: any) => {
-          notifications.push({ msg, level });
-        }),
-      };
-
-      let rejectA!: (err: any) => void;
-      const promiseA = new Promise<any>((_, rej) => {
-        rejectA = rej;
-      });
-
-      const loaders: ImportLoaders = {
-        importProjectZip: vi.fn(() => promiseA),
-        decodeImageFile: vi.fn(),
-      };
-
-      const coordinator = new ImportCoordinator(host, loaders);
-
-      const fileA = new File([''], 'projectA.zip');
-      const opA = coordinator.handleFile(fileA);
-
-      // User starts a new action and cancels pending imports
-      coordinator.cancelPending();
-
-      // Request A fails
-      rejectA(new Error('Corrupted zip archive'));
-      await opA;
-
-      // Error must NOT be reported to user because request A was canceled/superseded
-      expect(notifications).toHaveLength(0);
+      const result = await importAnyFile(zipFile);
+      expect(result.kind).toBe('project');
+      expect(result.data.v).toBe(projectData.v);
     });
 
-    it('cancels pending import when cancelPending is explicitly called', async () => {
-      const appliedProjects: any[] = [];
-      const host: ImportCoordinatorHost = {
-        loadProject: vi.fn((d) => appliedProjects.push(d)),
-        importImage: vi.fn(),
-        notify: vi.fn(),
-      };
+    it('routes image files to decodeImageFile', async () => {
+      const pngFile = new File(['fakepng'], 'portrait.png', { type: 'image/png' });
+      const fakeImage = { width: 64, height: 64, data: new Uint8ClampedArray(64 * 64 * 4) } as any;
+      const spy = vi.spyOn(imageDecode, 'decodeImageFile').mockResolvedValue(fakeImage);
 
-      let resolveZip!: (data: any) => void;
-      const promise = new Promise<any>((r) => {
-        resolveZip = r;
-      });
+      const result = await importAnyFile(pngFile);
+      expect(result).toEqual({ kind: 'image', image: fakeImage });
+      expect(spy).toHaveBeenCalledWith(pngFile);
+      spy.mockRestore();
+    });
 
-      const loaders: ImportLoaders = {
-        importProjectZip: vi.fn(() => promise),
-        decodeImageFile: vi.fn(),
-      };
+    it('throws error when decodeImageFile returns null', async () => {
+      const corruptedPng = new File(['bad'], 'corrupted.png', { type: 'image/png' });
+      const spy = vi.spyOn(imageDecode, 'decodeImageFile').mockResolvedValue(null);
 
-      const coordinator = new ImportCoordinator(host, loaders);
-      const op = coordinator.handleFile(new File([''], 'project.zip'));
-
-      // User reset / cancel
-      coordinator.cancelPending();
-
-      resolveZip({ hairPreset: 'ShouldBeDiscarded' });
-      await op;
-
-      expect(appliedProjects).toHaveLength(0);
+      await expect(importAnyFile(corruptedPng)).rejects.toThrow('无法读取有效图片尺寸，请重试');
+      spy.mockRestore();
     });
   });
 
-  describe('Mode cancellation atomicity on hiding last mask zone (T08)', () => {
-    it('preserves full session state and mask visibility if user cancels hair draft confirmation', () => {
+  describe('Mode transition on hiding last mask zone (T08)', () => {
+    it('switches mode to pixel and hides masks atomically when unchecking last visible mask zone', () => {
       const vm = createTestViewModel();
-      const presetKey = VALID_HAIR_PRESET_KEYS[0];
+      vm.patchSession({ isLoaded: true, activeMode: 'mask', visibleMaskZones: [SemanticZone.Hair], showMaskOverlay: true });
 
-      // Setup document with hair pixels
-      vm.patchSession({ isLoaded: true });
-      vm.doc.pixelIndices[5 * 64 + 5] = 1;
-      vm.doc.semanticMask[5 * 64 + 5] = SemanticZone.Hair;
-
-      // Enter mask mode and start hair draft
-      vm.setMode('mask');
-      vm.applyHairPreset(presetKey);
-
-      expect(vm.session.activeMode).toBe('mask');
-      expect(vm.session.hairDraftPreset).toBe(presetKey);
-
-      // Setup mock prompt: user cancels
-      let confirmCallCount = 0;
-      vm.setPrompts({
-        confirm: (options) => {
-          confirmCallCount++;
-          // Simulate user clicking cancel button or closing modal
-          const cancelBtn = options.buttons.find((b) => b.label.includes('取消') || b.label.includes('继续试色'));
-          cancelBtn?.onClick();
-        },
-      });
-
-      // Keep only Hair visible
-      vm.patchSession({ visibleMaskZones: [SemanticZone.Hair], showMaskOverlay: true });
-
-      // Now uncheck Hair (the last visible mask)
       vm.toggleZoneVisibility(SemanticZone.Hair, false);
 
-      // Dialog was shown
-      expect(confirmCallCount).toBe(1);
-
-      // CRITICAL ATOMICITY CHECK:
-      // Because user canceled, visibleMaskZones must NOT have been wiped,
-      // and activeMode must still be 'mask', hairDraftPreset must still be present!
-      expect(vm.session.activeMode).toBe('mask');
-      expect(vm.session.visibleMaskZones).toEqual([SemanticZone.Hair]);
-      expect(vm.session.showMaskOverlay).toBe(true);
-      expect(vm.session.hairDraftPreset).toBe(presetKey);
-    });
-
-    it('switches mode and hides masks atomically if user confirms hair draft', () => {
-      const vm = createTestViewModel();
-      const presetKey = VALID_HAIR_PRESET_KEYS[0];
-
-      vm.patchSession({ isLoaded: true });
-      vm.doc.pixelIndices[5 * 64 + 5] = 1;
-      vm.doc.semanticMask[5 * 64 + 5] = SemanticZone.Hair;
-
-      vm.setMode('mask');
-      vm.applyHairPreset(presetKey);
-
-      // User confirms application
-      vm.setPrompts({
-        confirm: (options) => {
-          const applyBtn = options.buttons.find((b) => b.label.includes('确认') || b.label.includes('应用'));
-          applyBtn?.onClick();
-        },
-      });
-
-      // Only keep Hair visible
-      vm.patchSession({ visibleMaskZones: [SemanticZone.Hair], showMaskOverlay: true });
-
-      // Uncheck Hair
-      vm.toggleZoneVisibility(SemanticZone.Hair, false);
-
-      // Mode changed to pixel and masks hidden atomically
       expect(vm.session.activeMode).toBe('pixel');
       expect(vm.session.visibleMaskZones).toEqual([]);
       expect(vm.session.showMaskOverlay).toBe(false);
-      expect(vm.session.hairDraftPreset).toBeNull();
+    });
+
+    it('stays in mask mode with overlay enabled when other visible mask zones remain', () => {
+      const vm = createTestViewModel();
+      vm.patchSession({
+        isLoaded: true,
+        activeMode: 'mask',
+        visibleMaskZones: [SemanticZone.Hair, SemanticZone.Skin],
+        showMaskOverlay: true,
+      });
+
+      vm.toggleZoneVisibility(SemanticZone.Hair, false);
+
+      expect(vm.session.activeMode).toBe('mask');
+      expect(vm.session.visibleMaskZones).toEqual([SemanticZone.Skin]);
+      expect(vm.session.showMaskOverlay).toBe(true);
     });
   });
 });
