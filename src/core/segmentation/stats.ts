@@ -48,7 +48,7 @@ export function isFaceSkin(rgb: Rgb): boolean {
   );
 }
 
-export function isBackgroundWhite(rgb: Rgb): boolean {
+function isBackgroundWhite(rgb: Rgb): boolean {
   const minC = Math.min(rgb[0], rgb[1], rgb[2]);
   const maxC = Math.max(rgb[0], rgb[1], rgb[2]);
   return minC >= 239 && maxC - minC <= 20;

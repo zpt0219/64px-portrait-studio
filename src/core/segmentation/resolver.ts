@@ -5,7 +5,7 @@ import { FaceAnalysis, ClaimedRegions } from './types';
 import { xOf, yOf, isFaceSkin, maskInRect } from './stats';
 import { detectMouth } from './mouthDetector';
 
-export function looksLikeExpressionColor(color: Rgb): boolean {
+function looksLikeExpressionColor(color: Rgb): boolean {
   const [red, green, blue] = color;
   return red >= 150 && red - green >= 25 && red - blue >= 12;
 }

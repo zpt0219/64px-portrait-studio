@@ -1,6 +1,6 @@
 import type { PortraitDocument } from '../model/document';
 
-export interface PromptButton {
+interface PromptButton {
   label: string;
   className?: string;
   onClick(): void;
@@ -24,11 +24,9 @@ export interface StudioPrompts {
 export interface ExportBackend {
   exportPng(document: PortraitDocument): Promise<void>;
   exportZip(document: PortraitDocument): Promise<void>;
-  exportMaskPng(document: PortraitDocument, scale: number): Promise<void>;
 }
 
 export const unavailableExports: ExportBackend = {
   exportPng: async () => { throw new Error('导出服务未配置'); },
   exportZip: async () => { throw new Error('导出服务未配置'); },
-  exportMaskPng: async () => { throw new Error('导出服务未配置'); },
 };

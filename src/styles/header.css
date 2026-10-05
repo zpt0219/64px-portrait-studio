@@ -104,47 +104,6 @@
   letter-spacing: 0.2px;
 }
 
-.segment-kbd {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-muted);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  margin-left: 2px;
-}
-
-.mode-segment-btn.active .segment-kbd {
-  background: rgba(255, 255, 255, 0.18);
-  color: var(--text-main);
-}
-
-.header-status-pill {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: rgba(0, 0, 0, 0.35);
-  padding: 5px 12px;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-subtle);
-  font-size: 11px;
-  color: var(--text-sub);
-}
-
-.header-status-pill .pill-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent-primary);
-  box-shadow: 0 0 6px var(--accent-primary-glow);
-}
-
-.header-status-pill .pill-text {
-  font-weight: 500;
-  letter-spacing: 0.2px;
-}
-
 .header-actions {
   display: flex;
   align-items: center;

@@ -3,21 +3,21 @@ import { IMAGE_WIDTH as W } from '../pixelGrid';
 import { Bbox, FaceAnalysis } from './types';
 import { isFaceSkin } from './stats';
 
-export const MOUTH_DETECTION_MODEL = {
+const MOUTH_DETECTION_MODEL = {
   roiTopEyeChinRatio: 0.55,
   roiBottomEyeChinRatio: 0.9,
   roiHalfWidth: 6,
   minimumSkinNeighbours: 5,
 };
 
-export function isMouthColor(rgb: Rgb): boolean {
+function isMouthColor(rgb: Rgb): boolean {
   const [red, green, blue] = rgb;
   const pinkOrRed = red >= 135 && red - green >= 30 && red - blue >= 15;
   const darkWarm = Math.max(red, green, blue) <= 155 && red - green >= 18 && red - blue >= 5;
   return (pinkOrRed || darkWarm) && !isFaceSkin(rgb);
 }
 
-export function skinNeighbourCount(pixels: Rgb[], x: number, y: number): number {
+function skinNeighbourCount(pixels: Rgb[], x: number, y: number): number {
   let count = 0;
   for (let ny = Math.max(0, y - 1); ny <= Math.min(63, y + 1); ny++) {
     for (let nx = Math.max(0, x - 1); nx <= Math.min(63, x + 1); nx++) {

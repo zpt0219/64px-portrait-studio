@@ -86,7 +86,6 @@ export class ViewModel implements StudioEvents {
     this.exportService = new ExportService({
       exportPng: doc => exports.exportPng(doc),
       exportZip: doc => exports.exportZip(doc),
-      exportMaskPng: (doc, scale) => exports.exportMaskPng(doc, scale),
       isLoaded: () => !this._isDisposed && this.session.isLoaded,
       hasHairDraft: () => this.hasHairDraft(),
       hairDraftName: () => this.hairDraftName(),
@@ -785,10 +784,6 @@ export class ViewModel implements StudioEvents {
     this.hairDraft.applyHairPreset(presetKey);
   }
 
-  commitHairRecolor(): void {
-    this.hairDraft.commitHairRecolor();
-  }
-
   discardHairRecolor(): void {
     this.hairDraft.discardHairRecolor();
   }
@@ -799,10 +794,6 @@ export class ViewModel implements StudioEvents {
 
   setHairPreset(presetKey: HairPresetKey): void {
     this.hairDraft.setHairPreset(presetKey);
-  }
-
-  getHairPresetKey(): HairPresetKey {
-    return this.hairDraft.getHairPresetKey();
   }
 
   getHairRampIndices(presetKey?: HairPresetKey): number[] {
@@ -983,12 +974,6 @@ export class ViewModel implements StudioEvents {
     if (this._isDisposed) return Promise.resolve();
     this.endStroke();
     return this.exportService.exportPng();
-  }
-
-  exportMaskPng(scale = 1): Promise<void> {
-    if (this._isDisposed) return Promise.resolve();
-    this.endStroke();
-    return this.exportService.exportMaskPng(scale);
   }
 
   exportZip(): Promise<void> {

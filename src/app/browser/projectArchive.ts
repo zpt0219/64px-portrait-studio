@@ -217,7 +217,7 @@ function generateReadme(doc: PortraitDocument): string {
  * 生成单个极简 64x64 纯净 PNG Blob (8-bit 索引色)
  * 采用独立快照，避免导出异步期间状态被并发修改 (B7 防御)
  */
-export async function generateProjectPngBlob(doc: PortraitDocument): Promise<Blob> {
+async function generateProjectPngBlob(doc: PortraitDocument): Promise<Blob> {
   const snapshot = cloneDocument(doc);
   return encodeMinimalIndexedPng(snapshot.pixelIndices, snapshot.palette);
 }
@@ -232,20 +232,6 @@ export async function exportProjectPng(
   const snapshot = cloneDocument(doc);
   const finalBlob = await generateProjectPngBlob(snapshot);
   downloader(finalBlob, `avatar_36color_64x64_${Date.now()}.png`);
-}
-
-/**
- * 导出 5 色综合语义遮罩 PNG (64×64)
- */
-export async function exportMaskPng(
-  doc: PortraitDocument,
-  scale = 1,
-  downloader: (blob: Blob, filename: string) => void = downloadBlob
-): Promise<void> {
-  const snapshot = cloneDocument(doc);
-  const canvas = createCompositeMaskCanvas(snapshot);
-  const blob = await canvasToBlob(canvas);
-  downloader(blob, `mask_composite_${scale}x_${Date.now()}.png`);
 }
 
 /**

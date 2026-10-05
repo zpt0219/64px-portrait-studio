@@ -56,18 +56,6 @@ export class ExportService {
     });
   }
 
-  async exportMaskPng(scale = 1): Promise<void> {
-    if (!this.ports.isLoaded()) return;
-    try {
-      await this.ports.exportMaskPng(this.ports.captureDocument(), scale);
-      this.ports.notify('🎉 PNG 导出成功！', 'success');
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error('Export Mask PNG failed:', err);
-      this.ports.notify(`PNG 导出失败: ${message}`, 'error');
-    }
-  }
-
   async exportZip(): Promise<void> {
     if (!this.ports.isLoaded()) return;
     const initialGen = this.ports.getDocumentGeneration?.();

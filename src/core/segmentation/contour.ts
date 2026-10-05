@@ -2,8 +2,8 @@ import { Rgb, rgbToOklab, oklabDistance } from '../colorUtils';
 import { PIXEL_COUNT, getNeighbours, connectedComponents, maskFromOffsets } from '../pixelGrid';
 import { sameRgb, rgbKey } from './stats';
 
-export const OUTLINE_MIN_COMPONENT_PIXELS = 10;
-export const OUTLINE_MAX_OKLAB_DISTANCE = 0.035;
+const OUTLINE_MIN_COMPONENT_PIXELS = 10;
+const OUTLINE_MAX_OKLAB_DISTANCE = 0.035;
 
 /**
  * 与背景相邻的前景像素中，能形成 ≥10 像素连通段的颜色视为轮廓色；

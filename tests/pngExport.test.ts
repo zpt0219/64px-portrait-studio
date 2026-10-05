@@ -1,6 +1,6 @@
 import { downloadBlob } from '../src/app/utils/download';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { canvasToBlob, exportProjectPng, exportProjectZip, exportMaskPng } from '../src/app/browser/projectArchive';
+import { canvasToBlob, exportProjectPng, exportProjectZip } from '../src/app/browser/projectArchive';
 import { ExportService, ExportPorts } from '../src/app/controllers/ExportService';
 import { createValidDocument } from './helpers/documentFixture';
 import { SemanticZone } from '../src/types';
@@ -129,7 +129,7 @@ describe('PNG Export & Blob Safety (T06 / B6)', () => {
     });
   });
 
-  describe('exportProjectPng & exportMaskPng core functions', () => {
+  describe('exportProjectPng core function', () => {
     it('exports 64x64 minimal indexed PNG and passes blob to downloader', async () => {
       const doc = createValidDocument({
         pixels: (set) => {
@@ -145,22 +145,6 @@ describe('PNG Export & Blob Safety (T06 / B6)', () => {
       expect(blob).toBeInstanceOf(Blob);
       expect(filename).toMatch(/^avatar_36color_64x64_\d+\.png$/);
     });
-
-    it('exports composite mask PNG at specified scale', async () => {
-      const doc = createValidDocument({
-        pixels: (set) => {
-          set(10, 10, 8, SemanticZone.Skin);
-        },
-      });
-
-      const downloader = vi.fn();
-      await exportMaskPng(doc, 8, downloader);
-
-      expect(downloader).toHaveBeenCalledTimes(1);
-      const [blob, filename] = downloader.mock.calls[0];
-      expect(blob).toBeInstanceOf(Blob);
-      expect(filename).toMatch(/^mask_composite_8x_\d+\.png$/);
-    });
   });
 
   describe('ExportService UI orchestration & notifications', () => {
@@ -169,7 +153,7 @@ describe('PNG Export & Blob Safety (T06 / B6)', () => {
       const notifications: Array<{ message: string; type: string }> = [];
 
       const ports: ExportPorts = {
-        exportPng: exportProjectPng, exportZip: exportProjectZip, exportMaskPng,
+        exportPng: exportProjectPng, exportZip: exportProjectZip,
         isLoaded: () => options?.isLoaded ?? true,
         hasHairDraft: () => (options?.hairDraftPreset ?? null) !== null,
         hairDraftName: () => '红发预设',
@@ -188,7 +172,6 @@ describe('PNG Export & Blob Safety (T06 / B6)', () => {
       const service = new ExportService(vm);
 
       await service.exportPng();
-      await service.exportMaskPng();
 
       expect(vm.notify).not.toHaveBeenCalled();
     });
@@ -215,36 +198,6 @@ describe('PNG Export & Blob Safety (T06 / B6)', () => {
 
       expect(vm.notify).toHaveBeenCalledWith(
         expect.stringContaining('PNG 导出失败: Disk quota exceeded'),
-        'error'
-      );
-    });
-
-    it('notifies error when Mask PNG export fails', async () => {
-      const { vm } = createMockVm({ isLoaded: true });
-      const service = new ExportService(vm);
-
-      // Make canvas.toBlob fail with null
-      vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
-        if (tag === 'canvas') {
-          return {
-            width: 0,
-            height: 0,
-            getContext: vi.fn(() => ({
-              createImageData: vi.fn((w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4) })),
-              putImageData: vi.fn(),
-              drawImage: vi.fn(),
-              imageSmoothingEnabled: false,
-            })),
-            toBlob: vi.fn((cb: BlobCallback) => cb(null)),
-          } as any;
-        }
-        return {} as any;
-      });
-
-      await service.exportMaskPng(1);
-
-      expect(vm.notify).toHaveBeenCalledWith(
-        expect.stringContaining('PNG 导出失败: Canvas 导出 Blob 失败'),
         'error'
       );
     });

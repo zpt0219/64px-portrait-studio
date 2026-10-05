@@ -6,7 +6,7 @@
 import { ZONE_CONFIG, ALL_ZONES, MaskTool } from '../types';
 import { AutosaveService, KeyValueStore } from './services/AutosaveService';
 import { createBrowserStorage } from './adapters/BrowserStorage';
-import { exportProjectPng, exportProjectZip, exportMaskPng, importProjectZip } from './browser/projectArchive';
+import { exportProjectPng, exportProjectZip, importProjectZip } from './browser/projectArchive';
 import { decodeImageFile } from './browser/imageDecode';
 import { Header } from '../panels/Header';
 import { PalettePanel } from '../panels/PalettePanel';
@@ -49,7 +49,7 @@ export class App implements StudioEvents {
     this.browserStorage = createBrowserStorage();
     this.vm = new ViewModel({
       autosave: new AutosaveService(this.browserStorage),
-      exports: { exportPng: exportProjectPng, exportZip: exportProjectZip, exportMaskPng },
+      exports: { exportPng: exportProjectPng, exportZip: exportProjectZip },
     });
     this.importCoordinator = new ImportCoordinator({
       loadProject: (data) => this.vm.loadProject(data),

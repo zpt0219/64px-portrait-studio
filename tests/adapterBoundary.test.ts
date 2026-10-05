@@ -100,8 +100,7 @@ describe('T07 dependency boundary and injected capabilities', () => {
       expect(statuses).not.toContain('saved');
       await vm.exportPng();
       await vm.exportZip();
-      await vm.exportMaskPng();
-      expect(notices.filter(message => message.includes('导出服务未配置'))).toHaveLength(2);
+      expect(notices.filter(message => message.includes('导出服务未配置'))).toHaveLength(1);
       expect(notices).toContain('导出工程 ZIP 失败，请重试');
       vm.dispose();
       expect(access).not.toHaveBeenCalled();
@@ -117,10 +116,9 @@ describe('T07 dependency boundary and injected capabilities', () => {
   it('uses class-based export ports with their receiver intact and fresh document snapshots', async () => {
     const { ViewModel } = await import('../src/app/viewModel');
     class Backend implements ExportBackend {
-      calls: { format: string; doc: PortraitDocument; scale?: number }[] = [];
+      calls: { format: string; doc: PortraitDocument }[] = [];
       async exportPng(doc: PortraitDocument) { this.calls.push({ format: 'png', doc }); }
       async exportZip(doc: PortraitDocument) { this.calls.push({ format: 'zip', doc }); }
-      async exportMaskPng(doc: PortraitDocument, scale: number) { this.calls.push({ format: 'mask', doc, scale }); }
     }
     const backend = new Backend();
     const vm = new ViewModel({ autosave: new AutosaveService(createMemoryStore()), exports: backend });
@@ -128,13 +126,11 @@ describe('T07 dependency boundary and injected capabilities', () => {
     await vm.exportPng();
     vm.loadProject(documentToProjectData(createValidDocument({ pixels: set => set(0, 0, 8) })));
     await vm.exportZip();
-    await vm.exportMaskPng(8);
-    expect(backend.calls.map(call => call.format)).toEqual(['png', 'zip', 'mask']);
-    expect(backend.calls.map(call => call.doc.pixelIndices[0])).toEqual([5, 8, 8]);
-    expect(backend.calls[2].scale).toBe(8);
-    expect(backend.calls[2].doc).not.toBe(vm.doc);
+    expect(backend.calls.map(call => call.format)).toEqual(['png', 'zip']);
+    expect(backend.calls.map(call => call.doc.pixelIndices[0])).toEqual([5, 8]);
+    expect(backend.calls[1].doc).not.toBe(vm.doc);
     vm.doc.pixelIndices[0] = 1;
-    expect(backend.calls[2].doc.pixelIndices[0]).toBe(8);
+    expect(backend.calls[1].doc.pixelIndices[0]).toBe(8);
     vm.dispose();
   });
 

@@ -22,7 +22,7 @@ import { SelectionInteraction } from './SelectionInteraction';
 type PointerInput = Pick<MouseEvent, 'clientX' | 'clientY' | 'button' | 'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey'>;
 
 /** 画布面板需要 App 提供的入口 (文件导入、弹窗、画中画) */
-export interface CanvasHooks {
+interface CanvasHooks {
   onFileDrop: (file: File) => void;
   onTriggerUpload: () => void;
   onTogglePreview: () => void;

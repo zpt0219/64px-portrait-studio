@@ -12,7 +12,6 @@ import { SelectionInteraction } from '../src/panels/canvas/SelectionInteraction'
 
 const exportProjectPng = vi.fn().mockResolvedValue(undefined);
 const exportProjectZip = vi.fn().mockResolvedValue(undefined);
-const exportMaskPng = vi.fn().mockResolvedValue(undefined);
 
 function memoryStore(): KeyValueStore & { map: Map<string, string> } {
   const map = new Map<string, string>();
@@ -33,7 +32,7 @@ describe('Follow-up review: persistence, gestures and stale requests', () => {
     vi.useRealTimers();
   });
   function loaded(store: KeyValueStore = memoryStore()): ViewModel {
-    const vm = new ViewModel({ autosave: new AutosaveService(store), exports: { exportPng: exportProjectPng, exportZip: exportProjectZip, exportMaskPng } });
+    const vm = new ViewModel({ autosave: new AutosaveService(store), exports: { exportPng: exportProjectPng, exportZip: exportProjectZip } });
     instances.push(vm);
     vm.loadProject(documentToProjectData(createValidDocument({ pixels: set => set(0, 0, 5, SemanticZone.Hair) })));
     return vm;
@@ -122,10 +121,8 @@ describe('Follow-up review: persistence, gestures and stale requests', () => {
     vm.dispose();
     await vm.exportPng();
     await vm.exportZip();
-    await vm.exportMaskPng();
     expect(exportProjectPng).not.toHaveBeenCalled();
     expect(exportProjectZip).not.toHaveBeenCalled();
-    expect(exportMaskPng).not.toHaveBeenCalled();
   });
   it('changing color ends the current stroke before later dabs arrive', () => {
     const vm = loaded();

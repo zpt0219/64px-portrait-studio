@@ -11,6 +11,7 @@ import { SemanticZone, HairPresetKey } from '../types';
 import { RAMPS_INFO, TRANSPARENT_INDEX, isHairPresetKey } from '../data/palette';
 import { findNearestColor } from './colorUtils';
 import { PIXEL_COUNT } from './pixelGrid';
+import { uint8ArrayToBase64, base64ToUint8Array } from './projectData';
 
 /** 当前工作台支持的最新工程 Schema 版本 */
 export const CURRENT_PROJECT_VERSION = 2;
@@ -33,23 +34,6 @@ export const V1_HAIR_RAMPS: Record<HairPresetKey, string[]> = {
 
 /** 5 色阶收敛到 4 色阶的标准法则：深(1)与影(2)合并为统一发丝阴影(1) */
 const MAP_5_TO_4 = [0, 1, 1, 2, 3];
-
-function decodeBase64(base64: string): Uint8Array {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
-}
-
-function encodeBase64(bytes: Uint8Array): string {
-  let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
-}
 
 /**
  * 针对 v1 头发像素的启发式预设投票探测
@@ -98,8 +82,8 @@ export function migrateV1ToV2(raw: Record<string, unknown>): Record<string, unkn
   let pixels: Uint8Array;
   let mask: Uint8Array;
   try {
-    pixels = decodeBase64(data.pixels);
-    mask = decodeBase64(data.mask);
+    pixels = base64ToUint8Array(data.pixels);
+    mask = base64ToUint8Array(data.mask);
   } catch {
     data.v = 2;
     return data;
@@ -148,7 +132,7 @@ export function migrateV1ToV2(raw: Record<string, unknown>): Record<string, unkn
     }
 
     if (modified) {
-      data.pixels = encodeBase64(pixels);
+      data.pixels = uint8ArrayToBase64(pixels);
     }
   }
 

@@ -22,7 +22,7 @@ import {
 import { fitFaceEgg } from './faceModel';
 import { analyzeHairMask } from './hairDetector';
 
-export const FACE_OUTLINE_MODEL = {
+const FACE_OUTLINE_MODEL = {
   medianRowWidthScale: 1.15,
   minimumWidth: 26,
   maximumWidth: 28,
@@ -46,7 +46,7 @@ export const FACE_OUTLINE_MODEL = {
   linkedVerticalDeadZone: 3.0,
 };
 
-export function deadZoneShift(error: number, tolerance: number): number {
+function deadZoneShift(error: number, tolerance: number): number {
   if (Math.abs(error) <= tolerance) return 0;
   return Math.sign(error) * Math.max(1, Math.round(Math.abs(error) - tolerance));
 }

@@ -18,7 +18,7 @@ import {
 } from './overlays';
 
 /** 画布面板传入的交互状态 */
-export interface CanvasOverlay {
+interface CanvasOverlay {
   /** 正在拖动的选区内容 */
   floating: { origX: number; origY: number; patch: Patch; dx: number; dy: number; copy: boolean } | null;
   /** 正在拖拽的框选矩形；maskAction 非空表示遮罩模式的智能框选 */

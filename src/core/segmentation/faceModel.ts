@@ -2,7 +2,7 @@ import { PIXEL_COUNT, IMAGE_WIDTH as W } from '../pixelGrid';
 import { Bbox, Point } from './types';
 import { xOf, yOf, percentileInt, median, mean, clamp } from './stats';
 
-export function cubicPoints(start: Point, control1: Point, control2: Point, end: Point, steps = 12): Point[] {
+function cubicPoints(start: Point, control1: Point, control2: Point, end: Point, steps = 12): Point[] {
   const points: Point[] = [];
   for (let step = 1; step <= steps; step++) {
     const t = step / steps;
@@ -20,7 +20,7 @@ export function cubicPoints(start: Point, control1: Point, control2: Point, end:
 }
 
 /** bbox 内的对称蛋形脸轮廓点，asymmetry 控制左右宽度差，shearX 控制上下错切 */
-export function faceOutlinePoints(bbox: Bbox, asymmetry = 0.0, shearX = 0.0): Point[] {
+function faceOutlinePoints(bbox: Bbox, asymmetry = 0.0, shearX = 0.0): Point[] {
   const [left, top, right, bottom] = bbox;
   const centerX = (left + right) / 2;
   const radiusX = (right - left) / 2;
@@ -53,7 +53,7 @@ export function faceOutlinePoints(bbox: Bbox, asymmetry = 0.0, shearX = 0.0): Po
 }
 
 /** 扫描线填充多边形 (像素中心采样) */
-export function rasterPolygon(points: Point[]): boolean[] {
+function rasterPolygon(points: Point[]): boolean[] {
   const mask = new Array<boolean>(PIXEL_COUNT).fill(false);
   const n = points.length;
   if (n < 3) return mask;
@@ -84,7 +84,7 @@ export function rasterPolygon(points: Point[]): boolean[] {
   return mask;
 }
 
-export const FACE_EGG_MODEL = {
+const FACE_EGG_MODEL = {
   eyeLineRatio: 0.45,
   minimumWidth: 16,
   maximumWidth: 30,

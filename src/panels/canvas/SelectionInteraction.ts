@@ -7,13 +7,13 @@ import { Patch, extractPatch } from '../../core/editOps';
 import { layersOf, PortraitDocument } from '../../model/document';
 import { isInRect } from '../../model/session';
 
-export interface BoxSelectState {
+interface BoxSelectState {
   start: [number, number];
   rect: RectSelection;
   maskAction: 'add' | 'remove' | 'subtract' | 'clear' | null;
 }
 
-export interface MovingSelectionState {
+interface MovingSelectionState {
   start: [number, number];
   offset: [number, number];
   floating: {

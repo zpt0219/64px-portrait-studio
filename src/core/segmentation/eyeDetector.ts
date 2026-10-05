@@ -27,16 +27,16 @@ export const EYE_DETECTION_MODEL = {
   highlightMaxGeometryYDelta: 8,
 };
 
-export function chroma(rgb: Rgb): { min: number; max: number } {
+function chroma(rgb: Rgb): { min: number; max: number } {
   return { min: Math.min(rgb[0], rgb[1], rgb[2]), max: Math.max(rgb[0], rgb[1], rgb[2]) };
 }
 
-export function isSclera(rgb: Rgb): boolean {
+function isSclera(rgb: Rgb): boolean {
   const { min, max } = chroma(rgb);
   return min >= EYE_DETECTION_MODEL.scleraMinChannel && max - min <= EYE_DETECTION_MODEL.scleraMaxChroma && !isFaceSkin(rgb);
 }
 
-export function isEyeInk(rgb: Rgb): boolean {
+function isEyeInk(rgb: Rgb): boolean {
   const [red, green, blue] = rgb;
   const { min, max } = chroma(rgb);
   const dark = max < EYE_DETECTION_MODEL.inkMaxChannel;
@@ -45,13 +45,13 @@ export function isEyeInk(rgb: Rgb): boolean {
   return (dark || colourful) && !blush;
 }
 
-export function isEyeHighlight(rgb: Rgb): boolean {
+function isEyeHighlight(rgb: Rgb): boolean {
   const { min, max } = chroma(rgb);
   return min >= EYE_DETECTION_MODEL.highlightMinChannel && max - min <= EYE_DETECTION_MODEL.highlightMaxChroma && !isFaceSkin(rgb);
 }
 
 /** 组件周围 radius 范围内 (限定在 rect 内) 的瞳色像素 */
-export function nearbyInk(pixels: Rgb[], comp: number[], radius: number, rect: Bbox): Set<number> {
+function nearbyInk(pixels: Rgb[], comp: number[], radius: number, rect: Bbox): Set<number> {
   const [left, top, right, bottom] = rect;
   const ink = new Set<number>();
   for (const off of comp) {

@@ -40,7 +40,7 @@ export abstract class Command {
 }
 
 /** 撤销快照：文档加选区 (选区随撤销一起恢复) */
-export interface DocumentMemento {
+interface DocumentMemento {
   pixels: Uint8Array;
   mask: Uint8Array;
   palette: string[];

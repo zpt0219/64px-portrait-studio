@@ -3,7 +3,7 @@ import { IMAGE_WIDTH as W, PIXEL_COUNT, connectedComponents, maskFromOffsets } f
 import { Bbox } from './types';
 import { rgbKey, sameRgb, isFaceSkin } from './stats';
 
-export const HAIR_PALETTE_MODEL = {
+const HAIR_PALETTE_MODEL = {
   minimumExactColorPixels: 2,
   maximumOklabDistance: 0.04,
   seedHorizontalPadding: 4,
