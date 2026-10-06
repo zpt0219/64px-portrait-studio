@@ -101,7 +101,6 @@ src/
 │   ├── colorUtils.ts        # RGB/Hex 互转与 Delta-E 颜色距离比较
 │   ├── editOps.ts           # 4/8 邻域 BFS 泛洪、canAssignZone 遮罩规则、选区几何裁剪
 │   ├── imageImport.ts       # 纯图像导入裁切、量化与遮罩自动生成入口
-│   ├── maskColors.ts        # 遮罩图层视觉半透明着色查表
 │   ├── projectData.ts       # 工程 JSON 规范编解码器与校验器 (validateProjectData)
 │   ├── recolorEngine.ts     # GBA 发色 5 阶梯度非破坏性重着色计算引擎
 │   └── segmentation/        # 自动语义分割器 (8 区域特征提取与残差合并为 5 大分区)

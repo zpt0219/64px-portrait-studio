@@ -19,7 +19,7 @@ import {
 } from '../core/constants';
 import { Rgb, hexToRgb, findNearestColor } from '../utils/colorUtils';
 import { computeSemanticMask } from '../core/segmentation';
-import { Patch, FULL_CANVAS, extractPatch } from '../core/editOps';
+import { Patch, FULL_CANVAS, extractPatch, findOuterWhiteOffsets } from '../core/editOps';
 import { AutosaveService, StorageSaveResult } from './services/AutosaveService';
 import { projectDataToDocument } from '../core/projectData';
 import { ExportBackend, PromptOptions, StudioPrompts, unavailableExports } from './ports';
@@ -46,7 +46,6 @@ import {
   nextGestureId,
 } from '../command/paletteCommands';
 import { IMAGE_WIDTH, IMAGE_HEIGHT } from '../core/pixelGrid';
-import { findOuterWhiteOffsets } from '../core/outerWhite';
 import { recolorHair } from '../core/recolorEngine';
 
 import { processDecodedImage } from '../core/imageImport';

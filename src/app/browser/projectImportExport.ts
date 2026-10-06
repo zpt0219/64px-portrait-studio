@@ -16,7 +16,7 @@ import { documentToProjectData, validateProjectData, CURRENT_PROJECT_VERSION, up
 import { encodeMinimalIndexedPng } from '../../utils/minimalPng';
 import { Rgb, hexToRgb } from '../../utils/colorUtils';
 import { drawIndexedPixels } from './pixelCanvas';
-import { zoneRgbTable } from '../../core/maskColors';
+import { zoneRgbTable } from '../../core/editOps';
 import { IMAGE_WIDTH, IMAGE_HEIGHT, PIXEL_COUNT } from '../../core/pixelGrid';
 import { decodeImageFile } from './imageDecode';
 import { downloadBlob, canvasToBlob } from './domUtils';

@@ -8,6 +8,7 @@ import {
   replaceColor,
   floodFillPixels,
   assignColorToMask,
+  zoneRgbTable,
   FULL_CANVAS,
   Layers,
 } from '../src/core/editOps';
@@ -160,4 +161,14 @@ describe('editOps', () => {
     expect(layers.mask[20]).toBe(SemanticZone.Clothes);
     expect(layers.mask[30]).toBe(SemanticZone.Background);
   });
+
+  it('zoneRgbTable produces table for all semantic zones with specified background', () => {
+    const table = zoneRgbTable([10, 20, 30]);
+    expect(table[SemanticZone.Background]).toEqual([10, 20, 30]);
+    expect(table[SemanticZone.Hair]).toBeDefined();
+    expect(table[SemanticZone.Skin]).toBeDefined();
+    expect(table[SemanticZone.Eyes]).toBeDefined();
+    expect(table[SemanticZone.Clothes]).toBeDefined();
+  });
 });
+

@@ -5,9 +5,8 @@
 import { SemanticZone, RectSelection } from '../../core/types';
 import { TRANSPARENT_INDEX, WHITE_PALETTE_INDEX } from '../../core/constants';
 import { hexToRgb } from '../../utils/colorUtils';
-import { zoneRgbTable } from '../../core/maskColors';
 import { IMAGE_WIDTH as W, IMAGE_HEIGHT as H } from '../../core/pixelGrid';
-import { Patch } from '../../core/editOps';
+import { Patch, zoneRgbTable } from '../../core/editOps';
 
 /** 遮罩覆盖层配色 (背景用深蓝灰，与深色界面区分) */
 const ZONE_OVERLAY_RGB = zoneRgbTable([15, 23, 42]);

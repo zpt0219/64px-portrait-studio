@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findOuterWhiteOffsets, isWhiteRgb } from '../src/core/outerWhite';
+import { findOuterWhiteOffsets, isWhiteRgb } from '../src/core/editOps';
 import { createEmptyDocument } from '../src/core/document';
 import { SemanticZone } from '../src/core/types';
 import { TRANSPARENT_INDEX } from '../src/core/constants';

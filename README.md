@@ -124,11 +124,9 @@ src/
 │   ├── constants.ts         # 36 色色板、9 大发色色阶、分区配置常量
 │   ├── types.ts             # 领域类型与接口定义
 │   ├── segmentation/        # 5 分区语义遮罩自动识别 (背景、轮廓、面部/眼睛/嘴、头发)
-│   ├── editOps.ts           # 像素 + 遮罩的纯编辑操作 (泛洪、替换、选区块移动/翻转/旋转)
+│   ├── editOps.ts           # 像素与遮罩纯编辑操作、图算法与分区查表 (泛洪、替换、选区块、外围白底、分区RGB表)
 │   ├── recolorEngine.ts     # 发色识别与 5 阶色阶置换
 │   ├── pixelGrid.ts         # 64×64 网格常量、邻域、连通域、泛洪
-│   ├── maskColors.ts        # 语义分区 RGB 查表
-│   ├── outerWhite.ts        # 连通性外围白底保护提取
 │   ├── imageImport.ts       # 纯像素量化、语义识别与导入结果
 │   ├── projectData.ts       # 工程数据校验与序列化
 │   └── projectMigration.ts  # 工程版本自动迁移
