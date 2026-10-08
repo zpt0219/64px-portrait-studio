@@ -64,8 +64,8 @@ export class CanvasRenderer {
     ctx.clearRect(0, 0, size, size);
     ctx.drawImage(this.offscreen, 0, 0, IMAGE_WIDTH, IMAGE_HEIGHT, 0, 0, size, size);
 
-    // 2. 半透明分区遮罩
-    const showMask = session.showMaskOverlay && session.maskOpacity > 0.01;
+    // 2. 半透明分区遮罩 (仅在遮罩模式下且开启覆盖层时渲染，实现模式间物理视觉隔离)
+    const showMask = session.activeMode === 'mask' && session.showMaskOverlay && session.maskOpacity > 0.01;
     const visibleZones = new Set(session.visibleMaskZones);
     if (showMask && visibleZones.size > 0) {
       drawZoneOverlay(ctx, doc.semanticMask, visibleZones, session.maskOpacity, zoom);

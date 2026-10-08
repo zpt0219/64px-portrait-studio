@@ -107,12 +107,12 @@ export class SetHairPresetCommand extends SnapshotCommand {
 /** 应用发色：写入计算结果并记下新发色预设 */
 export class CommitHairRecolorCommand extends SnapshotCommand {
   readonly name = 'CommitHairRecolor';
-  constructor(private readonly pixels: Uint8Array, private readonly presetKey: HairPresetKey) {
+  constructor(private readonly pixels: Uint8Array, private readonly presetKey: HairPresetKey | null) {
     super();
   }
 
   override init(ctx: CommandContext): boolean {
-    if (!this.pixels || this.pixels.length !== PIXEL_COUNT || !isHairPresetKey(this.presetKey)) {
+    if (!this.pixels || this.pixels.length !== PIXEL_COUNT || (this.presetKey !== null && !isHairPresetKey(this.presetKey))) {
       return false;
     }
     for (const index of this.pixels) {

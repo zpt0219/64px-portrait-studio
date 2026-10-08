@@ -7,8 +7,8 @@
 项目采用 Vanilla TypeScript + Vite。界面调用 `ViewModel`，文档修改通过命令执行，会话状态直接修改后广播事件。面板将事件合并到下一次 `requestAnimationFrame` 渲染。
 
 - `core/`、`command/` 和纯工具不依赖界面 DOM。`editOps` 原地修改显式传入的数组，不能将其理解为没有副作用的数学纯函数。
-- 文档和会话模型位于 `core/document.ts`、`core/session.ts`。当前没有 `model/`、`data/`、`types/` 目录，也没有四个独立业务 controller。
-- `app/viewModel.ts` 直接组织导入结果、选区剪贴板、发色应用与导出；`app/app.ts` 装配面板和浏览器能力。
+- 文档和会话模型位于 `core/document.ts`、`core/session.ts`。当前没有 `model/`、`data/`、`types/` 目录。
+- `app/viewModel.ts` 作为父中枢协调器，统筹独立的 `PixelViewModel`（绘图）与 `MaskViewModel`（遮罩）两个子 ViewModel，模式切换严格遵循 `canExit -> cleanup -> enter` 协议，提供完整的状态隔离与试色确认；`app/app.ts` 装配面板和浏览器能力。
 - `app/ports.ts` 定义 `StudioPrompts` 与 `ExportBackend`。默认 `ViewModel` 可无浏览器构造，未注入存储或导出能力时返回失败。
 - 浏览器解码、Canvas、ZIP 与下载位于 `app/browser/`；localStorage 通过 `app/adapters/BrowserStorage.ts` 注入 `AutosaveService`。
 
@@ -63,7 +63,10 @@ src/
 │   └── transformCommands.ts       # 翻转与旋转
 ├── app/
 │   ├── app.ts                     # 装配、快捷键、文件导入与生命周期
-│   ├── viewModel.ts               # 用户意图、命令、会话与事件扇出
+│   ├── viewModel.ts               # 父中枢与模式协调器，生命周期调度与门面
+│   ├── subViewModel.ts            # SubViewModel 接口与 StudioContext
+│   ├── pixelViewModel.ts          # 色板、像素工具、选区与几何变换
+│   ├── maskViewModel.ts           # 遮罩工具、分区显隐、匹配色与发色试色
 │   ├── ports.ts                   # 确认与导出端口
 │   ├── editorContext.ts           # 高亮与实时预览等界面状态
 │   ├── services/AutosaveService.ts # 实例级 300ms 防抖保存
