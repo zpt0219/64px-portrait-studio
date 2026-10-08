@@ -3,11 +3,13 @@ import {
   extractPatch,
   stampPatch,
   clearRect,
+  erase,
   flipRect,
   rotateRectCW,
   replaceColor,
   floodFillPixels,
   assignColorToMask,
+  boxSelectMask,
   zoneRgbTable,
   FULL_CANVAS,
   Layers,
@@ -18,7 +20,7 @@ import { PIXEL_COUNT, IMAGE_WIDTH as W } from '../src/core/pixelGrid';
 
 function createTestLayers(): Layers {
   const pixels = new Uint8Array(PIXEL_COUNT).fill(TRANSPARENT_INDEX);
-  const mask = new Uint8Array(PIXEL_COUNT).fill(SemanticZone.Background);
+  const mask = new Uint8Array(PIXEL_COUNT).fill(SemanticZone.None);
   const lockedZones = new Set<SemanticZone>();
   return { pixels, mask, lockedZones };
 }
@@ -59,7 +61,7 @@ describe('editOps', () => {
     expect(layers.mask[11 * W + 11]).toBe(SemanticZone.Clothes);
   });
 
-  it('clearRect clears pixels and resets mask to background even if zone is locked', () => {
+  it('clearRect clears pixels and resets mask to None even if zone is locked', () => {
     const layers = createTestLayers();
     layers.pixels[2 * W + 2] = 5;
     layers.mask[2 * W + 2] = SemanticZone.Hair;
@@ -71,13 +73,13 @@ describe('editOps', () => {
     const changed = clearRect(layers, { x: 2, y: 2, w: 2, h: 1 });
     expect(changed).toBe(true);
 
-    // Pixel at (2,2) should be transparent, mask should be Background
+    // Pixel at (2,2) should be transparent, mask should be None
     expect(layers.pixels[2 * W + 2]).toBe(TRANSPARENT_INDEX);
-    expect(layers.mask[2 * W + 2]).toBe(SemanticZone.Background);
+    expect(layers.mask[2 * W + 2]).toBe(SemanticZone.None);
 
-    // Pixel at (3,2) should be transparent, and mask must be Background (T02 invariant overrides zone lock)
+    // Pixel at (3,2) should be transparent, and mask must be None (T02 invariant overrides zone lock)
     expect(layers.pixels[2 * W + 3]).toBe(TRANSPARENT_INDEX);
-    expect(layers.mask[2 * W + 3]).toBe(SemanticZone.Background);
+    expect(layers.mask[2 * W + 3]).toBe(SemanticZone.None);
   });
 
   it('flipRect flips horizontal and vertical', () => {
@@ -159,16 +161,140 @@ describe('editOps', () => {
     expect(count).toBe(2);
     expect(layers.mask[10]).toBe(SemanticZone.Clothes);
     expect(layers.mask[20]).toBe(SemanticZone.Clothes);
-    expect(layers.mask[30]).toBe(SemanticZone.Background);
+    expect(layers.mask[30]).toBe(SemanticZone.None);
   });
 
-  it('zoneRgbTable produces table for all semantic zones with specified background', () => {
+  it('zoneRgbTable produces table for all semantic zones with specified default color', () => {
     const table = zoneRgbTable([10, 20, 30]);
-    expect(table[SemanticZone.Background]).toEqual([10, 20, 30]);
+    expect(table[SemanticZone.None]).toEqual([10, 20, 30]);
     expect(table[SemanticZone.Hair]).toBeDefined();
     expect(table[SemanticZone.Skin]).toBeDefined();
     expect(table[SemanticZone.Eyes]).toBeDefined();
     expect(table[SemanticZone.Clothes]).toBeDefined();
   });
-});
 
+  it('erase sets pixel to transparent and mask to None unconditionally', () => {
+    const layers = createTestLayers();
+    layers.pixels[100] = 5;
+    layers.mask[100] = SemanticZone.Hair;
+    layers.lockedZones.add(SemanticZone.Hair);
+
+    erase(layers, 100);
+    expect(layers.pixels[100]).toBe(TRANSPARENT_INDEX);
+    expect(layers.mask[100]).toBe(SemanticZone.None);
+  });
+
+  describe('boxSelectMask', () => {
+    it('executes add action for matching colors in selection rectangle', () => {
+      const layers = createTestLayers();
+      layers.pixels[0] = 1;
+      layers.pixels[1] = 2;
+      layers.pixels[W] = 1;
+      layers.pixels[W + 1] = 3;
+
+      const count = boxSelectMask(
+        layers,
+        { x: 0, y: 0, w: 2, h: 2 },
+        'add',
+        new Set([1, 2]),
+        SemanticZone.Hair
+      );
+
+      expect(count).toBe(3);
+      expect(layers.mask[0]).toBe(SemanticZone.Hair);
+      expect(layers.mask[1]).toBe(SemanticZone.Hair);
+      expect(layers.mask[W]).toBe(SemanticZone.Hair);
+      expect(layers.mask[W + 1]).toBe(SemanticZone.None);
+    });
+
+    it('rejects add when target zone is locked', () => {
+      const layers = createTestLayers();
+      layers.pixels[0] = 1;
+      layers.lockedZones.add(SemanticZone.Hair);
+
+      const count = boxSelectMask(
+        layers,
+        { x: 0, y: 0, w: 1, h: 1 },
+        'add',
+        new Set([1]),
+        SemanticZone.Hair
+      );
+
+      expect(count).toBe(0);
+      expect(layers.mask[0]).toBe(SemanticZone.None);
+    });
+
+    it('executes clear action resetting target zone pixels to None', () => {
+      const layers = createTestLayers();
+      layers.pixels[0] = 1;
+      layers.mask[0] = SemanticZone.Skin;
+      layers.pixels[1] = 2;
+      layers.mask[1] = SemanticZone.Clothes;
+
+      const count = boxSelectMask(
+        layers,
+        { x: 0, y: 0, w: 2, h: 1 },
+        'clear',
+        new Set(),
+        SemanticZone.Skin
+      );
+
+      expect(count).toBe(1);
+      expect(layers.mask[0]).toBe(SemanticZone.None);
+      expect(layers.mask[1]).toBe(SemanticZone.Clothes);
+    });
+
+    it('executes subtract action to clear non-matching noise in target zone', () => {
+      const layers = createTestLayers();
+      layers.pixels[0] = 1; // matching
+      layers.mask[0] = SemanticZone.Hair;
+      layers.pixels[1] = 9; // non-matching noise
+      layers.mask[1] = SemanticZone.Hair;
+
+      const count = boxSelectMask(
+        layers,
+        { x: 0, y: 0, w: 2, h: 1 },
+        'subtract',
+        new Set([1]),
+        SemanticZone.Hair
+      );
+
+      expect(count).toBe(1);
+      expect(layers.mask[0]).toBe(SemanticZone.Hair);
+      expect(layers.mask[1]).toBe(SemanticZone.None);
+    });
+
+    it('executes remove action to clear matching colors from target zone', () => {
+      const layers = createTestLayers();
+      layers.pixels[0] = 1; // matching
+      layers.mask[0] = SemanticZone.Hair;
+      layers.pixels[1] = 9; // other color in hair
+      layers.mask[1] = SemanticZone.Hair;
+
+      const count = boxSelectMask(
+        layers,
+        { x: 0, y: 0, w: 2, h: 1 },
+        'remove',
+        new Set([1]),
+        SemanticZone.Hair
+      );
+
+      expect(count).toBe(1);
+      expect(layers.mask[0]).toBe(SemanticZone.None);
+      expect(layers.mask[1]).toBe(SemanticZone.Hair);
+    });
+  });
+
+  it('tracks mask changes when replacing color with transparency', () => {
+    const layers = createTestLayers();
+    layers.pixels[0] = 5;
+    layers.mask[0] = SemanticZone.Hair;
+
+    const out = { maskChanged: false };
+    const changed = replaceColor(layers, 5, TRANSPARENT_INDEX, { x: 0, y: 0, w: 1, h: 1 }, out);
+    expect(changed).toBe(1);
+    expect(out.maskChanged).toBe(true);
+    expect(layers.pixels[0]).toBe(TRANSPARENT_INDEX);
+    expect(layers.mask[0]).toBe(SemanticZone.None);
+  });
+});

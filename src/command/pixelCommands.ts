@@ -6,6 +6,7 @@ import { SemanticZone, RectSelection, EditorMode, PixelTool, MaskTool, BrushSize
 import { TRANSPARENT_INDEX } from '../core/constants';
 import { IMAGE_WIDTH as W, IMAGE_HEIGHT as H } from '../core/pixelGrid';
 import {
+  erase,
   Patch,
   FULL_CANVAS,
   stampPatch,
@@ -89,9 +90,9 @@ export class StrokeCommand extends SnapshotCommand {
     return this.finish(ctx, false);
   }
 
-  private forceClearMaskToBackground(ctx: CommandContext, offset: number): void {
-    if (ctx.doc.semanticMask[offset] !== SemanticZone.Background) {
-      ctx.doc.semanticMask[offset] = SemanticZone.Background;
+  private forceClearMaskToNone(ctx: CommandContext, offset: number): void {
+    if (ctx.doc.semanticMask[offset] !== SemanticZone.None) {
+      ctx.doc.semanticMask[offset] = SemanticZone.None;
       this.maskChanged = true;
     }
   }
@@ -102,7 +103,7 @@ export class StrokeCommand extends SnapshotCommand {
     const color = p.button === 2 ? p.bg : (p.pixelTool === 'eraser' ? TRANSPARENT_INDEX : p.fg);
     this.setPixel(ctx, offset, color);
     if (color === TRANSPARENT_INDEX) {
-      this.forceClearMaskToBackground(ctx, offset);
+      this.forceClearMaskToNone(ctx, offset);
     }
   }
 
@@ -116,7 +117,7 @@ export class StrokeCommand extends SnapshotCommand {
         const offset = py * W + px;
         // 关键防护：涂抹遮罩时跳过透明像素；擦除时允许擦除可能遗留在透明像素上的旧遮罩
         if (!erase && ctx.doc.pixelIndices[offset] === TRANSPARENT_INDEX) continue;
-        this.setZone(ctx, py * W + px, erase ? SemanticZone.Background : p.zone);
+        this.setZone(ctx, py * W + px, erase ? SemanticZone.None : p.zone);
       }
     }
   }
@@ -142,7 +143,7 @@ export class StrokeCommand extends SnapshotCommand {
     const layers = layersOf(ctx.doc, p.mode === 'mask' ? p.lockedZones : []);
     const scope = p.selection ?? FULL_CANVAS;
     if (p.mode === 'mask') {
-      const zone = p.button === 0 ? p.zone : SemanticZone.Background;
+      const zone = p.button === 0 ? p.zone : SemanticZone.None;
       if (p.replaceAll) {
         const fromColor = layers.pixels[y * W + x];
         this.maskChanged = assignColorToMask(layers, fromColor, zone, scope) > 0;
@@ -152,35 +153,14 @@ export class StrokeCommand extends SnapshotCommand {
       return;
     }
     const color = p.button === 0 ? p.fg : p.bg;
-    if (color === TRANSPARENT_INDEX) {
-      const maskBefore = new Uint8Array(ctx.doc.semanticMask);
-      if (p.replaceAll) {
-        const fromColor = layers.pixels[y * W + x];
-        this.pixelsChanged = replaceColor(layers, fromColor, color, scope) > 0;
-      } else {
-        this.pixelsChanged = floodFillPixels(layers, x, y, color, p.diagonal, scope);
-      }
-      if (this.pixelsChanged) {
-        let changed = false;
-        for (let i = 0; i < maskBefore.length; i++) {
-          if (maskBefore[i] !== ctx.doc.semanticMask[i]) {
-            changed = true;
-            break;
-          }
-        }
-        this.maskChanged = changed;
-      } else {
-        this.maskChanged = false;
-      }
+    const out = { maskChanged: false };
+    if (p.replaceAll) {
+      const fromColor = layers.pixels[y * W + x];
+      this.pixelsChanged = replaceColor(layers, fromColor, color, scope, out) > 0;
     } else {
-      if (p.replaceAll) {
-        const fromColor = layers.pixels[y * W + x];
-        this.pixelsChanged = replaceColor(layers, fromColor, color, scope) > 0;
-      } else {
-        this.pixelsChanged = floodFillPixels(layers, x, y, color, p.diagonal, scope);
-      }
-      this.maskChanged = false;
+      this.pixelsChanged = floodFillPixels(layers, x, y, color, p.diagonal, scope, out);
     }
+    this.maskChanged = out.maskChanged ?? false;
   }
 }
 
@@ -215,7 +195,7 @@ export class PastePatchCommand extends SnapshotCommand {
   }
 }
 
-/** 把矩形清空为透明 (锁定分区的遮罩保留) */
+/** 把矩形清空为透明，遮罩无条件清为 None */
 export class ClearRectCommand extends SnapshotCommand {
   readonly name = 'ClearRect';
   constructor(private readonly rect: RectSelection, private readonly lockedZones: SemanticZone[]) {
@@ -243,16 +223,16 @@ export class ReplaceColorCommand extends SnapshotCommand {
   }
 }
 
-/** 把给定像素设为透明并归入背景分区 (扣外围白底) */
+/** 把给定像素设为透明并清除遮罩 (扣外围白底；锁定过滤由调用方完成) */
 export class ClearPixelsCommand extends SnapshotCommand {
   readonly name = 'ClearPixels';
   constructor(private readonly offsets: number[]) {
     super();
   }
   protected apply({ doc }: CommandContext): void {
+    const layers = layersOf(doc, []);
     for (const offset of this.offsets) {
-      doc.pixelIndices[offset] = TRANSPARENT_INDEX;
-      doc.semanticMask[offset] = SemanticZone.Background;
+      erase(layers, offset);
     }
   }
 }

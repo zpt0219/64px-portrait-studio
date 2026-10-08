@@ -3,7 +3,7 @@
  */
 
 import { hexToRgb } from './colorUtils';
-import { TRANSPARENT_INDEX } from '../core/constants';
+import { TRANSPARENT_INDEX, IMAGE_WIDTH, IMAGE_HEIGHT } from '../core/constants';
 
 /** PNG 8 字节文件签名 */
 const PNG_SIGNATURE = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -64,8 +64,8 @@ export async function encodeMinimalIndexedPng(
   pixels: Uint8Array,
   palette: string[]
 ): Promise<Blob> {
-  const width = 64;
-  const height = 64;
+  const width = IMAGE_WIDTH;
+  const height = IMAGE_HEIGHT;
 
   // 1. IHDR Chunk (13 字节)
   const ihdrData = new Uint8Array(13);

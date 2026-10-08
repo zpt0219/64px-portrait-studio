@@ -2,12 +2,23 @@ import { Rgb, rgbToOklab, oklabDistance } from '../../utils/colorUtils';
 import { PIXEL_COUNT, getNeighbours, connectedComponents, maskFromOffsets } from '../pixelGrid';
 import { sameRgb, rgbKey } from './stats';
 
+/** 构成有效外轮廓种子段的最小连通像素数量（过滤杂色孤立噪点） */
 const OUTLINE_MIN_COMPONENT_PIXELS = 10;
+/** 与种子轮廓色合并归类时的最大 OKLab 色差容差 */
 const OUTLINE_MAX_OKLAB_DISTANCE = 0.035;
 
 /**
- * 与背景相邻的前景像素中，能形成 ≥10 像素连通段的颜色视为轮廓色；
- * 再把与这些颜色相近、且与种子段相连的前景像素并入轮廓。
+ * 提取像素人物的外轮廓线 (墨线)。
+ *
+ * 算法过程：
+ * 1. 寻找与背景相邻的前景像素候选集；
+ * 2. 统计各颜色在该集合中的连通段，满足 ≥10 像素的颜色认定为轮廓墨线色；
+ * 3. 沿种子连通段向外扩展，将色差在 0.035 以内的相连像素合并为完整轮廓掩码。
+ *
+ * @param pixels 图像 RGB 像素
+ * @param backgroundMask 背景掩码
+ * @param foregroundMask 前景掩码
+ * @returns outlineMask (轮廓像素掩码) 与 outlineColors (认定的轮廓颜色列表)
  */
 export function analyzePixelOutline(
   pixels: Rgb[],

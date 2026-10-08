@@ -34,25 +34,27 @@ function createContext(doc = createValidDocument()) {
 
 describe('Mask Command Lock and Penetration Defense (T03 - B2)', () => {
   describe('canAssignZone pure policy function', () => {
-    it('rejects transparent pixel assigned to any non-background zone', () => {
-      expect(canAssignZone(TRANSPARENT_INDEX, SemanticZone.Background, SemanticZone.Hair, [])).toBe(false);
-      expect(canAssignZone(TRANSPARENT_INDEX, SemanticZone.Background, SemanticZone.Skin, [])).toBe(false);
-      expect(canAssignZone(TRANSPARENT_INDEX, SemanticZone.Background, SemanticZone.Eyes, [])).toBe(false);
-      expect(canAssignZone(TRANSPARENT_INDEX, SemanticZone.Background, SemanticZone.Clothes, [])).toBe(false);
+    it('rejects transparent pixel assigned to any non-None zone', () => {
+      expect(canAssignZone(TRANSPARENT_INDEX, SemanticZone.None, SemanticZone.Hair, [])).toBe(false);
+      expect(canAssignZone(TRANSPARENT_INDEX, SemanticZone.None, SemanticZone.Skin, [])).toBe(false);
+      expect(canAssignZone(TRANSPARENT_INDEX, SemanticZone.None, SemanticZone.Eyes, [])).toBe(false);
+      expect(canAssignZone(TRANSPARENT_INDEX, SemanticZone.None, SemanticZone.Clothes, [])).toBe(false);
+      // But assigning None to a transparent pixel is allowed (clearing/noop)
+      expect(canAssignZone(TRANSPARENT_INDEX, SemanticZone.Skin, SemanticZone.None, [])).toBe(true);
     });
 
     it('rejects writing to a locked target zone (B2 defect)', () => {
       // Hair is locked, cannot add pixels into Hair
-      expect(canAssignZone(5, SemanticZone.Background, SemanticZone.Hair, [SemanticZone.Hair])).toBe(false);
+      expect(canAssignZone(5, SemanticZone.None, SemanticZone.Hair, [SemanticZone.Hair])).toBe(false);
       expect(canAssignZone(5, SemanticZone.Skin, SemanticZone.Hair, [SemanticZone.Hair])).toBe(false);
-      // But Background can always be targeted (clearing) even if non-background zones are locked
-      expect(canAssignZone(5, SemanticZone.Skin, SemanticZone.Background, [SemanticZone.Hair])).toBe(true);
+      // But None can always be targeted (clearing) even if other zones are locked
+      expect(canAssignZone(5, SemanticZone.Skin, SemanticZone.None, [SemanticZone.Hair])).toBe(true);
     });
 
     it('rejects modifying a pixel whose current zone is locked', () => {
-      // Skin is locked, cannot reassign skin pixel to Clothes or Background
+      // Skin is locked, cannot reassign skin pixel to Clothes or None
       expect(canAssignZone(5, SemanticZone.Skin, SemanticZone.Clothes, [SemanticZone.Skin])).toBe(false);
-      expect(canAssignZone(5, SemanticZone.Skin, SemanticZone.Background, [SemanticZone.Skin])).toBe(false);
+      expect(canAssignZone(5, SemanticZone.Skin, SemanticZone.None, [SemanticZone.Skin])).toBe(false);
     });
 
     it('rejects assignment when currentZone equals targetZone', () => {
@@ -60,13 +62,13 @@ describe('Mask Command Lock and Penetration Defense (T03 - B2)', () => {
     });
 
     it('accepts valid assignment when no locks interfere', () => {
-      expect(canAssignZone(5, SemanticZone.Background, SemanticZone.Skin, [])).toBe(true);
+      expect(canAssignZone(5, SemanticZone.None, SemanticZone.Skin, [])).toBe(true);
       expect(canAssignZone(5, SemanticZone.Hair, SemanticZone.Skin, [])).toBe(true);
     });
 
     it('works with Set as well as Array for lockedZones', () => {
       const lockedSet = new Set([SemanticZone.Hair]);
-      expect(canAssignZone(5, SemanticZone.Background, SemanticZone.Hair, lockedSet)).toBe(false);
+      expect(canAssignZone(5, SemanticZone.None, SemanticZone.Hair, lockedSet)).toBe(false);
       expect(canAssignZone(5, SemanticZone.Hair, SemanticZone.Skin, lockedSet)).toBe(false);
       expect(canAssignZone(5, SemanticZone.Skin, SemanticZone.Clothes, lockedSet)).toBe(true);
     });
@@ -76,8 +78,8 @@ describe('Mask Command Lock and Penetration Defense (T03 - B2)', () => {
     it('MaskBoxSelectCommand add does not write to target zone when target zone is locked', () => {
       const doc = createValidDocument({
         pixels: (setPixel) => {
-          setPixel(5, 5, 8, SemanticZone.Background);
-          setPixel(6, 5, 8, SemanticZone.Background);
+          setPixel(5, 5, 8, SemanticZone.None);
+          setPixel(6, 5, 8, SemanticZone.None);
         },
       });
       const { ctx } = createContext(doc);
@@ -95,16 +97,16 @@ describe('Mask Command Lock and Penetration Defense (T03 - B2)', () => {
       cmd.execute(ctx);
 
       expect(cmd.count).toBe(0);
-      expect(doc.semanticMask[5 * W + 5]).toBe(SemanticZone.Background);
-      expect(doc.semanticMask[5 * W + 6]).toBe(SemanticZone.Background);
+      expect(doc.semanticMask[5 * W + 5]).toBe(SemanticZone.None);
+      expect(doc.semanticMask[5 * W + 6]).toBe(SemanticZone.None);
       assertDocumentInvariant(doc);
     });
 
     it('AssignColorToZoneCommand does not write to target zone when target zone is locked', () => {
       const doc = createValidDocument({
         pixels: (setPixel) => {
-          setPixel(10, 10, 15, SemanticZone.Background);
-          setPixel(11, 10, 15, SemanticZone.Background);
+          setPixel(10, 10, 15, SemanticZone.None);
+          setPixel(11, 10, 15, SemanticZone.None);
         },
       });
       const { ctx } = createContext(doc);
@@ -115,36 +117,36 @@ describe('Mask Command Lock and Penetration Defense (T03 - B2)', () => {
       cmd.execute(ctx);
 
       expect(cmd.count).toBe(0);
-      expect(doc.semanticMask[10 * W + 10]).toBe(SemanticZone.Background);
-      expect(doc.semanticMask[10 * W + 11]).toBe(SemanticZone.Background);
+      expect(doc.semanticMask[10 * W + 10]).toBe(SemanticZone.None);
+      expect(doc.semanticMask[10 * W + 11]).toBe(SemanticZone.None);
       assertDocumentInvariant(doc);
     });
 
     it('assignColorToMask does not write to target zone when target zone is locked', () => {
       const doc = createValidDocument({
         pixels: (setPixel) => {
-          setPixel(15, 15, 20, SemanticZone.Background);
+          setPixel(15, 15, 20, SemanticZone.None);
         },
       });
       const layers = layersOf(doc, [SemanticZone.Clothes]);
 
       const count = assignColorToMask(layers, 20, SemanticZone.Clothes, FULL_CANVAS);
       expect(count).toBe(0);
-      expect(doc.semanticMask[15 * W + 15]).toBe(SemanticZone.Background);
+      expect(doc.semanticMask[15 * W + 15]).toBe(SemanticZone.None);
       assertDocumentInvariant(doc);
     });
 
     it('floodFillMask does not write to target zone when target zone is locked', () => {
       const doc = createValidDocument({
         pixels: (setPixel) => {
-          setPixel(20, 20, 22, SemanticZone.Background);
+          setPixel(20, 20, 22, SemanticZone.None);
         },
       });
       const layers = layersOf(doc, [SemanticZone.Eyes]);
 
       const changed = floodFillMask(layers, 20, 20, SemanticZone.Eyes, false, FULL_CANVAS);
       expect(changed).toBe(false);
-      expect(doc.semanticMask[20 * W + 20]).toBe(SemanticZone.Background);
+      expect(doc.semanticMask[20 * W + 20]).toBe(SemanticZone.None);
       assertDocumentInvariant(doc);
     });
   });
@@ -199,19 +201,62 @@ describe('Mask Command Lock and Penetration Defense (T03 - B2)', () => {
     });
   });
 
+  describe('Transparent pixels never participate in mask', () => {
+    it('MaskBoxSelectCommand skips transparent pixels completely', () => {
+      const doc = createValidDocument({
+        pixels: (setPixel) => {
+          setPixel(1, 1, TRANSPARENT_INDEX, SemanticZone.None);
+          setPixel(2, 1, 5, SemanticZone.None);
+        },
+      });
+      const { ctx } = createContext(doc);
+
+      const cmd = new MaskBoxSelectCommand(
+        { x: 1, y: 1, w: 2, h: 1 },
+        'add',
+        new Set([5, TRANSPARENT_INDEX]), // even if matchColors contains transparent index
+        SemanticZone.Hair,
+        []
+      );
+      cmd.init(ctx);
+      cmd.execute(ctx);
+
+      // Only pixel at (2,1) should become Hair, transparent at (1,1) remains None
+      expect(cmd.count).toBe(1);
+      expect(doc.pixelIndices[1 * W + 1]).toBe(TRANSPARENT_INDEX);
+      expect(doc.semanticMask[1 * W + 1]).toBe(SemanticZone.None);
+      expect(doc.pixelIndices[1 * W + 2]).toBe(5);
+      expect(doc.semanticMask[1 * W + 2]).toBe(SemanticZone.Hair);
+      assertDocumentInvariant(doc);
+    });
+
+    it('floodFillMask ignores transparent pixels', () => {
+      const doc = createValidDocument({
+        pixels: (setPixel) => {
+          setPixel(0, 0, TRANSPARENT_INDEX, SemanticZone.None);
+        },
+      });
+      const layers = layersOf(doc, []);
+      const changed = floodFillMask(layers, 0, 0, SemanticZone.Skin, false, FULL_CANVAS);
+      expect(changed).toBe(false);
+      expect(doc.semanticMask[0]).toBe(SemanticZone.None);
+      assertDocumentInvariant(doc);
+    });
+  });
+
   describe('Bucket fill penetration defense', () => {
     it('floodFillMask cannot penetrate or cross a locked zone barrier', () => {
       // Create a 5x5 region of the SAME pixel color (e.g. color 3)
-      // Outside is Background
+      // Outside is None
       // A ring around (2,2) at radius 1 is marked as Hair and LOCKED
-      // Center (2,2) is marked as Background
+      // Center (2,2) is marked as None
       // We start flood filling at (0,0) with target zone Skin
       // It should NOT penetrate the locked Hair ring to reach center (2,2)
       const doc = createValidDocument({
         pixels: (setPixel) => {
           for (let y = 0; y < 5; y++) {
             for (let x = 0; x < 5; x++) {
-              setPixel(x, y, 3, SemanticZone.Background);
+              setPixel(x, y, 3, SemanticZone.None);
             }
           }
           // Build locked ring of Hair around (2,2):
@@ -246,7 +291,7 @@ describe('Mask Command Lock and Penetration Defense (T03 - B2)', () => {
       expect(doc.semanticMask[3 * W + 3]).toBe(SemanticZone.Hair);
 
       // The center inside the ring must NOT have been penetrated!
-      expect(doc.semanticMask[2 * W + 2]).toBe(SemanticZone.Background);
+      expect(doc.semanticMask[2 * W + 2]).toBe(SemanticZone.None);
 
       assertDocumentInvariant(doc);
     });

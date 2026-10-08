@@ -66,7 +66,7 @@ export class Header extends Panel {
               <span class="segment-icon">🎨</span>
               <span class="segment-label">像素修图</span>
             </button>
-            <button type="button" class="mode-segment-btn" id="btn-mode-mask" data-mode="mask" title="切换至【语义遮罩模式】 - 编辑 5 分区语义遮罩、智能框选匹配色、发色置换">
+            <button type="button" class="mode-segment-btn" id="btn-mode-mask" data-mode="mask" title="切换至【语义遮罩模式】 - 编辑 4 分区语义遮罩、智能框选匹配色、发色置换">
               <span class="segment-icon">🎭</span>
               <span class="segment-label">语义遮罩</span>
             </button>

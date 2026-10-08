@@ -22,10 +22,10 @@ describe('Pure image import fallback', () => {
     const result = processDecodedImage(image, palette);
     expect(result.warnings).toEqual(['⚠️ 人脸特征识别未达标，请在遮罩模式手动涂抹头发区域']);
     expect(result.document.pixelIndices[0]).toBe(5);
-    expect(result.document.semanticMask[0]).toBe(SemanticZone.Background);
+    expect(result.document.semanticMask[0]).toBe(SemanticZone.None);
     expect(result.document.semanticMask[1]).toBe(SemanticZone.Clothes);
     expect(result.document.pixelIndices[2]).toBe(255);
-    expect(result.document.semanticMask[2]).toBe(SemanticZone.Background);
+    expect(result.document.semanticMask[2]).toBe(SemanticZone.None);
     expect(result.document.palette).toEqual(palette);
     expect(result.document.palette).not.toBe(palette);
     expect(rgba).toEqual(before);

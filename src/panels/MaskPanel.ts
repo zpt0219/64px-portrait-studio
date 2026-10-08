@@ -47,7 +47,7 @@ export class MaskPanel extends Panel {
   private hairSectionEl: HTMLElement | null = null;
 
   private cachedZoneCounts: Record<number, number> = {
-    [SemanticZone.Background]: 0,
+    [SemanticZone.None]: 0,
     [SemanticZone.Hair]: 0,
     [SemanticZone.Skin]: 0,
     [SemanticZone.Eyes]: 0,
@@ -86,7 +86,7 @@ export class MaskPanel extends Panel {
           <!-- 标题与状态反馈 -->
           <div class="section-header">
             <div class="section-title-group">
-              <span class="section-title">🎭 5 分区语义遮罩</span>
+              <span class="section-title">🎭 语义遮罩</span>
               <span class="panel-active-badge" id="mask-active-badge">● 绘制中</span>
             </div>
           </div>
@@ -108,16 +108,16 @@ export class MaskPanel extends Panel {
             </div>
           </div>
 
-          <!-- 5 分区笔刷选择与统计 -->
+          <!-- 4 分区笔刷选择与统计 -->
           <div class="section-sub-header">
-            <span class="sub-label">遮罩显隐多选与笔刷 (快捷键 0~4)</span>
+            <span class="sub-label">遮罩显隐多选与笔刷 (快捷键 1~4)</span>
             <div class="zone-quick-actions">
-              <button class="btn-xs-link" id="btn-mask-select-all" title="显示全部 5 个遮罩图层">全选</button>
+              <button class="btn-xs-link" id="btn-mask-select-all" title="显示全部 4 个遮罩图层">全选</button>
               <button class="btn-xs-link" id="btn-mask-select-none" title="隐藏全部遮罩图层">清空</button>
             </div>
           </div>
           <div class="zone-selector-list" id="zone-list">
-            <!-- 5 分区项在 buildStaticCards 中初始化 -->
+            <!-- 4 分区项在 buildStaticCards 中初始化 -->
           </div>
 
           <!-- 语义智能重识别 -->
@@ -125,7 +125,7 @@ export class MaskPanel extends Panel {
             <button class="btn btn-outline btn-block" id="btn-recompute-mask" title="基于当前画布像素重新运行几何门禁与语义识别">
               <span>✨ 重新识别语义遮罩</span>
             </button>
-            <div class="help-text">在像素修图后，可点击一键重新提取 5 分区语义遮罩（不影响画面已有像素）</div>
+            <div class="help-text">在像素修图后，可点击一键重新提取语义遮罩（不影响画面已有像素）</div>
           </div>
 
           <!-- 9 大经典二次元发色预设置换 (默认隐藏，仅当选了头发mask时显示) -->
@@ -201,10 +201,9 @@ export class MaskPanel extends Panel {
           </div>
           <div class="zone-card-right">
             <span class="zone-stat"><b class="zone-count-val">0</b> px</span>
-            ${zone !== SemanticZone.Background ? `
             <button class="zone-action-btn zone-lock-btn">
               🔓
-            </button>` : ''}
+            </button>
           </div>
         `;
 
@@ -352,7 +351,7 @@ export class MaskPanel extends Panel {
     // 4. 计算 5 分区像素统计 (仅在遮罩/文档变化时重新扫描 4096 像素)
     if (this.maskCountsDirty) {
       this.cachedZoneCounts = {
-        [SemanticZone.Background]: 0,
+        [SemanticZone.None]: 0,
         [SemanticZone.Hair]: 0,
         [SemanticZone.Skin]: 0,
         [SemanticZone.Eyes]: 0,

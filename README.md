@@ -7,8 +7,8 @@
 - **导入**：任意尺寸图片（PNG / JPG / WebP / BMP / GIF），超过 64px 的等比缩放后居中置入 64×64 画布；工程 ZIP 可完整恢复。
 - **36 色量化**：OKLab 感知色差最近邻映射，不使用抖动。
 - **像素修图**：画笔、橡皮、油漆桶（4/8 邻接）、吸管、矩形选区（复制/剪切/粘贴/翻转/旋转）、全局换色、前景/背景色、撤销/重做（40 步）。
-- **5 分区语义遮罩**：背景 / 头发 / 皮肤 / 眼睛 / 衣服，自动识别 + 手动涂抹（画笔、橡皮、油漆桶、按色组智能框选），支持分区锁定与可见性切换。
-- **9 大发色一键置换**：黑、棕、金、粉、蓝、银白、绿、紫、红，按 5 阶色阶对称映射，仅作用于头发区域；非破坏式预览，确认后才固化。
+- **语义遮罩**：头发 / 皮肤 / 眼睛 / 衣服（4 大有效业务分区，0 为 None 无遮罩），自动识别 + 手动涂抹（画笔、橡皮、油漆桶、按色组智能框选），支持分区锁定与可见性切换。
+- **9 大发色一键置换**：黑、棕、金、粉、蓝、银白、绿、紫、红，按 4 阶色阶映射，仅作用于头发区域；点击即应用，可撤销。源外颜色与缺失目标色采用近似映射。
 - **持久化**：编辑状态自动暂存到 localStorage；可导出极简 8-bit 索引 PNG 与工程 ZIP（含遮罩、色板、GPL 调色板等）。
 
 ## 开发与测试
@@ -20,6 +20,7 @@ npm test                 # 运行全部 Vitest 单元与集成测试套件
 npm run typecheck        # 源码严格类型检查
 npm run typecheck:tests  # 测试代码严格类型检查
 npm run build            # 类型检查 + 生产构建到 dist/
+npm run test:e2e         # 使用系统 Chrome 运行浏览器端到端测试
 npm run preview          # 预览生产构建包
 ```
 
@@ -27,18 +28,19 @@ npm run preview          # 预览生产构建包
 
 ## 核心业务与领域规则
 
-- **透明与遮罩归一化**：
-  - 透明像素（索引 `255`）在语义遮罩中始终严格归一化为 `SemanticZone.Background`（`0`）。
-  - 画笔绘制透明色、右键透明背景色、橡皮擦除、选区清空与剪切时，无论该像素是否位于遮罩锁定分区，像素均清为空且对应遮罩重置为 `Background`。
-  - 禁止将透明像素一键批量划入非背景遮罩。
+- **透明不参与遮罩与归一化**：
+  - 透明像素（索引 `255`）不参与遮罩，在语义遮罩中始终严格归一化为 `SemanticZone.None`（`0`）。取消了“背景遮罩”概念，仅保留头发、皮肤、眼睛、服装 4 个有效业务分区。
+  - 画笔绘制透明色、右键透明背景色、橡皮擦除、选区清空与剪切时，无论该像素是否位于遮罩锁定分区，像素均清为空且对应遮罩重置为 `None`。
+  - 透明像素禁止划入任何遮罩分区。
 - **遮罩图层锁定**：
-  - 锁定分区（Locked Zones）保护该区域像素与遮罩不被非透明绘制覆盖；目标分区被锁定时禁止写入或划入其他颜色。
+  - 锁定分区保护手工遮罩分配与擦除；当前或目标有效分区被锁定时禁止改写，遮罩桶不能穿过锁定分区。
+  - 像素编辑、选区变换、重新识别与发色应用不受遮罩锁限制；扣外围白底另有锁定分区及眼睛保护。
 - **持久化与容错**：
   - 编辑操作经 300ms 防抖自动暂存到 localStorage。
   - 若遭遇无痕浏览限制或配额超限（QuotaExceededError），系统明确标记状态为 `'error'` 并触发 Toast 警告，不再静默成功。
-- **发色草稿与模式切换**：
-  - 发色置换预览采用独立会话草稿，试色期间绝不修改底层 `PortraitDocument`，确认固化时一次性提交命令入撤销栈。
-  - 模式切换弹窗具有取消原子性保护，取消操作完整恢复原有显隐与草稿视图。
+- **发色应用与历史**：
+  - 发色计算返回独立像素数组，`CommitHairRecolorCommand` 一次性提交像素和预设标记；当前没有活动草稿，撤销可恢复应用前的状态。
+  - 色板拖动按同一 gesture 合并成一步撤销；初始化与合并均校验输入，非法输入不改变文档或历史。
 - **快照与导出隔离**：
   - PNG 与 ZIP 打包在异步开始前即深拷贝瞬态快照（`cloneDocument`），杜绝打包期间被后续编辑或并发导出污染；try...finally 安全回收 ObjectURL。
 - **生命周期与性能**：
@@ -55,8 +57,8 @@ npm run preview          # 预览生产构建包
       └──── markDirty ◀─ fan-out ◀──────────── StudioEvents ◀────────────┘
 ```
 
-- `core/`、`model/`、`command/` 不接触界面 DOM。
-- 四个业务控制器 `ExportService`、`HairDraftController`、`ImportCoordinator`、`SelectionService` 仅依赖窄端口；图片量化与分区处理为 `core/imageImport.ts` 的纯函数。
+- `core/`、`command/` 不接触界面 DOM；文档和会话模型位于 `core/`。
+- ViewModel 直接组织导入结果、选区剪贴板、发色应用与导出；通过 `StudioPrompts` 和 `ExportBackend` 接入浏览器能力。图片量化与分区处理位于 `core/imageImport.ts`。
 - App 组装浏览器存储、Canvas、图片解码和下载实现。ViewModel 默认构造支持无浏览器运行；未注入持久化或导出能力时返回失败，不误报成功。
 - 文档 (色板 / 像素 / 遮罩 / 发色预设) 只能通过命令修改，命令负责撤销 / 重做与事件；会话状态 (工具、分区、缩放、选区……) 由 ViewModel 直接修改后广播。
 - 面板在事件回调里只 `markDirty()`，下一帧统一 `render()`，相当于 ImGui 的每帧 `draw()`。
@@ -75,21 +77,11 @@ src/
 │   ├── ports.ts             # 导出与确认端口契约
 │   ├── adapters/BrowserStorage.ts # 安全接入浏览器 localStorage
 │   ├── services/AutosaveService.ts # 注入存储的实例级自动保存
-│   ├── browser/
-│   │   ├── imageDecode.ts   # Image / Canvas 解码并缩放居中到 64×64
-│   │   ├── pixelCanvas.ts   # 色板索引像素绘制与最近邻缩放
-│   │   └── projectArchive.ts # Canvas 资源、ZIP 打包与浏览器导出
-│   ├── toaster.ts           # 提示消息 (订阅 onNotify)
-│   ├── controllers/         # 独立业务子领域控制器 (依赖窄端口)
-│   │   ├── ExportService.ts       # ZIP 与 PNG 快照导出，无 UI 依赖
-│   │   ├── HairDraftController.ts # 发色非破坏性草稿预览与固化
-│   │   ├── ImportCoordinator.ts   # 异步导入序号隔离与防漂移
-│   │   └── SelectionService.ts    # 选区剪贴板与几何变换
-│   └── utils/
-│       └── download.ts      # 浏览器下载与 ObjectURL 回收
-├── model/
-│   ├── document.ts          # PortraitDocument：进存档、进撤销的数据
-│   └── session.ts           # EditorSession：工具、分区、缩放、选区、发色草稿
+│   └── browser/
+│       ├── imageDecode.ts   # Image / Canvas 解码并缩放居中到 64×64
+│       ├── pixelCanvas.ts   # 色板索引像素绘制与最近邻缩放
+│       ├── projectImportExport.ts # Canvas 资源、ZIP 打包、图片/工程导入与导出
+│       └── domUtils.ts      # 浏览器下载、ObjectURL 与 Canvas Blob 工具
 ├── command/
 │   ├── command.ts           # Command 基类、SnapshotCommand (快照式撤销)
 │   ├── commandHandler.ts    # 撤销 / 重做栈 (上限 40)、合并
@@ -97,7 +89,7 @@ src/
 │   ├── pixelCommands.ts     # 笔划、选区移动 / 粘贴 / 清空、替换色、扣白底
 │   ├── transformCommands.ts # 翻转、旋转
 │   ├── maskCommands.ts      # 智能框选、颜色转遮罩、重新识别
-│   └── paletteCommands.ts   # 色板颜色、发色预设、固化发色
+│   └── paletteCommands.ts   # 色板颜色、发色预设、应用发色
 ├── panels/
 │   ├── Panel.ts             # 面板基类 (脏标记 + requestAnimationFrame 渲染调度 + dispose)
 │   ├── Header.ts            # 顶栏：导入 / 导出 / 清空 / 暂存状态
@@ -117,15 +109,16 @@ src/
 │   │   └── cursors.ts             # Aseprite 风格 SVG 工具光标与矢量图标
 │   └── modals/
 │       ├── ReplaceColorModal.ts
-│       └── ConfirmModal.ts
+│       ├── ConfirmModal.ts
+│       └── HelpModal.ts
 ├── core/
 │   ├── document.ts          # 文档聚合根 (PortraitDocument、克隆、图层组合)
 │   ├── session.ts           # 编辑器会话态 (工具、选区、色板指针)
 │   ├── constants.ts         # 36 色色板、9 大发色色阶、分区配置常量
 │   ├── types.ts             # 领域类型与接口定义
-│   ├── segmentation/        # 5 分区语义遮罩自动识别 (背景、轮廓、面部/眼睛/嘴、头发)
+│   ├── segmentation/        # 四个有效分区识别，背景归 None (0)
 │   ├── editOps.ts           # 像素与遮罩纯编辑操作、图算法与分区查表 (泛洪、替换、选区块、外围白底、分区RGB表)
-│   ├── recolorEngine.ts     # 发色识别与 5 阶色阶置换
+│   ├── recolorEngine.ts     # 发色识别与 4 阶色阶置换
 │   ├── pixelGrid.ts         # 64×64 网格常量、邻域、连通域、泛洪
 │   ├── imageImport.ts       # 纯像素量化、语义识别与导入结果
 │   ├── projectData.ts       # 工程数据校验与序列化
@@ -140,11 +133,12 @@ src/
 ## 数据模型
 
 - `pixelIndices: Uint8Array(4096)` — 每像素的色板索引，`0~35` 为颜色，`255` 为透明。
-- `semanticMask: Uint8Array(4096)` — 每像素的分区，`0` 背景 / `1` 头发 / `2` 皮肤 / `3` 眼睛 / `4` 衣服。
+- `semanticMask: Uint8Array(4096)` — 每像素的分区，`0` 无遮罩 / `1` 头发 / `2` 皮肤 / `3` 眼睛 / `4` 衣服。
 - 色板变更记录见 [docs/PALETTE_CHANGELOG.md](docs/PALETTE_CHANGELOG.md)。
 
 ## 文档
 
+- [docs/CODE_REVIEW_GUIDE.md](docs/CODE_REVIEW_GUIDE.md) — 当前源码导航、编辑规则与代码审查清单
 - [docs/GEMINI_FLASH_IMPLEMENTATION_GUIDE.md](docs/GEMINI_FLASH_IMPLEMENTATION_GUIDE.md) — 重构与修复路线图实施指南 (T00–T11)
 - [docs/T07_BROWSER_ADAPTER_MIGRATION.md](docs/T07_BROWSER_ADAPTER_MIGRATION.md) — 浏览器适配器迁移与新旧输出对照验收
 - [docs/IMPLEMENTATION_PROGRESS.md](docs/IMPLEMENTATION_PROGRESS.md) — 任务实施跟踪与验收记录

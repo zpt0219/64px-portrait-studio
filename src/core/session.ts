@@ -1,10 +1,10 @@
 /**
- * 会话上下文：工具、颜色、分区显隐 / 锁定、缩放、选区、发色草稿……
+ * 会话上下文：工具、颜色、分区显隐 / 锁定、缩放、选区……
  * (对应 tile_map_editor_imgui 的 TileMapHandler 上下文字段)。
  * 不进存档；除选区随撤销快照一起恢复外，其余都不进撤销，由 ViewModel 直接修改后广播 onSessionChanged。
  */
 
-import { SemanticZone, RectSelection, PixelTool, MaskTool, EditorMode, BrushSize, HairPresetKey } from './types';
+import { SemanticZone, RectSelection, PixelTool, MaskTool, EditorMode, BrushSize } from './types';
 import { TRANSPARENT_INDEX } from './constants';
 import { IMAGE_WIDTH as W, IMAGE_HEIGHT as H } from './pixelGrid';
 
@@ -32,7 +32,6 @@ export interface EditorSession {
   showGrid: boolean;            // 是否显示像素网格
   zoomLevel: number;            // 画布缩放倍数 (见 ZOOM_STEPS)
   selection: RectSelection | null; // 像素模式矩形选区 (随撤销快照恢复)
-  hairDraftPreset: HairPresetKey | null;  // 未固化的发色预览；预览像素由文档实时派生
 }
 
 export function createInitialSession(): EditorSession {
@@ -43,7 +42,7 @@ export function createInitialSession(): EditorSession {
     activePaletteIndex: 0,
     bgPaletteIndex: TRANSPARENT_INDEX,
     bucketConnectivity: 8,
-    activeZone: SemanticZone.Background,
+    activeZone: SemanticZone.Hair,
     visibleMaskZones: [],
     lockedMaskZones: [],
     activeMaskTool: 'pen',
@@ -56,7 +55,6 @@ export function createInitialSession(): EditorSession {
     showGrid: true,
     zoomLevel: DEFAULT_ZOOM,
     selection: null,
-    hairDraftPreset: null,
   };
 }
 

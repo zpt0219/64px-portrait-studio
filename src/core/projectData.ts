@@ -17,6 +17,38 @@ export interface ProjectDecodeResult {
   warnings: string[];
 }
 
+export type ProjectValidationResult =
+  | {
+      valid: true;
+      data: ProjectData;
+      upgraded: boolean;
+      fromVersion: number;
+    }
+  | {
+      valid: false;
+      error: string;
+    };
+
+/**
+ * 规范化透明像素的遮罩 (纯函数，服务于外部数据导入与解码)：
+ * 系统级最高不变量：透明像素恒不参与遮罩 (semanticMask[i] === SemanticZone.None)。
+ * 返回被修正的像素数量。
+ */
+export function normalizeTransparentMask(
+  pixelIndices: ArrayLike<number>,
+  semanticMask: Uint8Array
+): number {
+  let count = 0;
+  const len = Math.min(pixelIndices.length, semanticMask.length);
+  for (let i = 0; i < len; i++) {
+    if (pixelIndices[i] === TRANSPARENT_INDEX && semanticMask[i] !== SemanticZone.None) {
+      semanticMask[i] = SemanticZone.None;
+      count++;
+    }
+  }
+  return count;
+}
+
 /**
  * 将文档序列化为 ProjectData (纯函数，无 DOM 依赖，不修改输入文档)
  */
@@ -42,17 +74,10 @@ export function projectDataToDocument(data: ProjectData): ProjectDecodeResult {
   const pixelIndices = base64ToUint8Array(data.pixels);
   const semanticMask = base64ToUint8Array(data.mask);
   const warnings: string[] = [];
-  let normalizedCount = 0;
 
-  for (let i = 0; i < pixelIndices.length; i++) {
-    if (pixelIndices[i] === TRANSPARENT_INDEX && semanticMask[i] !== SemanticZone.Background) {
-      semanticMask[i] = SemanticZone.Background;
-      normalizedCount++;
-    }
-  }
-
+  const normalizedCount = normalizeTransparentMask(pixelIndices, semanticMask);
   if (normalizedCount > 0) {
-    warnings.push(`已规范化 ${normalizedCount} 处透明像素的语义遮罩至背景分区 (SemanticZone.Background)`);
+    warnings.push(`已规范化 ${normalizedCount} 处透明像素的语义遮罩至无遮罩状态 (SemanticZone.None)`);
   }
 
   return {
@@ -68,14 +93,9 @@ export function projectDataToDocument(data: ProjectData): ProjectDecodeResult {
 
 /**
  * 严格校验工程数据：版本号、36 色色板格式、4096 像素索引 (0~35 或 255)、4096 遮罩值 (0~4)、发色预设及时间戳
+ * 返回判别联合类型 ProjectValidationResult，调用方判断 valid 为 true 后可直接安全访问 data。
  */
-export function validateProjectData(raw: unknown): {
-  valid: boolean;
-  error?: string;
-  data?: ProjectData;
-  upgraded?: boolean;
-  fromVersion?: number;
-} {
+export function validateProjectData(raw: unknown): ProjectValidationResult {
   if (!raw || typeof raw !== 'object') {
     return { valid: false, error: '工程数据不是有效的 JSON 对象' };
   }
@@ -194,4 +214,16 @@ export function validateProjectData(raw: unknown): {
     upgraded: wasUpgraded,
     fromVersion: fromVer,
   };
+}
+
+/**
+ * 校验断言辅助函数：若校验失败则抛出包含错误信息的 Error，
+ * 成功时将结果类型断言收窄为成功分支，使下游代码可直接安全访问 res.data。
+ */
+export function assertProjectValid(
+  res: ProjectValidationResult
+): asserts res is Extract<ProjectValidationResult, { valid: true }> {
+  if (!res.valid) {
+    throw new Error(`工程数据校验失败: ${res.error}`);
+  }
 }

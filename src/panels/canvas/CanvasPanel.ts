@@ -793,7 +793,7 @@ export class CanvasPanel extends Panel {
     const colorIdx = this.vm.displayPixels()[offset];
     const isTrans = colorIdx === TRANSPARENT_INDEX;
     const colorHex = isTrans ? '透明' : doc.palette[colorIdx] || '#000000';
-    const zoneMeta = ZONE_CONFIG[doc.semanticMask[offset] as SemanticZone] || ZONE_CONFIG[SemanticZone.Background];
+    const zoneMeta = ZONE_CONFIG[doc.semanticMask[offset] as SemanticZone] || ZONE_CONFIG[SemanticZone.None];
 
     const isMaskBoxSelect = session.activeMode === 'mask' && session.activeMaskTool === 'box_select';
     const selectionExtra = session.selection && isInRect(x, y, session.selection)

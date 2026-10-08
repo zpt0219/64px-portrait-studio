@@ -2,15 +2,34 @@ import { Rgb, Lab, rgbToOklab, oklabDistance } from '../../utils/colorUtils';
 import { borderOffsets, floodMask } from '../pixelGrid';
 import { median, percentile } from './stats';
 
+/**
+ * 画布边界背景识别模型阈值参数
+ */
 export const BACKGROUND_MODEL = {
+  /** OKLab 颜色空间中聚类搜索半径：边框像素色差在 0.08 以内视为同一颜色簇 */
   clusterRadius: 0.08,
+  /** 聚类内部颜色离散度计算所取的分位数 (90%) */
   spreadPercentile: 0.9,
+  /** 背景容差距离下限 (避免阈值过紧导致同色背景截断) */
   thresholdMin: 0.045,
+  /** 背景容差距离上限 (避免阈值过宽导致人物边缘渗入背景) */
   thresholdMax: 0.12,
+  /** 在分位数离散度基础上附加的安全距离容差 */
   thresholdMargin: 0.025,
 };
 
-/** 取边框像素中最大的 OKLab 颜色簇作为背景色，从四边泛洪得到背景掩码 */
+/**
+ * 估算前景与背景区域。
+ *
+ * 算法过程：
+ * 1. 采集画布四边 (252 个边界像素) 的 OKLab 颜色；
+ * 2. 统计最大连通颜色簇作为背景代表色；
+ * 3. 计算该颜色簇在中位点周围的离散分布，动态确定容差阈值；
+ * 4. 从四边边界像素向内部泛洪，命中满足容差的像素标记为背景。
+ *
+ * @param pixels 长度为 4096 的 RGB 像素数组
+ * @returns backgroundMask (背景掩码) 与 foregroundMask (前景掩码)
+ */
 export function estimateForeground(pixels: Rgb[]): { backgroundMask: boolean[]; foregroundMask: boolean[] } {
   const labs = pixels.map(rgbToOklab);
   const offsets = borderOffsets();

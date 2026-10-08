@@ -1,11 +1,18 @@
 /**
- * 遮罩类命令：智能框选、颜色一键转遮罩、重新识别语义遮罩。锁定分区的像素一律跳过。
+ * 遮罩类命令：智能框选、颜色一键转遮罩、重新识别语义遮罩。
+ * 核心算法逻辑统一收拢于 editOps，命令负责快照与历史生命周期。
  */
 
 import { SemanticZone, RectSelection } from '../core/types';
-import { TRANSPARENT_INDEX } from '../core/constants';
-import { IMAGE_WIDTH as W, IMAGE_HEIGHT as H, PIXEL_COUNT } from '../core/pixelGrid';
-import { canAssignZone } from '../core/editOps';
+import {
+  FULL_CANVAS,
+  MaskBoxSelectAction,
+  boxSelectMask,
+  assignColorToMask,
+} from '../core/editOps';
+import { layersOf } from '../core/document';
+import { normalizeTransparentMask } from '../core/projectData';
+import { PIXEL_COUNT } from '../core/pixelGrid';
 import { CommandContext, SnapshotCommand } from './command';
 
 /** 框内像素遮罩操作：
@@ -20,7 +27,7 @@ export class MaskBoxSelectCommand extends SnapshotCommand {
   count = 0;
   constructor(
     private readonly rect: RectSelection,
-    private readonly action: 'add' | 'remove' | 'subtract' | 'clear',
+    private readonly action: MaskBoxSelectAction,
     private readonly matchColors: Set<number>,
     private readonly target: SemanticZone,
     private readonly lockedZones: SemanticZone[]
@@ -28,45 +35,8 @@ export class MaskBoxSelectCommand extends SnapshotCommand {
     super();
   }
   protected apply({ doc }: CommandContext): void {
-    const { x, y, w, h } = this.rect;
-    // 若 add 操作的目标分区已锁定且非背景，直接拒绝
-    if (this.action === 'add' && this.target !== SemanticZone.Background && this.lockedZones.includes(this.target)) {
-      return;
-    }
-
-    for (let py = y; py < y + h; py++) {
-      for (let px = x; px < x + w; px++) {
-        if (px < 0 || px >= W || py < 0 || py >= H) continue;
-        const offset = py * W + px;
-        const color = doc.pixelIndices[offset];
-        const current = doc.semanticMask[offset] as SemanticZone;
-
-        if (this.action === 'add') {
-          if (this.matchColors.has(color) && canAssignZone(color, current, this.target, this.lockedZones)) {
-            doc.semanticMask[offset] = this.target;
-            this.count++;
-          }
-        } else if (this.action === 'clear') {
-          // 右键去所有颜色：框内属于 target 分区的像素剔除为背景
-          if (current === this.target && canAssignZone(color, current, SemanticZone.Background, this.lockedZones)) {
-            doc.semanticMask[offset] = SemanticZone.Background;
-            this.count++;
-          }
-        } else if (this.action === 'subtract') {
-          // Shift 减法模式：所有不在匹配色组的像素 (杂色) 从 target 分区剔除为背景
-          if (!this.matchColors.has(color) && current === this.target && canAssignZone(color, current, SemanticZone.Background, this.lockedZones)) {
-            doc.semanticMask[offset] = SemanticZone.Background;
-            this.count++;
-          }
-        } else if (this.action === 'remove') {
-          // Alt 减法模式：属于匹配色组的像素从 target 分区剔除为背景
-          if (this.matchColors.has(color) && current === this.target && canAssignZone(color, current, SemanticZone.Background, this.lockedZones)) {
-            doc.semanticMask[offset] = SemanticZone.Background;
-            this.count++;
-          }
-        }
-      }
-    }
+    const layers = layersOf(doc, this.lockedZones);
+    this.count = boxSelectMask(layers, this.rect, this.action, this.matchColors, this.target);
   }
 }
 
@@ -82,18 +52,8 @@ export class AssignColorToZoneCommand extends SnapshotCommand {
     super();
   }
   protected apply({ doc }: CommandContext): void {
-    // 关键防护：禁止将全图透明像素批量划入非背景遮罩
-    if (this.colorIdx === TRANSPARENT_INDEX && this.target !== SemanticZone.Background) return;
-    // 目标分区被锁定且非背景时禁止写入
-    if (this.target !== SemanticZone.Background && this.lockedZones.includes(this.target)) return;
-
-    for (let i = 0; i < PIXEL_COUNT; i++) {
-      if (doc.pixelIndices[i] !== this.colorIdx) continue;
-      const current = doc.semanticMask[i] as SemanticZone;
-      if (!canAssignZone(this.colorIdx, current, this.target, this.lockedZones)) continue;
-      doc.semanticMask[i] = this.target;
-      this.count++;
-    }
+    const layers = layersOf(doc, this.lockedZones);
+    this.count = assignColorToMask(layers, this.colorIdx, this.target, FULL_CANVAS);
   }
 }
 
@@ -103,7 +63,21 @@ export class SetMaskCommand extends SnapshotCommand {
   constructor(private readonly mask: Uint8Array) {
     super();
   }
+
+  override init(ctx: CommandContext): boolean {
+    if (!this.mask || this.mask.length !== PIXEL_COUNT) {
+      return false;
+    }
+    for (let i = 0; i < PIXEL_COUNT; i++) {
+      if (this.mask[i] > SemanticZone.Clothes) {
+        return false;
+      }
+    }
+    return super.init(ctx);
+  }
+
   protected apply({ doc }: CommandContext): void {
     doc.semanticMask.set(this.mask);
+    normalizeTransparentMask(doc.pixelIndices, doc.semanticMask);
   }
 }

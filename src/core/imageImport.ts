@@ -5,6 +5,7 @@ import { computeSemanticMask } from './segmentation';
 import { PIXEL_COUNT } from './pixelGrid';
 import { detectHairPreset } from './recolorEngine';
 import { PortraitDocument } from './document';
+import { normalizeTransparentMask } from './projectData';
 
 interface ImageImportResult {
   document: PortraitDocument;
@@ -20,7 +21,7 @@ interface ImageImportResult {
 
 /**
  * 纯输入输出的图片解码结果处理：
- * 接收原始图片像素与色板，完成 36 色量化、5 分区遮罩生成及透明保护，返回新文档与提示信息。
+ * 接收原始图片像素与色板，完成 36 色量化、语义遮罩生成及透明保护，返回新文档与提示信息。
  * 纯领域算法，不包含任何 DOM 或全局状态副作用。
  */
 export function processDecodedImage(image: DecodedImage, palette: string[]): ImageImportResult {
@@ -48,15 +49,18 @@ export function processDecodedImage(image: DecodedImage, palette: string[]): Ima
     const corner = rgbPixels[0];
     const isCornerBg = (p: Rgb) =>
       Math.abs(p[0] - corner[0]) + Math.abs(p[1] - corner[1]) + Math.abs(p[2] - corner[2]) < 25;
-    mask = Uint8Array.from(rgbPixels, (p) => (isCornerBg(p) ? SemanticZone.Background : SemanticZone.Clothes));
+    mask = Uint8Array.from(rgbPixels, (p) => (isCornerBg(p) ? SemanticZone.None : SemanticZone.Clothes));
   }
 
   for (let i = 0; i < PIXEL_COUNT; i++) {
     if (transparent[i]) {
       indices[i] = TRANSPARENT_INDEX;
-      mask[i] = SemanticZone.Background;
+      mask[i] = SemanticZone.None;
     }
   }
+
+  // 外部数据边界防御：确保所有透明像素的语义遮罩严格归一化为 None
+  normalizeTransparentMask(indices, mask);
 
   let message: string;
   if (origW > 64 || origH > 64) {
@@ -64,7 +68,7 @@ export function processDecodedImage(image: DecodedImage, palette: string[]): Ima
   } else if (origW < 64 || origH < 64) {
     message = `✨ 图片载入成功：原尺寸 ${origW}×${origH} 已居中置入 64×64 画布并完成 36 色量化`;
   } else {
-    message = '✨ 图片载入成功：已自动完成 36 色量化与 5 分区遮罩生成';
+    message = '✨ 图片载入成功：已自动完成 36 色量化与语义遮罩生成';
   }
 
   const document: PortraitDocument = {

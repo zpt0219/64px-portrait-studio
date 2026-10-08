@@ -1,8 +1,7 @@
 import type { ViewModel } from '../src/app/viewModel';
 import { createTestViewModel } from './helpers/viewModelFixture';
 import { describe, it, expect } from 'vitest';
-import { PromptOptions } from '../src/app/ports';
-import { SemanticZone, HairPresetKey } from '../src/core/types';
+import { SemanticZone } from '../src/core/types';
 import { assertDocumentInvariant } from './helpers/documentFixture';
 
 describe('Mode Switching and Mask Visibility', () => {
@@ -156,14 +155,15 @@ describe('Mode Switching and Mask Visibility', () => {
   });
 
   describe('Hair Presets Visibility Condition', () => {
-    it('defaults to not selecting hair mask by default (Background zone)', () => {
+    it('defaults to Hair zone, but hair presets requires both activeZone Hair and visibleMaskZones', () => {
       const vm = createTestViewModel();
-      expect(vm.session.activeZone).toBe(SemanticZone.Background);
+      expect(vm.session.activeZone).toBe(SemanticZone.Hair);
       expect(vm.session.visibleMaskZones).not.toContain(SemanticZone.Hair);
 
-      // Even entering mask mode keeps Background zone by default
+      // Entering mask mode initializes visible zones and sets Hair active
       vm.setMode('mask');
-      expect(vm.session.activeZone).toBe(SemanticZone.Background);
+      expect(vm.session.activeZone).toBe(SemanticZone.Hair);
+      expect(vm.session.visibleMaskZones).toContain(SemanticZone.Hair);
     });
 
     it('selects hair mask only when activeZone is Hair and Hair is in visibleMaskZones', () => {

@@ -24,7 +24,7 @@ export function createEmptyDocument(): PortraitDocument {
   };
 }
 
-/** 编辑操作所需的图层视图；lockedZones 内的遮罩在清空类操作中受保护 */
+/** 编辑操作所需的图层视图；锁集合用于手工遮罩分配，像素清空仍无条件清除遮罩 */
 export function layersOf(doc: PortraitDocument, lockedZones: Iterable<SemanticZone>): Layers {
   return { pixels: doc.pixelIndices, mask: doc.semanticMask, lockedZones: new Set(lockedZones) };
 }

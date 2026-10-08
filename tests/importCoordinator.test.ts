@@ -1,10 +1,8 @@
 import { createTestViewModel } from './helpers/viewModelFixture';
 import { describe, it, expect, vi } from 'vitest';
 import { importAnyFile, UnsupportedFileError } from '../src/app/browser/projectImportExport';
-import * as projectImportExport from '../src/app/browser/projectImportExport';
 import * as imageDecode from '../src/app/browser/imageDecode';
 import { SemanticZone } from '../src/core/types';
-import { VALID_HAIR_PRESET_KEYS } from './helpers/documentFixture';
 import JSZip from 'jszip';
 import { documentToProjectData } from '../src/core/projectData';
 import { createEmptyDocument } from './helpers/documentFixture';
@@ -25,7 +23,9 @@ describe('projectImportExport.importAnyFile & Mode Cancellation Atomicity', () =
 
       const result = await importAnyFile(zipFile);
       expect(result.kind).toBe('project');
-      expect(result.data.v).toBe(projectData.v);
+      if (result.kind === 'project') {
+        expect(result.data.v).toBe(projectData.v);
+      }
     });
 
     it('routes image files to decodeImageFile', async () => {

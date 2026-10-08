@@ -2,16 +2,18 @@
  * 核心领域类型定义
  */
 
-/** 5 分区语义遮罩值 */
+/** 4 语义分区遮罩值，0 为无遮罩 (None) */
 export const enum SemanticZone {
-  Background = 0,
+  None = 0,
   Hair = 1,
   Skin = 2,
   Eyes = 3,
   Clothes = 4,
+  /** @deprecated 历史别名，数值等同于 None (0) */
+  Background = 0,
 }
 
-/** 5 分区配置信息与规范配色 */
+/** 语义分区配置信息与规范配色 */
 export interface ZoneMeta {
   zone: SemanticZone;
   name: string;        // 中英文全称，如「头发 (Hair)」
@@ -34,7 +36,7 @@ export type HairPresetKey =
 
 /** 工程 ZIP / LocalStorage 存储的统一数据结构 */
 export interface ProjectData {
-  v: number;                    // Schema 版本号 (1)
+  v: number;                    // Schema 版本号 (当前为 2)
   palette: string[];            // 36 色 Hex 数组
   pixels: string;               // Base64(Uint8Array[4096]) — 色板索引 0~35 或 255 (透明)
   mask: string;                 // Base64(Uint8Array[4096]) — 语义分区 0~4

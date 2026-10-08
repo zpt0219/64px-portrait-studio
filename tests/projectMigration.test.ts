@@ -4,10 +4,9 @@ import {
   CURRENT_PROJECT_VERSION,
   upgradeProjectData,
   V1_HAIR_RAMPS,
-  migrateV1ToV2,
 } from '../src/core/projectMigration';
 import { upgradeProjectZip } from '../src/app/browser/projectImportExport';
-import { validateProjectData, uint8ArrayToBase64 } from '../src/core/projectData';
+import { validateProjectData, assertProjectValid, uint8ArrayToBase64 } from '../src/core/projectData';
 import { PALETTE_36, TRANSPARENT_INDEX, RAMPS_INFO } from '../src/core/constants';
 import { SemanticZone } from '../src/core/types';
 import { PIXEL_COUNT } from '../src/core/pixelGrid';
@@ -18,7 +17,7 @@ describe('Project Migration Pipeline (Progressive Version Upgrader)', () => {
 
   function createV1BlondeProject(): Record<string, unknown> {
     const pixels = new Uint8Array(PIXEL_COUNT).fill(TRANSPARENT_INDEX);
-    const mask = new Uint8Array(PIXEL_COUNT).fill(SemanticZone.Background);
+    const mask = new Uint8Array(PIXEL_COUNT).fill(SemanticZone.None);
 
     // Legacy 5 tiers:
     // 0: #6B0818 (暗)
@@ -56,10 +55,11 @@ describe('Project Migration Pipeline (Progressive Version Upgrader)', () => {
     // Validate using validateProjectData
     const validation = validateProjectData(result.data);
     expect(validation.valid).toBe(true);
-    expect(validation.data?.v).toBe(2);
+    assertProjectValid(validation);
+    expect(validation.data.v).toBe(2);
 
     // Decode pixels to verify tier convergence
-    const validationBinary = atob(validation.data!.pixels);
+    const validationBinary = atob(validation.data.pixels);
     const pixels = new Uint8Array(validationBinary.length);
     for (let i = 0; i < validationBinary.length; i++) {
       pixels[i] = validationBinary.charCodeAt(i);
@@ -82,9 +82,10 @@ describe('Project Migration Pipeline (Progressive Version Upgrader)', () => {
     const res = validateProjectData(rawV1);
 
     expect(res.valid).toBe(true);
+    assertProjectValid(res);
     expect(res.upgraded).toBe(true);
     expect(res.fromVersion).toBe(1);
-    expect(res.data?.v).toBe(CURRENT_PROJECT_VERSION);
+    expect(res.data.v).toBe(CURRENT_PROJECT_VERSION);
   });
 
   it('leaves already up-to-date v2 archives untouched', () => {
@@ -122,6 +123,7 @@ describe('Project Migration Pipeline (Progressive Version Upgrader)', () => {
   });
 
   it('verifies real backup 5-tier zip file if present in Downloads', async () => {
+    // @ts-expect-error Node fs module is imported dynamically in vitest environment without global @types/node
     const fs = await import('fs');
     const path = 'C:/Users/grand/Downloads/portrait_studio_project_1791009874949_backup_5tier.zip';
     if (!fs.existsSync(path)) {

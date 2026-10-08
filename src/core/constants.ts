@@ -14,23 +14,25 @@ import {
 export { SemanticZone };
 
 // ===================== 画布与像素规格 =====================
-export const IMAGE_WIDTH = 64;
-export const IMAGE_HEIGHT = 64;
-export const PIXEL_COUNT = IMAGE_WIDTH * IMAGE_HEIGHT; // 4096
-export const MAX_CANVAS_COORD = IMAGE_WIDTH - 1; // 63
+export {
+  IMAGE_WIDTH,
+  IMAGE_HEIGHT,
+  PIXEL_COUNT,
+  MAX_CANVAS_COORD,
+} from './pixelGrid';
 
 // ===================== 特殊色彩与索引 =====================
 export const WHITE_PALETTE_INDEX = 1; // #FFFFFF 纯白色 (眼白 / 高光 / 服饰白)
 export const TRANSPARENT_INDEX = 255; // 原生透明色 (Aseprite 空白像素 / 橡皮擦删除值)
 
-// ===================== 5 分区语义遮罩配置 =====================
+// ===================== 4 分区语义遮罩配置 (0 为无遮罩 None) =====================
 export const ZONE_CONFIG: Record<SemanticZone, ZoneMeta> = {
-  [SemanticZone.Background]: {
-    zone: SemanticZone.Background,
-    name: '背景 (Background)',
-    shortName: '背景',
-    color: '#64748B',
-    hotkey: '0',
+  [SemanticZone.None]: {
+    zone: SemanticZone.None,
+    name: '无遮罩 (None)',
+    shortName: '无',
+    color: 'transparent',
+    hotkey: '',
   },
   [SemanticZone.Hair]: {
     zone: SemanticZone.Hair,
@@ -67,7 +69,6 @@ export const ALL_ZONES: SemanticZone[] = [
   SemanticZone.Skin,
   SemanticZone.Eyes,
   SemanticZone.Clothes,
-  SemanticZone.Background,
 ];
 
 // ===================== 36 色默认基准色板 =====================

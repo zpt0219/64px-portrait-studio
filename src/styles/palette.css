@@ -812,7 +812,7 @@ input[type="range"] {
   cursor: pointer;
 }
 
-/* 5 分区画刷与显隐多选列表 */
+/* 4 分区画刷与显隐多选列表 */
 .zone-quick-actions {
   display: flex;
   align-items: center;

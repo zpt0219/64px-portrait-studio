@@ -3,10 +3,16 @@
  */
 
 import { HairPresetKey } from '../core/types';
-import { PALETTE_36 } from '../core/constants';
+import { PALETTE_36, TRANSPARENT_INDEX, isHairPresetKey } from '../core/constants';
+import { PIXEL_COUNT } from '../core/pixelGrid';
+import { normalizeTransparentMask } from '../core/projectData';
 import { Command, CommandContext, SnapshotCommand } from './command';
 
 let globalGestureCounter = 0;
+
+function isPaletteIndex(index: number): boolean {
+  return Number.isInteger(index) && index >= 0 && index < PALETTE_36.length;
+}
 
 /** 生成全局单调递增的手势 ID */
 export function nextGestureId(): number {
@@ -25,16 +31,30 @@ export class SetPaletteColorCommand extends SnapshotCommand {
   ) {
     super();
   }
+
+  override init(ctx: CommandContext): boolean {
+    if (!this.hasValidInput()) {
+      return false;
+    }
+    return super.init(ctx);
+  }
+
+  private hasValidInput(): boolean {
+    return isPaletteIndex(this.index) && typeof this.hex === 'string' && /^#[0-9A-Fa-f]{6}$/.test(this.hex);
+  }
+
   protected apply({ doc }: CommandContext): void {
     doc.palette[this.index] = this.hex;
   }
+
   mergeWith(next: Command, ctx: CommandContext): boolean {
     if (
       !(next instanceof SetPaletteColorCommand) ||
       this.gesture === 0 ||
       next.gesture === 0 ||
       next.gesture !== this.gesture ||
-      next.index !== this.index
+      next.index !== this.index ||
+      !next.hasValidInput()
     ) {
       return false;
     }
@@ -51,6 +71,14 @@ export class ResetPaletteCommand extends SnapshotCommand {
   constructor(private readonly index: number | null) {
     super();
   }
+
+  override init(ctx: CommandContext): boolean {
+    if (this.index !== null && !isPaletteIndex(this.index)) {
+      return false;
+    }
+    return super.init(ctx);
+  }
+
   protected apply({ doc }: CommandContext): void {
     if (this.index === null) doc.palette = [...PALETTE_36];
     else doc.palette[this.index] = PALETTE_36[this.index];
@@ -63,19 +91,41 @@ export class SetHairPresetCommand extends SnapshotCommand {
   constructor(private readonly presetKey: HairPresetKey) {
     super();
   }
+
+  override init(ctx: CommandContext): boolean {
+    if (!isHairPresetKey(this.presetKey)) {
+      return false;
+    }
+    return super.init(ctx);
+  }
+
   protected apply({ doc }: CommandContext): void {
     doc.currentHairPreset = this.presetKey;
   }
 }
 
-/** 固化发色预览：写入预览像素并记下新发色预设 */
+/** 应用发色：写入计算结果并记下新发色预设 */
 export class CommitHairRecolorCommand extends SnapshotCommand {
   readonly name = 'CommitHairRecolor';
   constructor(private readonly pixels: Uint8Array, private readonly presetKey: HairPresetKey) {
     super();
   }
+
+  override init(ctx: CommandContext): boolean {
+    if (!this.pixels || this.pixels.length !== PIXEL_COUNT || !isHairPresetKey(this.presetKey)) {
+      return false;
+    }
+    for (const index of this.pixels) {
+      if (index !== TRANSPARENT_INDEX && !isPaletteIndex(index)) {
+        return false;
+      }
+    }
+    return super.init(ctx);
+  }
+
   protected apply({ doc }: CommandContext): void {
     doc.pixelIndices.set(this.pixels);
     doc.currentHairPreset = this.presetKey;
+    normalizeTransparentMask(doc.pixelIndices, doc.semanticMask);
   }
 }

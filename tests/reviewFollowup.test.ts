@@ -185,7 +185,7 @@ describe('Follow-up review: persistence, gestures and stale requests', () => {
     expect(vm.doc.pixelIndices).toEqual(before);
     expect(vm.canUndo()).toBe(false);
   });
-  for (const zone of [SemanticZone.Background, SemanticZone.Clothes]) {
+  for (const zone of [SemanticZone.None, SemanticZone.Clothes]) {
     it(`initializes the all-colors match group for zone ${zone}`, () => {
       const vm = loaded();
       vm.setActiveZone(zone);

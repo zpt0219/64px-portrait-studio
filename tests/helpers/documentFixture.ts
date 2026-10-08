@@ -30,16 +30,16 @@ export function assertDocumentInvariant(doc: PortraitDocument): void {
   expect(doc.semanticMask).toHaveLength(PIXEL_COUNT);
   for (let i = 0; i < PIXEL_COUNT; i++) {
     const m = doc.semanticMask[i];
-    const isValid = m >= SemanticZone.Background && m <= SemanticZone.Clothes;
+    const isValid = m >= SemanticZone.None && m <= SemanticZone.Clothes;
     if (!isValid) {
       throw new Error(`Invalid semanticMask at ${i}: ${m}`);
     }
   }
 
-  // 4. 透明位置约束：pixelIndices[i] 为 255 时，semanticMask[i] 必须为 Background
+  // 4. 透明位置约束：pixelIndices[i] 为 255 时，semanticMask[i] 必须为 None (0)
   for (let i = 0; i < PIXEL_COUNT; i++) {
     if (doc.pixelIndices[i] === TRANSPARENT_INDEX) {
-      if (doc.semanticMask[i] !== SemanticZone.Background) {
+      if (doc.semanticMask[i] !== SemanticZone.None) {
         throw new Error(
           `Transparent pixel invariant violated at ${i}: pixel is 255 but mask is ${doc.semanticMask[i]}`
         );
@@ -66,13 +66,13 @@ export function assertDocumentEqual(actual: PortraitDocument, expected: Portrait
 }
 
 /**
- * 创建合法的纯净空文档（全透明 + 全 Background 分区）
+ * 创建合法的纯净空文档（全透明 + 全 None 无遮罩）
  */
 export function createEmptyDocument(): PortraitDocument {
   const pixelIndices = new Uint8Array(PIXEL_COUNT);
   pixelIndices.fill(TRANSPARENT_INDEX);
   const semanticMask = new Uint8Array(PIXEL_COUNT);
-  semanticMask.fill(SemanticZone.Background);
+  semanticMask.fill(SemanticZone.None);
 
   return {
     palette: [...PALETTE_36],
@@ -103,7 +103,7 @@ export function createValidDocument(options?: {
     options.pixels((x, y, colorIdx, zone = SemanticZone.Skin) => {
       const idx = y * 64 + x;
       doc.pixelIndices[idx] = colorIdx;
-      doc.semanticMask[idx] = colorIdx === TRANSPARENT_INDEX ? SemanticZone.Background : zone;
+      doc.semanticMask[idx] = colorIdx === TRANSPARENT_INDEX ? SemanticZone.None : zone;
     });
   }
 

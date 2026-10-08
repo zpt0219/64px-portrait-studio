@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { processDecodedImage } from '../src/core/imageImport';
 import {
   validateProjectData,
+  assertProjectValid,
   documentToProjectData,
   projectDataToDocument,
   uint8ArrayToBase64,
@@ -64,7 +65,7 @@ describe('Compatibility & Domain Pipeline Invariants (T11)', () => {
 
       // Transparent corners must be transparent and Background mask
       expect(doc.pixelIndices[0]).toBe(TRANSPARENT_INDEX);
-      expect(doc.semanticMask[0]).toBe(SemanticZone.Background);
+      expect(doc.semanticMask[0]).toBe(SemanticZone.None);
 
       // Face center must be non-transparent and have Skin or Hair mask
       const faceIdx = 32 * W + 32;
@@ -72,7 +73,7 @@ describe('Compatibility & Domain Pipeline Invariants (T11)', () => {
       expect([SemanticZone.Skin, SemanticZone.Hair]).toContain(doc.semanticMask[faceIdx]);
 
       // Message for exact 64x64
-      expect(result.importInfo.message).toContain('已自动完成 36 色量化与 5 分区遮罩生成');
+      expect(result.importInfo.message).toContain('已自动完成 36 色量化与语义遮罩生成');
       assertDocumentInvariant(doc);
     });
 
@@ -152,7 +153,7 @@ describe('Compatibility & Domain Pipeline Invariants (T11)', () => {
   describe('Legacy v1 Project Fixture Byte-Level Roundtrip', () => {
     it('loads legal legacy v1 project fixture and roundtrips with 100% fidelity', () => {
       const pixels = new Uint8Array(PIXEL_COUNT).fill(TRANSPARENT_INDEX);
-      const mask = new Uint8Array(PIXEL_COUNT).fill(SemanticZone.Background);
+      const mask = new Uint8Array(PIXEL_COUNT).fill(SemanticZone.None);
 
       // Create a deterministic pattern
       for (let i = 100; i < 200; i++) {
@@ -172,9 +173,10 @@ describe('Compatibility & Domain Pipeline Invariants (T11)', () => {
       // 1. Validate
       const validation = validateProjectData(rawV1Project);
       expect(validation.valid).toBe(true);
+      assertProjectValid(validation);
 
       // 2. Decode to document
-      const { document: doc1, warnings } = projectDataToDocument(validation.data!);
+      const { document: doc1, warnings } = projectDataToDocument(validation.data);
       expect(warnings).toHaveLength(0);
       assertDocumentInvariant(doc1);
 
@@ -182,8 +184,8 @@ describe('Compatibility & Domain Pipeline Invariants (T11)', () => {
       const encodedData = documentToProjectData(doc1, 1709000000);
       expect(encodedData.v).toBe(CURRENT_PROJECT_VERSION);
       expect(encodedData.hairPreset).toBe('01_black_黑');
-      expect(encodedData.pixels).toBe(validation.data!.pixels);
-      expect(encodedData.mask).toBe(validation.data!.mask);
+      expect(encodedData.pixels).toBe(validation.data.pixels);
+      expect(encodedData.mask).toBe(validation.data.mask);
 
       // 4. Decode again
       const { document: doc2 } = projectDataToDocument(encodedData);
@@ -192,7 +194,7 @@ describe('Compatibility & Domain Pipeline Invariants (T11)', () => {
 
     it('detects and corrects legacy transparent pixel flaw with warning', () => {
       const pixels = new Uint8Array(PIXEL_COUNT).fill(TRANSPARENT_INDEX);
-      const mask = new Uint8Array(PIXEL_COUNT).fill(SemanticZone.Background);
+      const mask = new Uint8Array(PIXEL_COUNT).fill(SemanticZone.None);
 
       // Legacy flaw: transparent pixels tagged as Clothes and Hair
       mask[42] = SemanticZone.Clothes;
@@ -212,8 +214,8 @@ describe('Compatibility & Domain Pipeline Invariants (T11)', () => {
       expect(warnings[0]).toContain('2 处透明像素');
 
       // Normalized to Background (0)
-      expect(doc.semanticMask[42]).toBe(SemanticZone.Background);
-      expect(doc.semanticMask[43]).toBe(SemanticZone.Background);
+      expect(doc.semanticMask[42]).toBe(SemanticZone.None);
+      expect(doc.semanticMask[43]).toBe(SemanticZone.None);
       assertDocumentInvariant(doc);
     });
   });

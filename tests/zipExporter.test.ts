@@ -116,7 +116,7 @@ describe('ZIP Exporter & Snapshot State Consistency (T07 / B7)', () => {
       doc.pixelIndices[0] = 5;
       doc.pixelIndices[1] = 255;
       doc.semanticMask[0] = SemanticZone.Skin;
-      doc.semanticMask[1] = SemanticZone.Background;
+      doc.semanticMask[1] = SemanticZone.None;
       doc.palette[0] = '#000000';
       doc.currentHairPreset = null;
 

@@ -158,7 +158,7 @@ export class AutosaveService {
       if (!item) return null;
       const raw = JSON.parse(item);
       const validation = validateProjectData(raw);
-      if (validation.valid && validation.data) {
+      if (validation.valid) {
         return validation.data;
       } else {
         console.warn('LocalStorage data failed validation:', validation.error);

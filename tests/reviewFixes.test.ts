@@ -26,7 +26,7 @@ describe('Review Findings (R1–R7) Regression Suite', () => {
 
   describe('R1: Stroke Transaction & History Invariants', () => {
     it('R1.1: undo during active stroke commits/aborts stroke so history is not corrupted', () => {
-      const vm = createLoadedVm(255, SemanticZone.Background);
+      const vm = createLoadedVm(255, SemanticZone.None);
 
       // Stroke 1: color 1 at (0, 0)
       vm.selectPaletteIndex(1);

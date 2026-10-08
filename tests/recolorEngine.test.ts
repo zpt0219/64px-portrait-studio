@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { recolorHair, nearestTierForColor } from '../src/core/recolorEngine';
+import {
+  recolorHair,
+  nearestTierForColor,
+  resolveEffectiveSourceKey,
+  resolveTierForPixel,
+  resolvePaletteIndex,
+} from '../src/core/recolorEngine';
 import { RAMPS_INFO, PALETTE_36, TRANSPARENT_INDEX } from '../src/core/constants';
 import { SemanticZone, HairPresetKey } from '../src/core/types';
 import { PIXEL_COUNT } from '../src/core/pixelGrid';
@@ -9,7 +15,7 @@ describe('recolorEngine (4-tier hair system)', () => {
 
   function createHairTestBuffer(presetKey: HairPresetKey): { pixels: Uint8Array; mask: Uint8Array } {
     const pixels = new Uint8Array(PIXEL_COUNT).fill(TRANSPARENT_INDEX);
-    const mask = new Uint8Array(PIXEL_COUNT).fill(SemanticZone.Background);
+    const mask = new Uint8Array(PIXEL_COUNT).fill(SemanticZone.None);
     const ramp = RAMPS_INFO[presetKey].hexes;
 
     // Put 4 pixels for the 4 tiers at indices 0..3
@@ -137,5 +143,45 @@ describe('recolorEngine (4-tier hair system)', () => {
     for (const [key, info] of Object.entries(RAMPS_INFO)) {
       expect(info.hexes.length, `${key} must have exactly 4 tiers`).toBe(4);
     }
+  });
+
+  describe('decomposed recolor steps', () => {
+    it('resolveEffectiveSourceKey uses valid key or votes from pixels', () => {
+      const { pixels, mask } = createHairTestBuffer('04_pink_粉');
+      // Explicit valid key
+      expect(resolveEffectiveSourceKey('02_brown_棕', pixels, mask, palette)).toBe('02_brown_棕');
+      // Null key -> votes and detects Pink
+      expect(resolveEffectiveSourceKey(null, pixels, mask, palette)).toBe('04_pink_粉');
+    });
+
+    it('resolveTierForPixel prioritizes exact tier index and falls back to luminance', () => {
+      const brownRamp = RAMPS_INFO['02_brown_棕'].hexes;
+      const redRamp = RAMPS_INFO['09_red_红'].hexes;
+
+      // Exact tier: Brown tier 2
+      expect(resolveTierForPixel(brownRamp[2], brownRamp, redRamp)).toBe(2);
+
+      // Custom non-ramp color falls back to nearest luminance
+      const customHex = '#FFDE6B';
+      const lumTier = nearestTierForColor(customHex, redRamp);
+      expect(resolveTierForPixel(customHex, brownRamp, redRamp)).toBe(lumTier);
+
+      // Undefined source ramp also falls back to luminance
+      expect(resolveTierForPixel(customHex, undefined, redRamp)).toBe(lumTier);
+    });
+
+    it('resolvePaletteIndex matches exact hex or finds nearest in palette', () => {
+      // Color #1A1A1A is in palette (at index 0 or similar)
+      const exactIndex = palette.findIndex((c) => c.toUpperCase() === '#1A1A1A');
+      if (exactIndex >= 0) {
+        expect(resolvePaletteIndex('#1A1A1A', palette)).toBe(exactIndex);
+      }
+
+      // Arbitrary hex not in palette finds valid non-negative index in palette
+      const customHex = '#123456';
+      const resolved = resolvePaletteIndex(customHex, palette);
+      expect(resolved).toBeGreaterThanOrEqual(0);
+      expect(resolved).toBeLessThan(palette.length);
+    });
   });
 });

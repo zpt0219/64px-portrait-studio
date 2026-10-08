@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   validateProjectData,
+  assertProjectValid,
   documentToProjectData,
   projectDataToDocument,
+  normalizeTransparentMask,
   uint8ArrayToBase64,
   CURRENT_PROJECT_VERSION,
 } from '../src/core/projectData';
@@ -19,7 +21,7 @@ import {
 describe('Project Data Codec and Validation (T01)', () => {
   function createValidRawProject(): Record<string, unknown> {
     const pixels = new Uint8Array(PIXEL_COUNT).fill(TRANSPARENT_INDEX);
-    const mask = new Uint8Array(PIXEL_COUNT).fill(SemanticZone.Background);
+    const mask = new Uint8Array(PIXEL_COUNT).fill(SemanticZone.None);
     return {
       v: 1,
       palette: [...PALETTE_36],
@@ -58,9 +60,10 @@ describe('Project Data Codec and Validation (T01)', () => {
       const raw = createValidRawProject();
       const res = validateProjectData(raw);
       expect(res.valid).toBe(true);
+      assertProjectValid(res);
       expect(res.data).toBeDefined();
-      expect(res.data?.hairPreset).toBe('01_black_黑');
-      expect(res.data?.ts).toBe(1700000000);
+      expect(res.data.hairPreset).toBe('01_black_黑');
+      expect(res.data.ts).toBe(1700000000);
     });
 
     it('accepts null or missing hairPreset', () => {
@@ -68,13 +71,15 @@ describe('Project Data Codec and Validation (T01)', () => {
       raw1.hairPreset = null;
       const res1 = validateProjectData(raw1);
       expect(res1.valid).toBe(true);
-      expect(res1.data?.hairPreset).toBeNull();
+      assertProjectValid(res1);
+      expect(res1.data.hairPreset).toBeNull();
 
       const raw2 = createValidRawProject();
       delete raw2.hairPreset;
       const res2 = validateProjectData(raw2);
       expect(res2.valid).toBe(true);
-      expect(res2.data?.hairPreset).toBeNull();
+      assertProjectValid(res2);
+      expect(res2.data.hairPreset).toBeNull();
     });
 
     it('rejects invalid hairPreset string (B5)', () => {
@@ -82,7 +87,9 @@ describe('Project Data Codec and Validation (T01)', () => {
       raw.hairPreset = 'not-a-preset';
       const res = validateProjectData(raw);
       expect(res.valid).toBe(false);
-      expect(res.error).toContain('发色预设');
+      if (!res.valid) {
+        expect(res.error).toContain('发色预设');
+      }
     });
 
     it('rejects invalid hairPreset non-string types', () => {
@@ -100,14 +107,16 @@ describe('Project Data Codec and Validation (T01)', () => {
       raw1.ts = 123456789;
       const res1 = validateProjectData(raw1);
       expect(res1.valid).toBe(true);
-      expect(res1.data?.ts).toBe(123456789);
+      assertProjectValid(res1);
+      expect(res1.data.ts).toBe(123456789);
 
       const raw2 = createValidRawProject();
       delete raw2.ts;
       const res2 = validateProjectData(raw2);
       expect(res2.valid).toBe(true);
-      expect(typeof res2.data?.ts).toBe('number');
-      expect(Number.isFinite(res2.data?.ts)).toBe(true);
+      assertProjectValid(res2);
+      expect(typeof res2.data.ts).toBe('number');
+      expect(Number.isFinite(res2.data.ts)).toBe(true);
 
       const raw3 = createValidRawProject();
       raw3.ts = 'not-a-number';
@@ -130,7 +139,9 @@ describe('Project Data Codec and Validation (T01)', () => {
       raw.v = 999;
       const res = validateProjectData(raw);
       expect(res.valid).toBe(false);
-      expect(res.error).toContain('Schema');
+      if (!res.valid) {
+        expect(res.error).toContain('Schema');
+      }
     });
 
     it('rejects invalid palette length and format', () => {
@@ -175,7 +186,7 @@ describe('Project Data Codec and Validation (T01)', () => {
       const doc = createValidDocument({
         currentHairPreset: '02_brown_棕' as HairPresetKey,
         pixels: (setPixel) => {
-          setPixel(0, 0, 0, SemanticZone.Background);
+          setPixel(0, 0, 0, SemanticZone.None);
           setPixel(1, 0, 7, SemanticZone.Skin);
           setPixel(2, 0, 25, SemanticZone.Hair);
         },
@@ -192,9 +203,10 @@ describe('Project Data Codec and Validation (T01)', () => {
       // Verify validation passes
       const validation = validateProjectData(projectData);
       expect(validation.valid).toBe(true);
+      assertProjectValid(validation);
 
       // Decode back
-      const { document: restoredDoc, warnings } = projectDataToDocument(validation.data!);
+      const { document: restoredDoc, warnings } = projectDataToDocument(validation.data);
       expect(warnings).toHaveLength(0);
 
       assertDocumentEqual(restoredDoc, doc);
@@ -218,7 +230,7 @@ describe('Project Data Codec and Validation (T01)', () => {
 
     it('normalizes legacy transparent pixel with non-background mask and produces a warning', () => {
       const pixels = new Uint8Array(PIXEL_COUNT).fill(TRANSPARENT_INDEX);
-      const mask = new Uint8Array(PIXEL_COUNT).fill(SemanticZone.Background);
+      const mask = new Uint8Array(PIXEL_COUNT).fill(SemanticZone.None);
       // Legacy flaw: transparent pixel has Hair mask
       mask[5] = SemanticZone.Hair;
       mask[10] = SemanticZone.Skin;
@@ -235,9 +247,60 @@ describe('Project Data Codec and Validation (T01)', () => {
       const { document: doc, warnings } = projectDataToDocument(legacyProject);
       expect(warnings).toHaveLength(1);
       expect(warnings[0]).toContain('2 处透明像素');
-      expect(doc.semanticMask[5]).toBe(SemanticZone.Background);
-      expect(doc.semanticMask[10]).toBe(SemanticZone.Background);
+      expect(doc.semanticMask[5]).toBe(SemanticZone.None);
+      expect(doc.semanticMask[10]).toBe(SemanticZone.None);
       assertDocumentInvariant(doc);
+    });
+  });
+
+  describe('normalizeTransparentMask pure function', () => {
+    it('cleanses transparent pixels with non-None mask and returns corrected count', () => {
+      const pixels = new Uint8Array([TRANSPARENT_INDEX, 5, TRANSPARENT_INDEX, 10]);
+      const mask = new Uint8Array([SemanticZone.Hair, SemanticZone.Hair, SemanticZone.Clothes, SemanticZone.Eyes]);
+
+      const count = normalizeTransparentMask(pixels, mask);
+      expect(count).toBe(2);
+      expect(mask[0]).toBe(SemanticZone.None);
+      expect(mask[1]).toBe(SemanticZone.Hair);
+      expect(mask[2]).toBe(SemanticZone.None);
+      expect(mask[3]).toBe(SemanticZone.Eyes);
+    });
+
+    it('returns 0 when all transparent pixels already have None mask', () => {
+      const pixels = new Uint8Array([TRANSPARENT_INDEX, 5, TRANSPARENT_INDEX]);
+      const mask = new Uint8Array([SemanticZone.None, SemanticZone.Skin, SemanticZone.None]);
+
+      const count = normalizeTransparentMask(pixels, mask);
+      expect(count).toBe(0);
+      expect(mask[0]).toBe(SemanticZone.None);
+      expect(mask[1]).toBe(SemanticZone.Skin);
+      expect(mask[2]).toBe(SemanticZone.None);
+    });
+  });
+
+  describe('ProjectValidationResult discriminated union', () => {
+    it('allows direct narrowing based on valid boolean', () => {
+      const validRaw = createValidRawProject();
+      const res = validateProjectData(validRaw);
+
+      if (res.valid) {
+        // TypeScript narrows res to { valid: true; data: ProjectData; upgraded: boolean; fromVersion: number }
+        expect(res.data.v).toBe(CURRENT_PROJECT_VERSION);
+        expect(typeof res.upgraded).toBe('boolean');
+        expect(typeof res.fromVersion).toBe('number');
+      } else {
+        expect.unreachable('Should have been valid');
+      }
+
+      const invalidRaw = { v: -999 };
+      const failRes = validateProjectData(invalidRaw);
+      if (!failRes.valid) {
+        // TypeScript narrows failRes to { valid: false; error: string }
+        expect(typeof failRes.error).toBe('string');
+        expect(failRes.error.length).toBeGreaterThan(0);
+      } else {
+        expect.unreachable('Should have failed');
+      }
     });
   });
 });

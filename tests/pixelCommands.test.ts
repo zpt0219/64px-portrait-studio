@@ -50,7 +50,7 @@ describe('Pixel Commands Unified Transparent Rules (T02 - B1)', () => {
       replaceAll: false,
       fg: 0,
       bg: TRANSPARENT_INDEX,
-      zone: SemanticZone.Background,
+      zone: SemanticZone.None,
       lockedZones: [SemanticZone.Hair, SemanticZone.Skin],
       brushSize: 1,
       selection: null,
@@ -65,7 +65,7 @@ describe('Pixel Commands Unified Transparent Rules (T02 - B1)', () => {
     const offset5 = 5 * W + 5;
     expect(doc.pixelIndices[offset5]).toBe(TRANSPARENT_INDEX);
     // Highest priority invariant: transparent pixel mask must be Background even if Hair is locked
-    expect(doc.semanticMask[offset5]).toBe(SemanticZone.Background);
+    expect(doc.semanticMask[offset5]).toBe(SemanticZone.None);
     assertDocumentInvariant(doc);
   });
 
@@ -85,7 +85,7 @@ describe('Pixel Commands Unified Transparent Rules (T02 - B1)', () => {
       replaceAll: false,
       fg: 0,
       bg: TRANSPARENT_INDEX,
-      zone: SemanticZone.Background,
+      zone: SemanticZone.None,
       lockedZones: [SemanticZone.Clothes],
       brushSize: 1,
       selection: null,
@@ -99,7 +99,7 @@ describe('Pixel Commands Unified Transparent Rules (T02 - B1)', () => {
 
     const offset = 10 * W + 10;
     expect(doc.pixelIndices[offset]).toBe(TRANSPARENT_INDEX);
-    expect(doc.semanticMask[offset]).toBe(SemanticZone.Background);
+    expect(doc.semanticMask[offset]).toBe(SemanticZone.None);
     assertDocumentInvariant(doc);
   });
 
@@ -119,7 +119,7 @@ describe('Pixel Commands Unified Transparent Rules (T02 - B1)', () => {
       replaceAll: false,
       fg: TRANSPARENT_INDEX, // Pen drawing transparent
       bg: 0,
-      zone: SemanticZone.Background,
+      zone: SemanticZone.None,
       lockedZones: [SemanticZone.Eyes],
       brushSize: 1,
       selection: null,
@@ -133,7 +133,7 @@ describe('Pixel Commands Unified Transparent Rules (T02 - B1)', () => {
 
     const offset = 12 * W + 12;
     expect(doc.pixelIndices[offset]).toBe(TRANSPARENT_INDEX);
-    expect(doc.semanticMask[offset]).toBe(SemanticZone.Background);
+    expect(doc.semanticMask[offset]).toBe(SemanticZone.None);
     assertDocumentInvariant(doc);
   });
 
@@ -158,7 +158,7 @@ describe('Pixel Commands Unified Transparent Rules (T02 - B1)', () => {
       replaceAll: false,
       fg: TRANSPARENT_INDEX,
       bg: 0,
-      zone: SemanticZone.Background,
+      zone: SemanticZone.None,
       lockedZones: [SemanticZone.Skin],
       brushSize: 1,
       selection: null,
@@ -174,7 +174,7 @@ describe('Pixel Commands Unified Transparent Rules (T02 - B1)', () => {
       for (let dx = 0; dx < 3; dx++) {
         const offset = (20 + dy) * W + (20 + dx);
         expect(doc.pixelIndices[offset]).toBe(TRANSPARENT_INDEX);
-        expect(doc.semanticMask[offset]).toBe(SemanticZone.Background);
+        expect(doc.semanticMask[offset]).toBe(SemanticZone.None);
       }
     }
     assertDocumentInvariant(doc);
@@ -199,9 +199,9 @@ describe('Pixel Commands Unified Transparent Rules (T02 - B1)', () => {
 
     // Old location: (2,2) and (3,2) must be transparent and Background
     expect(doc.pixelIndices[2 * W + 2]).toBe(TRANSPARENT_INDEX);
-    expect(doc.semanticMask[2 * W + 2]).toBe(SemanticZone.Background);
+    expect(doc.semanticMask[2 * W + 2]).toBe(SemanticZone.None);
     expect(doc.pixelIndices[2 * W + 3]).toBe(TRANSPARENT_INDEX);
-    expect(doc.semanticMask[2 * W + 3]).toBe(SemanticZone.Background);
+    expect(doc.semanticMask[2 * W + 3]).toBe(SemanticZone.None);
 
     // New location: (10,10) and (11,10)
     expect(doc.pixelIndices[10 * W + 10]).toBe(5);
@@ -226,9 +226,9 @@ describe('Pixel Commands Unified Transparent Rules (T02 - B1)', () => {
     cmd.execute(ctx);
 
     expect(doc.pixelIndices[30 * W + 30]).toBe(TRANSPARENT_INDEX);
-    expect(doc.semanticMask[30 * W + 30]).toBe(SemanticZone.Background);
+    expect(doc.semanticMask[30 * W + 30]).toBe(SemanticZone.None);
     expect(doc.pixelIndices[30 * W + 31]).toBe(TRANSPARENT_INDEX);
-    expect(doc.semanticMask[30 * W + 31]).toBe(SemanticZone.Background);
+    expect(doc.semanticMask[30 * W + 31]).toBe(SemanticZone.None);
 
     assertDocumentInvariant(doc);
   });
@@ -247,9 +247,9 @@ describe('Pixel Commands Unified Transparent Rules (T02 - B1)', () => {
     cmd.execute(ctx);
 
     expect(doc.pixelIndices[40 * W + 40]).toBe(TRANSPARENT_INDEX);
-    expect(doc.semanticMask[40 * W + 40]).toBe(SemanticZone.Background);
+    expect(doc.semanticMask[40 * W + 40]).toBe(SemanticZone.None);
     expect(doc.pixelIndices[40 * W + 41]).toBe(TRANSPARENT_INDEX);
-    expect(doc.semanticMask[40 * W + 41]).toBe(SemanticZone.Background);
+    expect(doc.semanticMask[40 * W + 41]).toBe(SemanticZone.None);
 
     assertDocumentInvariant(doc);
   });

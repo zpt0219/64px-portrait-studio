@@ -256,12 +256,12 @@ describe('DOM Refresh & Event Optimization (T10)', () => {
       expect(onPixelsChanged).toHaveBeenCalled();
       expect(onMaskChanged).toHaveBeenCalled();
       expect(doc.pixelIndices[0]).toBe(TRANSPARENT_INDEX);
-      expect(doc.semanticMask[0]).toBe(SemanticZone.Background);
+      expect(doc.semanticMask[0]).toBe(SemanticZone.None);
     });
   });
 
   describe('assignColorToZone Transparent Protection', () => {
-    it('rejects assigning TRANSPARENT_INDEX to non-background zones and notifies error', () => {
+    it('rejects assigning TRANSPARENT_INDEX to any zone and notifies error', () => {
       const vm = createTestViewModel();
       const notifySpy = vi.fn();
       vm.registerListener({ onNotify: notifySpy });
@@ -269,9 +269,9 @@ describe('DOM Refresh & Event Optimization (T10)', () => {
       vm.session.activeZone = SemanticZone.Hair;
       vm.assignColorToZone(TRANSPARENT_INDEX);
 
-      expect(notifySpy).toHaveBeenCalledWith('透明像素不可划入非背景遮罩', 'error');
+      expect(notifySpy).toHaveBeenCalledWith('透明像素不参与遮罩', 'error');
       // Verify mask was not modified
-      expect(vm.doc.semanticMask[0]).toBe(SemanticZone.Background);
+      expect(vm.doc.semanticMask[0]).toBe(SemanticZone.None);
     });
   });
 });

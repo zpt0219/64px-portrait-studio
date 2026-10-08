@@ -342,8 +342,8 @@ export async function importProjectZip(file: Parameters<typeof JSZip.loadAsync>[
 
   const { parsed } = await readProjectJson(zip);
   const validation = validateProjectData(parsed);
-  if (!validation.valid || !validation.data) {
-    throw new Error(validation.error || '工程数据校验失败');
+  if (!validation.valid) {
+    throw new Error(validation.error);
   }
 
   return validation.data;

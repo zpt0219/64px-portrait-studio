@@ -2,7 +2,7 @@
  * ViewModel (对应 tile_map_editor_imgui 的 ViewModel)：
  * - 每个用户意图一个方法，文档修改一律构造命令交给 CommandHandler，会话状态直接修改后广播 onSessionChanged；
  * - 实现 StudioEvents，作为命令事件的唯一接收者，扇出给所有已注册的监听者 (面板)；
- * - 作为外观门面 (Facade)，将图像导入、发色草稿、选区剪贴板、工程导出委托给领域子控制器；
+ * - 作为外观门面 (Facade)，组织图像导入、发色应用、选区剪贴板及通过注入端口进行工程导出；
  * - 不接触界面 DOM：提示消息走 onNotify 事件，需要用户确认的流程走注入的 StudioPrompts。
  */
 
@@ -297,7 +297,6 @@ export class ViewModel implements StudioEvents {
       maskMatchInitialized: false,
       isLoaded: true,
       selection: null,
-      hairDraftPreset: null,
     });
     if (warnings.length > 0) {
       this.notify(warnings.join('；'), 'warning');
@@ -326,9 +325,9 @@ export class ViewModel implements StudioEvents {
     const result = processDecodedImage(image, this.doc.palette);
     this.replaceDocument(result.document, {
       visibleMaskZones: [], showMaskOverlay: false, activeMode: 'pixel',
-      activeZone: SemanticZone.Background, lockedMaskZones: [], activeMaskTool: 'pen',
+      activeZone: SemanticZone.Hair, lockedMaskZones: [], activeMaskTool: 'pen',
       maskBrushSize: 1, maskMatchInitialized: false, isLoaded: true,
-      selection: null, hairDraftPreset: null,
+      selection: null,
     });
     for (const warning of result.warnings) this.notify(warning, 'warning');
     this.notify(result.importInfo.message, 'success');
@@ -379,14 +378,13 @@ export class ViewModel implements StudioEvents {
       visibleMaskZones: [],
       showMaskOverlay: false,
       activeMode: 'pixel',
-      activeZone: SemanticZone.Background,
+      activeZone: SemanticZone.Hair,
       lockedMaskZones: [],
       activeMaskTool: 'pen',
       maskBrushSize: 1,
       maskMatchInitialized: false,
       isLoaded: true,
       selection: null,
-      hairDraftPreset: null,
     });
     this.notify('已新建 64×64 空白画布', 'info');
   }
@@ -593,7 +591,7 @@ export class ViewModel implements StudioEvents {
         this.setMode('pixel');
       }
     } else {
-      this.notify('已显示全部 5 个遮罩图层');
+      this.notify(`已显示全部 ${ALL_ZONES.length} 个遮罩图层`);
     }
   }
 
@@ -688,8 +686,8 @@ export class ViewModel implements StudioEvents {
   assignColorToZone(colorIdx: number): void {
     if (this._isDisposed) return;
     const target = this.session.activeZone;
-    if (colorIdx === TRANSPARENT_INDEX && target !== SemanticZone.Background) {
-      this.notify('透明像素不可划入非背景遮罩', 'error');
+    if (colorIdx === TRANSPARENT_INDEX && target !== SemanticZone.None) {
+      this.notify('透明像素不参与遮罩', 'error');
       return;
     }
     const targetMeta = ZONE_CONFIG[target];
@@ -714,10 +712,10 @@ export class ViewModel implements StudioEvents {
       );
       const mask = computeSemanticMask(pixels);
       for (let i = 0; i < this.doc.pixelIndices.length; i++) {
-        if (this.doc.pixelIndices[i] === TRANSPARENT_INDEX) mask[i] = SemanticZone.Background;
+        if (this.doc.pixelIndices[i] === TRANSPARENT_INDEX) mask[i] = SemanticZone.None;
       }
       this.execute(new SetMaskCommand(mask));
-      this.notify('✨ 5 分区语义遮罩已基于当前画布像素重新提取完成！', 'success');
+      this.notify('✨ 语义遮罩已基于当前画布像素重新提取完成！', 'success');
     } catch (err) {
       console.error('Recompute mask failed:', err);
       this.notify('重新识别遮罩失败，请检查控制台错误日志', 'error');

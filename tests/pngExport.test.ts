@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { downloadBlob, canvasToBlob, exportProjectPng, exportProjectZip } from '../src/app/browser/projectImportExport';
+import { downloadBlob, canvasToBlob, exportProjectPng } from '../src/app/browser/projectImportExport';
 import { createValidDocument } from './helpers/documentFixture';
 import { createTestViewModel } from './helpers/viewModelFixture';
 import { SemanticZone } from '../src/core/types';

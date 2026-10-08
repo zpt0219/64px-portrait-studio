@@ -36,7 +36,7 @@ export function drawZoneOverlay(
   ctx.save();
   forEachCell(rect, (i, x, y) => {
     const zone = mask[i] as SemanticZone;
-    if (!visibleZones.has(zone)) return;
+    if (zone === SemanticZone.None || !visibleZones.has(zone)) return;
     const rgb = ZONE_OVERLAY_RGB[zone] || [0, 0, 0];
     ctx.fillStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${opacity})`;
     ctx.fillRect(x * zoom, y * zoom, zoom, zoom);

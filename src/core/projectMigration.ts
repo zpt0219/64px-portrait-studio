@@ -11,7 +11,7 @@ import { SemanticZone, HairPresetKey } from './types';
 import { RAMPS_INFO, TRANSPARENT_INDEX, isHairPresetKey } from './constants';
 import { findNearestColor } from '../utils/colorUtils';
 import { PIXEL_COUNT } from './pixelGrid';
-import { uint8ArrayToBase64, base64ToUint8Array } from './projectData';
+import { uint8ArrayToBase64, base64ToUint8Array } from '../utils/base64';
 
 /** 当前工作台支持的最新工程 Schema 版本 */
 export const CURRENT_PROJECT_VERSION = 2;

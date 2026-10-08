@@ -422,7 +422,7 @@ export class App implements StudioEvents {
       }
     }
 
-    // 0~4 选择遮罩分区
+    // 1~4 选择遮罩分区
     for (const zone of ALL_ZONES) {
       const digit = ZONE_CONFIG[zone].hotkey;
       if (is(digit, `Digit${digit}`, `Numpad${digit}`)) {
