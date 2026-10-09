@@ -93,6 +93,9 @@ export class CanvasPanel extends Panel {
   onPixelsChanged(): void {
     this.invalidate();
   }
+  onPreviewChanged(): void {
+    this.invalidate();
+  }
   onMaskChanged(): void {
     this.markDirty();
   }

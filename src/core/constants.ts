@@ -130,7 +130,7 @@ export const MATCH_COLOR_PRESETS: MatchColorPreset[] = [
   },
   {
     id: 'current_hair',
-    name: '当前发色预设',
+    name: '已确认发色预设',
     icon: '💇',
     getIndices: (palette, currentHairPreset) => {
       const presetKey: HairPresetKey = (currentHairPreset && isHairPresetKey(currentHairPreset))

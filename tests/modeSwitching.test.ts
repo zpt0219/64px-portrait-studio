@@ -80,16 +80,26 @@ describe('Mode Switching and Mask Visibility', () => {
       assertDocumentInvariant(vm.doc);
     }
 
-    it('immediately recolors hair pixels and can be undone cleanly with undo()', () => {
+    it('immediately reflects hair preset in displayPixels and commits as undoable command upon confirm', () => {
       const vm = createTestViewModel();
       setupHairTestDoc(vm);
       const originalPreset = vm.doc.currentHairPreset;
       const originalPixel0 = vm.doc.pixelIndices[0];
+      let promptOptions: any = null;
+      vm.setPrompts({ confirm: (opts) => { promptOptions = opts; } });
 
       vm.applyHairPreset('06_silver_银白');
+      // 试色立即体现在 displayPixels() 渲染中，尚未固化到 doc
+      expect(vm.displayPixels()[0]).not.toBe(originalPixel0);
+      expect(vm.doc.currentHairPreset).toBe(originalPreset);
+
+      // 切换模式并确认固化
+      vm.setMode('pixel');
+      expect(promptOptions).not.toBeNull();
+      promptOptions.buttons[0].onClick();
       expect(vm.doc.currentHairPreset).toBe('06_silver_银白');
 
-      // Undo reverts hair recolor and preset
+      // 固化后可正常执行撤销与重做
       vm.undo();
       expect(vm.doc.currentHairPreset).toBe(originalPreset);
       expect(vm.doc.pixelIndices[0]).toBe(originalPixel0);

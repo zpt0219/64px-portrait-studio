@@ -63,6 +63,9 @@ export class RealtimePreview extends Panel {
   onHairPresetChanged(): void {
     this.markDirty();
   }
+  onPreviewChanged(): void {
+    this.markDirty();
+  }
   onSessionChanged(): void {
     this.markDirty();
   }

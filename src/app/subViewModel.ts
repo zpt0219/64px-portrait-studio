@@ -37,4 +37,5 @@ export interface StudioContext {
   confirm(options: PromptOptions): void;
   endStroke(): void;
   setMode(mode: EditorMode, onProceed?: () => void): void;
+  notifyPreviewChanged(): void;
 }

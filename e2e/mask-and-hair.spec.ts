@@ -37,13 +37,24 @@ test.describe('E2E: 语义遮罩与经典发色置换全流程', () => {
     const hairRecolorSection = page.locator('#hair-recolor-section');
     await expect(hairRecolorSection).toBeVisible();
 
-    // 4. 点击选择“03 金发”卡片进行即时发色置换 (可撤销)
+    // 4. 点击选择“03 金发”卡片进行发色试色
     const goldCard = page.locator('.hair-preset-card[data-preset="03_blonde_金"]');
     await expect(goldCard).toBeVisible();
     await goldCard.click();
 
-    // 验证发色成功应用并固化到文档 (currentHairPreset === "03_blonde_金")
+    // 验证试色已激活
     await expect(goldCard).toHaveClass(/active/);
+    const hasDraft = await page.evaluate(() => window.__studio?.vm.hasHairDraft());
+    expect(hasDraft).toBe(true);
+
+    // 5. 切换回像素模式并确认固化发色
+    await page.click('#btn-mode-pixel');
+    const overlay = page.locator('#confirm-modal-overlay');
+    await expect(overlay).toBeVisible();
+    await overlay.locator('.btn-primary').click();
+    await expect(overlay).toBeHidden();
+
+    // 验证发色成功应用并固化到文档 (currentHairPreset === "03_blonde_金")
     const committedPreset = await page.evaluate(() => window.__studio?.vm.doc.currentHairPreset);
     expect(committedPreset).toBe('03_blonde_金');
   });

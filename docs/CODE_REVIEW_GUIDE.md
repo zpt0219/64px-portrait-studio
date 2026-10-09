@@ -8,7 +8,7 @@
 
 - `core/`、`command/` 和纯工具不依赖界面 DOM。`editOps` 原地修改显式传入的数组，不能将其理解为没有副作用的数学纯函数。
 - 文档和会话模型位于 `core/document.ts`、`core/session.ts`。当前没有 `model/`、`data/`、`types/` 目录。
-- `app/viewModel.ts` 作为父中枢协调器，统筹独立的 `PixelViewModel`（绘图）与 `MaskViewModel`（遮罩）两个子 ViewModel，模式切换严格遵循 `canExit -> cleanup -> enter` 协议，提供完整的状态隔离与试色确认；`app/app.ts` 装配面板和浏览器能力。
+- `app/viewModel.ts` 作为父中枢协调器，统筹独立的 `PixelViewModel`（绘图）与 `MaskViewModel`（遮罩）两个子 ViewModel。模式切换（包括工具/分区卡片点击、全局快捷键、以及隐藏全部遮罩等触发场景）严格遵循统一的 `canExit -> cleanup -> enter` 生命周期协议，提供完整的状态隔离与试色确认；拒绝退出时绝不提前污染可见图层与覆盖层状态；`app/app.ts` 装配面板和浏览器能力。
 - `app/ports.ts` 定义 `StudioPrompts` 与 `ExportBackend`。默认 `ViewModel` 可无浏览器构造，未注入存储或导出能力时返回失败。
 - 浏览器解码、Canvas、ZIP 与下载位于 `app/browser/`；localStorage 通过 `app/adapters/BrowserStorage.ts` 注入 `AutosaveService`。
 
@@ -185,7 +185,15 @@ interface PortraitDocument {
 3. `resolvePaletteIndex()` 优先精确匹配目标色号，缺色时使用 OKLab 最近邻映射到当前色板。
 4. `recolorHair()` 返回新数组，只处理非透明 Hair 像素，其他分区保持不变。
 
-当前 `applyHairPreset()` 立即执行 `CommitHairRecolorCommand`，修改像素及发色标记，可 Ctrl+Z 撤销；不修改色板。`hasHairDraft()` 恒为 false，`displayPixels()` 返回文档像素；保留的草稿方法是兼容入口，不代表存在预览/固化流程。
+试色草稿机制与已提交文档完全解耦：
+
+- `applyHairPreset()` 在 `MaskViewModel` 维护 `trialHairPreset` 与试色撤销/重做栈，并通过 `onPreviewChanged` 通知画布、实时预览、发色卡和遮罩工具栏。不修改正式文档、不生成文档命令、不触发自动保存。
+- `displayPixels()` 按当前文档和试色目标动态计算合成像素；当前没有预览缓存。
+- `hasPendingTrial` / `hasHairDraft()` 基于试色目标及实际像素差异判定（同名预设的杂色映射也可产生 pending）。
+- 退出蒙版模式时统一确认或放弃换色，也可继续试色；导出（PNG/ZIP）前可确认换色、放弃换色或取消导出。确认通过 `CommitHairRecolorCommand` 提交，取消只清除试色状态，不回写旧像素，保留已完成的几何变换与遮罩编辑。文档替换和销毁调用 `invalidateTrial()`。
+- `getPendingRecolorDescriptions()`、`commitAllRecolors()`、`discardAllRecolors()` 预留统一决策入口，目前实际状态和算法仅支持头发；眼睛等区域及统一的区域换色集合尚未实现。
+- 遮罩框选、按色划分和颜色统计读取已提交文档。`current_hair` 匹配组（界面标为“已确认发色预设”）在试色、试色撤销/重做和取消时保持源色组；正式提交、文档历史恢复或色板调整后刷新。自定义匹配组不自动覆盖。
+- 自动保存服务严格仅持久化已提交文档（`doc`），未确认试色绝不写入本地存储。
 
 标准四阶映射可保持阶位；自定义色和缺色兜底不保证无损回环。
 
@@ -248,7 +256,7 @@ sequenceDiagram
 
 图片导入：`App.handleIncomingFile()` → `importAnyFile()` → `decodeImageFile()` → `vm.importImage()` → `processDecodedImage()` → `replaceDocument()`。工程 ZIP 则先校验/迁移，再调用 `vm.loadProject()`。
 
-发色应用：`MaskPanel` 点击预设 → `vm.applyHairPreset()` → `recolorHair()` → `vm.execute(CommitHairRecolorCommand)` → 快照差异事件 → 自动保存与面板渲染。
+发色试色：`MaskPanel` 点击预设 → `vm.applyHairPreset()` → 更新试色历史 → `onPreviewChanged` → `displayPixels()` 合成显示。退出模式或导出前确认 → `commitAllRecolors()` → `vm.execute(CommitHairRecolorCommand)` → 文档差异事件 → 自动保存与面板渲染。
 
 ## 8. 审查检查清单
 

@@ -93,10 +93,9 @@ describe('Follow-up review: persistence, gestures and stale requests', () => {
   });
 
   for (const format of ['png', 'zip'] as const) {
-    it(`exports ${format} directly without draft prompts and flushes autosave`, async () => {
+    it(`exports ${format} directly without prompts when no draft is active`, async () => {
       const store = memoryStore();
       const vm = loaded(store);
-      vm.applyHairPreset('03_blonde_金');
       const { prompts } = capturePrompts(vm);
 
       if (format === 'png') {
@@ -107,6 +106,30 @@ describe('Follow-up review: persistence, gestures and stale requests', () => {
         expect(exportProjectZip).toHaveBeenCalled();
       }
       expect(prompts).toHaveLength(0);
+      expect(store.map.get(STORAGE_KEY)).not.toBeNull();
+    });
+
+    it(`prompts confirmation when exporting ${format} with active hair trial draft`, async () => {
+      const store = memoryStore();
+      const vm = loaded(store);
+      vm.setMode('mask');
+      vm.applyHairPreset('03_blonde_金');
+      const { prompts } = capturePrompts(vm);
+
+      const exportPromise = format === 'png' ? vm.exportPng() : vm.exportZip();
+      expect(prompts).toHaveLength(1);
+      expect(prompts[0].title).toBe('导出前换色确认');
+      expect(prompts[0].buttons).toHaveLength(3);
+
+      // 点击确认换色并导出
+      await prompts[0].buttons[0].onClick();
+      await exportPromise;
+
+      if (format === 'png') {
+        expect(exportProjectPng).toHaveBeenCalled();
+      } else {
+        expect(exportProjectZip).toHaveBeenCalled();
+      }
       expect(store.map.get(STORAGE_KEY)).not.toBeNull();
     });
   }

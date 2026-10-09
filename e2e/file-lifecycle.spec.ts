@@ -55,6 +55,13 @@ test.describe('E2E: 文件生命周期闭环 (File Lifecycle Round-trip)', () =>
     await goldCard.click();
     await expect(goldCard).toHaveClass(/active/);
 
+    // 切换到画板模式并确认固化发色
+    await page.click('#btn-mode-pixel');
+    const overlay = page.locator('#confirm-modal-overlay');
+    await expect(overlay).toBeVisible();
+    await overlay.locator('.btn-primary').click();
+    await expect(overlay).toBeHidden();
+
     // 记录导出前当前文档的 100% 完整状态
     const originalSnapshot = await page.evaluate(() => {
       const doc = window.__studio?.vm.doc;

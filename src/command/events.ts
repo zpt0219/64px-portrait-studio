@@ -16,6 +16,8 @@ export interface StudioEvents {
   onMaskChanged?(): void;
   onPaletteChanged?(): void;
   onHairPresetChanged?(): void;
+  /** 待确认试色 (草稿预览) 变更，触发画布与实时预览重绘且不触发自动保存 */
+  onPreviewChanged?(): void;
   onSessionChanged?(keys: (keyof EditorSession)[]): void;
   onHistoryChanged?(): void;
   /** EditorContext (跨面板的纯界面状态) 变化 */

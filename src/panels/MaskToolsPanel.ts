@@ -79,6 +79,9 @@ export class MaskToolsPanel extends Panel {
   onHistoryChanged(): void {
     this.markDirty();
   }
+  onPreviewChanged(): void {
+    this.markDirty();
+  }
   onDocumentReplaced(): void {
     this.colorListDirty = true;
     this.markDirty();

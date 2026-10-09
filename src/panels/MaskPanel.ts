@@ -41,7 +41,7 @@ export class MaskPanel extends Panel {
       card: HTMLElement;
       badgeWrap: HTMLElement;
       name: string;
-      badgeState?: 'draft' | 'committed' | 'none';
+      badgeState?: 'trial' | 'draft' | 'committed' | 'none';
     }
   >();
   private hairSectionEl: HTMLElement | null = null;
@@ -72,6 +72,9 @@ export class MaskPanel extends Panel {
     this.markDirty();
   }
   onHairPresetChanged(): void {
+    this.markDirty();
+  }
+  onPreviewChanged(): void {
     this.markDirty();
   }
   onDocumentReplaced(): void {
@@ -410,24 +413,31 @@ export class MaskPanel extends Panel {
       this.hairSectionEl.style.display = isHairMaskSelected ? 'block' : 'none';
     }
 
-    // 5.5 发色草稿操作框隐藏 (改色已作为即时撤销命令)
+    // 5.5 换色决策统一由退出模式或导出前的弹窗处理
     if (this.actionBox) {
       this.actionBox.style.display = 'none';
     }
 
     // 6. 原地修补 9 大发色预设卡片 (零 innerHTML 重建，状态变化才写 badge DOM)
+    const currentPresetKey = this.vm.getHairPresetKey();
+    const isTrial = this.vm.hasHairDraft();
+
     this.hairPresetCardElements.forEach((cached, key) => {
+      const isCurrent = currentPresetKey === key;
       const isCommitted = state.currentHairPreset === key;
 
-      cached.card.className = `hair-preset-card ${isCommitted ? 'active' : ''}`;
-      cached.card.title = isCommitted
-        ? `当前发色: ${cached.name}`
-        : `置换发色为: ${cached.name} (可撤销)`;
+      cached.card.className = `hair-preset-card ${isCurrent ? 'active' : ''}`;
+      cached.card.title = isCurrent
+        ? (isTrial ? `正在试色: ${cached.name}` : `当前发色: ${cached.name}`)
+        : `置换发色为: ${cached.name}`;
 
-      const newBadgeState: 'committed' | 'none' = isCommitted ? 'committed' : 'none';
+      const newBadgeState: 'trial' | 'committed' | 'none' =
+        isCurrent && isTrial ? 'trial' : (isCommitted ? 'committed' : 'none');
       if (cached.badgeState !== newBadgeState) {
         cached.badgeState = newBadgeState;
-        if (newBadgeState === 'committed') {
+        if (newBadgeState === 'trial') {
+          cached.badgeWrap.innerHTML = '<span class="preset-badge" style="background: var(--color-warning, #f59e0b);">试色</span>';
+        } else if (newBadgeState === 'committed') {
           cached.badgeWrap.innerHTML = '<span class="preset-badge">当前</span>';
         } else {
           cached.badgeWrap.innerHTML = '';
@@ -442,4 +452,3 @@ export class MaskPanel extends Panel {
     this.hairPresetCardElements.clear();
   }
 }
-

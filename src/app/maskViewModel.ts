@@ -16,12 +16,19 @@ import { MaskBoxSelectCommand, AssignColorToZoneCommand, SetMaskCommand } from '
 import { CommitHairRecolorCommand, SetHairPresetCommand } from '../command/paletteCommands';
 import { SubViewModel, StudioContext } from './subViewModel';
 
+export interface PendingRecolorDescription {
+  zone: SemanticZone;
+  name: string;
+  icon: string;
+  previewName: string;
+}
+
 export class MaskViewModel implements SubViewModel {
   // 试色草稿状态追踪
-  private initialPixels: Uint8Array | null = null;
-  private initialHairPreset: HairPresetKey | null = null;
   private trialHairPreset: HairPresetKey | null = null;
   private hasHairTrial = false;
+  private trialHistory: HairPresetKey[] = [];
+  private trialRedoStack: HairPresetKey[] = [];
 
   constructor(private readonly ctx: StudioContext) {}
 
@@ -29,7 +36,17 @@ export class MaskViewModel implements SubViewModel {
 
   get hasPendingHairTrial(): boolean {
     if (!this.hasHairTrial || !this.trialHairPreset) return false;
-    return this.ctx.doc.currentHairPreset !== this.initialHairPreset;
+    if (this.trialHairPreset !== this.ctx.doc.currentHairPreset) return true;
+    const doc = this.ctx.doc;
+    const testPixels = recolorHair(doc.pixelIndices, doc.semanticMask, doc.palette, doc.currentHairPreset, this.trialHairPreset);
+    for (let i = 0; i < doc.pixelIndices.length; i++) {
+      if (testPixels[i] !== doc.pixelIndices[i]) return true;
+    }
+    return false;
+  }
+
+  get hasPendingTrial(): boolean {
+    return this.hasPendingHairTrial;
   }
 
   hasHairDraft(): boolean {
@@ -40,64 +57,145 @@ export class MaskViewModel implements SubViewModel {
     return this.trialHairPreset ? (RAMPS_INFO[this.trialHairPreset]?.name || '') : '';
   }
 
-  private commitHairTrial(): void {
+  getPendingRecolorDescriptions(): PendingRecolorDescription[] {
+    const list: PendingRecolorDescription[] = [];
+    if (this.hasPendingHairTrial) {
+      list.push({
+        zone: SemanticZone.Hair,
+        name: '发色',
+        icon: '💇',
+        previewName: this.hairDraftName(),
+      });
+    }
+    return list;
+  }
+
+  canUndoTrial(): boolean {
+    return this.trialHistory.length > 0;
+  }
+
+  canRedoTrial(): boolean {
+    return this.trialRedoStack.length > 0;
+  }
+
+  undoTrial(): boolean {
+    if (this.trialHistory.length === 0) return false;
+    const current = this.trialHistory.pop()!;
+    this.trialRedoStack.push(current);
+
+    if (this.trialHistory.length > 0) {
+      const prev = this.trialHistory[this.trialHistory.length - 1];
+      this.trialHairPreset = prev;
+      this.hasHairTrial = true;
+    } else {
+      this.trialHairPreset = null;
+      this.hasHairTrial = false;
+    }
+    this.ctx.notifyPreviewChanged();
+    return true;
+  }
+
+  redoTrial(): boolean {
+    if (this.trialRedoStack.length === 0) return false;
+    const next = this.trialRedoStack.pop()!;
+    this.trialHistory.push(next);
+    this.trialHairPreset = next;
+    this.hasHairTrial = true;
+    this.ctx.notifyPreviewChanged();
+    return true;
+  }
+
+  getDisplayPixels(
+    basePixels: Uint8Array,
+    mask: Uint8Array,
+    palette: string[],
+    currentHairPreset: HairPresetKey | null
+  ): Uint8Array {
+    if (!this.hasPendingHairTrial || !this.trialHairPreset) {
+      return basePixels;
+    }
+    return recolorHair(basePixels, mask, palette, currentHairPreset, this.trialHairPreset);
+  }
+
+  invalidateTrial(): void {
     this.hasHairTrial = false;
-    this.initialPixels = null;
-    this.initialHairPreset = null;
     this.trialHairPreset = null;
+    this.trialHistory = [];
+    this.trialRedoStack = [];
+  }
+
+  commitHairTrial(): void {
+    if (this.hasHairTrial && this.trialHairPreset) {
+      const doc = this.ctx.doc;
+      const targetPreset = this.trialHairPreset;
+      const newPixels = recolorHair(doc.pixelIndices, doc.semanticMask, doc.palette, doc.currentHairPreset, targetPreset);
+      this.hasHairTrial = false;
+      this.trialHairPreset = null;
+      this.trialHistory = [];
+      this.trialRedoStack = [];
+      this.ctx.execute(new CommitHairRecolorCommand(newPixels, targetPreset));
+      this.ctx.notifyPreviewChanged();
+    } else {
+      this.hasHairTrial = false;
+      this.trialHairPreset = null;
+      this.trialHistory = [];
+      this.trialRedoStack = [];
+    }
+  }
+
+  commitAllRecolors(): void {
+    this.commitHairTrial();
   }
 
   private revertHairTrial(): void {
-    if (this.initialPixels) {
-      this.ctx.execute(new CommitHairRecolorCommand(this.initialPixels, this.initialHairPreset));
-    }
+    const wasPending = this.hasHairTrial;
     this.hasHairTrial = false;
-    this.initialPixels = null;
-    this.initialHairPreset = null;
     this.trialHairPreset = null;
-    this.ctx.notify('已放弃发色替换，恢复原样');
+    this.trialHistory = [];
+    this.trialRedoStack = [];
+    if (wasPending) {
+      this.ctx.notifyPreviewChanged();
+      this.ctx.notify('已放弃发色替换，恢复原样');
+    }
   }
 
   discardHairRecolor(): void {
     this.revertHairTrial();
   }
 
-  openHairRecolorPrompt(): void {
-    if (!this.hasPendingHairTrial) return;
-    const draftName = this.hairDraftName();
-    this.ctx.confirm({
-      icon: '💇',
-      title: '切换至画板模式前发色确认',
-      message: `当前正在试色新发色【${draftName}】，尚未固化到画面。`,
-      subMessage: '请选择是否将此发色替换应用到画面中：',
-      buttons: [
-        { label: '✓ 确认替换', className: 'btn-primary', onClick: () => this.commitHairTrial() },
-        { label: '✕ 放弃替换', className: 'btn-danger', onClick: () => this.revertHairTrial() },
-        { label: '继续试色', className: 'btn-ghost', onClick: () => {} },
-      ],
-    });
+  discardAllRecolors(): void {
+    this.discardHairRecolor();
   }
 
   // ===================== 生命周期与清理 =====================
 
   canExit(callback: (allowed: boolean) => void): void {
-    if (!this.hasPendingHairTrial) {
+    if (!this.hasPendingTrial) {
       callback(true);
       return;
     }
 
-    const draftName = this.hairDraftName();
+    const descriptions = this.getPendingRecolorDescriptions();
+    const isSingleHair = descriptions.length === 1 && descriptions[0].zone === SemanticZone.Hair;
+    const title = isSingleHair ? '切换至画板模式前发色确认' : '切换至画板模式前换色确认';
+    const message = isSingleHair
+      ? `当前正在试色新发色【${descriptions[0].previewName}】，尚未固化到画面。`
+      : `当前正在试色新配色${descriptions.map((d) => `【${d.name}：${d.previewName}】`).join('、')}，尚未固化到画面。`;
+    const subMessage = isSingleHair
+      ? '切换到画板模式前，请选择是否将此发色替换应用到画面中：'
+      : '切换到画板模式前，请选择是否将这些换色替换应用到画面中：';
+
     this.ctx.confirm({
-      icon: '💇',
-      title: '切换至画板模式前发色确认',
-      message: `当前正在试色新发色【${draftName}】，尚未固化到画面。`,
-      subMessage: '切换到画板模式前，请选择是否将此发色替换应用到画面中：',
+      icon: isSingleHair ? '💇' : '🎭',
+      title,
+      message,
+      subMessage,
       buttons: [
         {
           label: '✓ 确认替换并切换',
           className: 'btn-primary',
           onClick: () => {
-            this.commitHairTrial();
+            this.commitAllRecolors();
             callback(true);
           },
         },
@@ -105,7 +203,7 @@ export class MaskViewModel implements SubViewModel {
           label: '✕ 放弃替换并切换',
           className: 'btn-danger',
           onClick: () => {
-            this.revertHairTrial();
+            this.discardAllRecolors();
             callback(true);
           },
         },
@@ -147,17 +245,19 @@ export class MaskViewModel implements SubViewModel {
         this.applyZoneDefaultMatchPreset(targetZone, changes);
       }
     } else {
-      // 重新进入遮罩模式：恢复遮罩覆盖层显示
-      changes.showMaskOverlay = this.ctx.session.visibleMaskZones.length > 0;
+      // 重新进入遮罩模式：恢复遮罩覆盖层显示；若可见图层为空则恢复全部可见
+      if (this.ctx.session.visibleMaskZones.length === 0) {
+        changes.visibleMaskZones = [...ALL_ZONES];
+        changes.showMaskOverlay = true;
+      } else {
+        changes.showMaskOverlay = true;
+      }
     }
     this.ctx.patchSession(changes);
     this.ctx.notify('🎭 已切换至【语义遮罩模式】(快捷键: W)');
 
     // 重新开启一次全新的遮罩试色基准
-    this.hasHairTrial = false;
-    this.initialPixels = null;
-    this.initialHairPreset = this.ctx.doc.currentHairPreset;
-    this.trialHairPreset = null;
+    this.invalidateTrial();
   }
 
   private applyZoneDefaultMatchPreset(zone: SemanticZone, changes: Partial<EditorSession>): void {
@@ -171,6 +271,16 @@ export class MaskViewModel implements SubViewModel {
   // ===================== 遮罩与分区 =====================
 
   setActiveZone(zone: SemanticZone, solo = true): void {
+    if (this.ctx.session.activeMode !== 'mask') {
+      this.ctx.setMode('mask', () => {
+        this.doSetActiveZone(zone, solo);
+      });
+      return;
+    }
+    this.doSetActiveZone(zone, solo);
+  }
+
+  private doSetActiveZone(zone: SemanticZone, solo: boolean): void {
     const changes: Partial<EditorSession> = { activeZone: zone };
     if (solo) {
       changes.visibleMaskZones = [zone];
@@ -178,11 +288,6 @@ export class MaskViewModel implements SubViewModel {
     } else if (!this.ctx.session.visibleMaskZones.includes(zone)) {
       changes.visibleMaskZones = [...this.ctx.session.visibleMaskZones, zone];
       changes.showMaskOverlay = true;
-    }
-
-    if (this.ctx.session.activeMode !== 'mask') {
-      changes.activeMode = 'mask';
-      changes.selection = null;
     }
 
     const currentPresetKey = this.ctx.session.maskMatchPresetKey;
@@ -204,24 +309,32 @@ export class MaskViewModel implements SubViewModel {
     const visibleMaskZones = ALL_ZONES.filter((z) => current.has(z));
     const showMaskOverlay = visibleMaskZones.length > 0;
 
-    this.ctx.patchSession({ visibleMaskZones, showMaskOverlay });
-
     if (visibleMaskZones.length === 0 && this.ctx.session.activeMode === 'mask') {
-      this.ctx.setMode('pixel');
+      this.ctx.setMode('pixel', () => {
+        this.ctx.patchSession({ visibleMaskZones, showMaskOverlay: false });
+      });
+      return;
     }
+
+    this.ctx.patchSession({ visibleMaskZones, showMaskOverlay });
   }
 
   setAllZonesVisibility(visible: boolean): void {
     const visibleMaskZones = visible ? [...ALL_ZONES] : [];
     const showMaskOverlay = visible;
 
-    this.ctx.patchSession({ visibleMaskZones, showMaskOverlay });
     if (!visible) {
-      this.ctx.notify('已隐藏全部遮罩图层');
       if (this.ctx.session.activeMode === 'mask') {
-        this.ctx.setMode('pixel');
+        this.ctx.setMode('pixel', () => {
+          this.ctx.patchSession({ visibleMaskZones, showMaskOverlay: false });
+          this.ctx.notify('已隐藏全部遮罩图层');
+        });
+        return;
       }
+      this.ctx.patchSession({ visibleMaskZones, showMaskOverlay: false });
+      this.ctx.notify('已隐藏全部遮罩图层');
     } else {
+      this.ctx.patchSession({ visibleMaskZones, showMaskOverlay });
       this.ctx.notify(`已显示全部 ${ALL_ZONES.length} 个遮罩图层`);
     }
   }
@@ -243,12 +356,13 @@ export class MaskViewModel implements SubViewModel {
   }
 
   setActiveMaskTool(tool: MaskTool): void {
-    const changes: Partial<EditorSession> = { activeMaskTool: tool };
     if (this.ctx.session.activeMode !== 'mask') {
-      changes.activeMode = 'mask';
-      changes.selection = null;
+      this.ctx.setMode('mask', () => {
+        this.ctx.patchSession({ activeMaskTool: tool });
+      });
+      return;
     }
-    this.ctx.patchSession(changes);
+    this.ctx.patchSession({ activeMaskTool: tool });
   }
 
   setMaskBrushSize(size: BrushSize): void {
@@ -273,6 +387,17 @@ export class MaskViewModel implements SubViewModel {
 
   setMaskMatchPresetKey(presetKey: string): void {
     this.setMaskMatchPreset(presetKey);
+  }
+
+  /** 遮罩筛选读取已提交像素；只有正式发色或色板改变时才刷新源色组。 */
+  refreshHairMatchColors(): void {
+    if (this.ctx.isDisposed || this.ctx.session.maskMatchPresetKey !== 'current_hair') return;
+    const preset = MATCH_COLOR_PRESETS.find((p) => p.id === 'current_hair');
+    if (!preset) return;
+    const colors = preset.getIndices(this.ctx.doc.palette, this.ctx.doc.currentHairPreset);
+    const current = this.ctx.session.maskMatchColors;
+    if (colors.length === current.length && colors.every((color, index) => color === current[index])) return;
+    this.ctx.patchSession({ maskMatchColors: colors });
   }
 
   addMaskMatchColor(colorIdx: number): void {
@@ -400,40 +525,24 @@ export class MaskViewModel implements SubViewModel {
       return;
     }
 
-    // 若尚未开启试色，捕获基准状态以便放弃时可完美回滚
-    if (!this.hasHairTrial) {
-      this.hasHairTrial = true;
-      this.initialHairPreset = doc.currentHairPreset;
-      this.initialPixels = new Uint8Array(doc.pixelIndices);
+    if (this.trialHairPreset !== presetKey) {
+      this.trialHistory.push(presetKey);
+      this.trialRedoStack = [];
     }
+    this.hasHairTrial = true;
     this.trialHairPreset = presetKey;
 
-    const { pixelIndices, semanticMask, palette, currentHairPreset } = doc;
-    const newPixels = recolorHair(pixelIndices, semanticMask, palette, currentHairPreset, presetKey);
-    this.ctx.execute(new CommitHairRecolorCommand(newPixels, presetKey));
-
-    if (this.ctx.session.maskMatchPresetKey === 'current_hair') {
-      const preset = MATCH_COLOR_PRESETS.find((p) => p.id === 'current_hair');
-      if (preset) {
-        this.ctx.patchSession({ maskMatchColors: preset.getIndices(doc.palette, doc.currentHairPreset) });
-      }
-    }
+    this.ctx.notifyPreviewChanged();
     this.ctx.notify(`✓ 发色【${ramp.name}】(${ramp.icon})已切换！(切回绘图模式时可确认或放弃)`, 'success');
   }
 
   setHairPreset(presetKey: HairPresetKey): void {
     if (this.ctx.isDisposed || !isHairPresetKey(presetKey)) return;
     this.ctx.execute(new SetHairPresetCommand(presetKey));
-    if (this.ctx.session.maskMatchPresetKey === 'current_hair') {
-      const preset = MATCH_COLOR_PRESETS.find((p) => p.id === 'current_hair');
-      if (preset) {
-        this.ctx.patchSession({ maskMatchColors: preset.getIndices(this.ctx.doc.palette, this.ctx.doc.currentHairPreset) });
-      }
-    }
   }
 
   getHairPresetKey(): HairPresetKey {
-    return this.ctx.doc.currentHairPreset || (Object.keys(RAMPS_INFO)[0] as HairPresetKey);
+    return this.trialHairPreset || this.ctx.doc.currentHairPreset || (Object.keys(RAMPS_INFO)[0] as HairPresetKey);
   }
 
   getHairRampIndices(presetKey?: HairPresetKey): number[] {

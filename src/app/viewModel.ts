@@ -76,6 +76,7 @@ export class ViewModel implements StudioEvents {
       confirm: (opts) => this.confirmWithGeneration(opts),
       endStroke: () => this.endStroke(),
       setMode: (mode, onProceed) => this.setMode(mode, onProceed),
+      notifyPreviewChanged: () => this.onPreviewChanged(),
     };
   }
 
@@ -152,6 +153,7 @@ export class ViewModel implements StudioEvents {
     this.cancelPendingPrompt();
     this.pixel.cleanup();
     this.mask.cleanup();
+    this.mask.invalidateTrial();
     this.autosave.dispose();
     this._isDisposed = true;
     this.listeners = [];
@@ -188,10 +190,15 @@ export class ViewModel implements StudioEvents {
     this.documentChanged((l) => l.onMaskChanged?.());
   }
   onPaletteChanged(): void {
+    this.mask.refreshHairMatchColors();
     this.documentChanged((l) => l.onPaletteChanged?.());
   }
   onHairPresetChanged(): void {
+    this.mask.refreshHairMatchColors();
     this.documentChanged((l) => l.onHairPresetChanged?.());
+  }
+  onPreviewChanged(): void {
+    this.fanOut((l) => l.onPreviewChanged?.());
   }
   onSessionChanged(keys: (keyof EditorSession)[]): void {
     this.fanOut((l) => l.onSessionChanged?.(keys));
@@ -262,6 +269,7 @@ export class ViewModel implements StudioEvents {
     this.autosave.cancel();
     this.pixel.cleanup();
     this.mask.cleanup();
+    this.mask.invalidateTrial();
 
     this.doc.palette = [...doc.palette];
     this.doc.pixelIndices = new Uint8Array(doc.pixelIndices);
@@ -613,6 +621,14 @@ export class ViewModel implements StudioEvents {
   }
 
   displayPixels(): Uint8Array {
+    if (this.mask.hasPendingHairTrial) {
+      return this.mask.getDisplayPixels(
+        this.doc.pixelIndices,
+        this.doc.semanticMask,
+        this.doc.palette,
+        this.doc.currentHairPreset
+      );
+    }
     return this.doc.pixelIndices;
   }
 
@@ -620,12 +636,12 @@ export class ViewModel implements StudioEvents {
     this.mask.discardHairRecolor();
   }
 
-  openHairRecolorPrompt(): void {
-    this.mask.openHairRecolorPrompt();
+  commitAllRecolors(): void {
+    this.mask.commitAllRecolors();
   }
 
-  confirmHairDraft(o: { onApplied?: () => void; onCancel?: () => void }): void {
-    o.onApplied?.();
+  discardAllRecolors(): void {
+    this.mask.discardAllRecolors();
   }
 
   // ===================== 画布视图控制 =====================
@@ -692,10 +708,16 @@ export class ViewModel implements StudioEvents {
   // ===================== 撤销与重做 =====================
 
   canUndo(): boolean {
+    if (this.session.activeMode === 'mask' && this.mask.canUndoTrial()) {
+      return true;
+    }
     return this.handler.canUndo();
   }
 
   canRedo(): boolean {
+    if (this.session.activeMode === 'mask' && this.mask.canRedoTrial()) {
+      return true;
+    }
     return this.handler.canRedo();
   }
 
@@ -704,7 +726,12 @@ export class ViewModel implements StudioEvents {
     if (this.stroke) {
       this.endStroke();
     }
-    this.stepHistory(() => this.handler.undo(), '撤销');
+    if (this.session.activeMode === 'mask' && this.mask.canUndoTrial()) {
+      this.mask.undoTrial();
+      this.onHistoryChanged();
+      return;
+    }
+    this.handler.undo();
   }
 
   redo(): void {
@@ -712,12 +739,12 @@ export class ViewModel implements StudioEvents {
     if (this.stroke) {
       this.endStroke();
     }
-    this.stepHistory(() => this.handler.redo(), '重做');
-  }
-
-  private stepHistory(step: () => boolean, _message: string): void {
-    if (this._isDisposed) return;
-    step();
+    if (this.session.activeMode === 'mask' && this.mask.canRedoTrial()) {
+      this.mask.redoTrial();
+      this.onHistoryChanged();
+      return;
+    }
+    this.handler.redo();
   }
 
   // ===================== 导出 =====================
@@ -731,6 +758,64 @@ export class ViewModel implements StudioEvents {
   }
 
   private async runExport(kind: 'png' | 'zip'): Promise<void> {
+    if (this._isDisposed || !this.session.isLoaded) return;
+    this.endStroke();
+
+    if (this.mask.hasPendingTrial) {
+      const descriptions = this.mask.getPendingRecolorDescriptions();
+      const isSingleHair = descriptions.length === 1 && descriptions[0].zone === SemanticZone.Hair;
+      const title = '导出前换色确认';
+      const message = isSingleHair
+        ? `当前正在试色新发色【${descriptions[0].previewName}】，尚未固化到画面。`
+        : `当前正在试色新配色${descriptions.map((d) => `【${d.name}：${d.previewName}】`).join('、')}，尚未固化到画面。`;
+      const subMessage = isSingleHair
+        ? '导出文件前，请选择是否将此发色替换应用到画面中：'
+        : '导出文件前，请选择是否将这些换色替换应用到画面中：';
+
+      return new Promise<void>((resolve) => {
+        this.confirmWithGeneration({
+          icon: '💾',
+          title,
+          message,
+          subMessage,
+          buttons: [
+            {
+              label: '✓ 确认换色并导出',
+              className: 'btn-primary',
+              onClick: async () => {
+                this.mask.commitAllRecolors();
+                await this.doRunExport(kind);
+                resolve();
+              },
+            },
+            {
+              label: '✕ 放弃换色并导出',
+              className: 'btn-danger',
+              onClick: async () => {
+                this.mask.discardAllRecolors();
+                await this.doRunExport(kind);
+                resolve();
+              },
+            },
+            {
+              label: '取消导出',
+              className: 'btn-ghost',
+              onClick: () => {
+                resolve();
+              },
+            },
+          ],
+          onDismiss: () => {
+            resolve();
+          },
+        });
+      });
+    }
+
+    return this.doRunExport(kind);
+  }
+
+  private async doRunExport(kind: 'png' | 'zip'): Promise<void> {
     if (this._isDisposed || !this.session.isLoaded) return;
     this.endStroke();
     this.flushAutosave();
