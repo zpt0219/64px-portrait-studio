@@ -187,11 +187,10 @@ interface PortraitDocument {
 
 试色草稿机制与已提交文档完全解耦：
 
-- `applyHairPreset()` 在 `MaskViewModel` 维护 `trialHairPreset` 与试色撤销/重做栈，并通过 `onPreviewChanged` 通知画布、实时预览、发色卡和遮罩工具栏。不修改正式文档、不生成文档命令、不触发自动保存。
-- `displayPixels()` 按当前文档和试色目标动态计算合成像素；当前没有预览缓存。
-- `hasPendingTrial` / `hasHairDraft()` 基于试色目标及实际像素差异判定（同名预设的杂色映射也可产生 pending）。
+- 待确认换色保存在 `MaskViewModel.pending`（区域 → 目标预设）及其撤销/重做快照栈中；`applyHairPreset()` 经 `setZoneTrial()` 更新，并通过 `onPreviewChanged` 通知画布、实时预览、发色卡和遮罩工具栏。不修改正式文档、不生成文档命令、不触发自动保存。
+- `displayPixels()` 把待确认集合依次合成到已提交文档上（`composeRecolors()`）；没有待确认项时直接返回文档数组。当前没有预览缓存（64×64，且文档数组原地修改，缓存需额外失效机制）。
 - 退出蒙版模式时统一确认或放弃换色，也可继续试色；导出（PNG/ZIP）前可确认换色、放弃换色或取消导出。确认通过 `CommitHairRecolorCommand` 提交，取消只清除试色状态，不回写旧像素，保留已完成的几何变换与遮罩编辑。文档替换和销毁调用 `invalidateTrial()`。
-- `getPendingRecolorDescriptions()`、`commitAllRecolors()`、`discardAllRecolors()` 预留统一决策入口，目前实际状态和算法仅支持头发；眼睛等区域及统一的区域换色集合尚未实现。
+- `hasPendingRecolors()` 逐区域按试色目标及实际像素差异判定（同名预设的杂色映射也可产生 pending）。`ZONE_RECOLORS` 注册表定义各区域的名称、源预设与换色函数，目前只注册了头发；新增眼睛等区域只需补一项，确认、取消、弹窗文案（`describePendingRecolors()`，退出与导出共用）和显示合成均已按“区域集合”工作。确认时目前仍只同步头发预设标记，其他区域的文档标记需随各自算法接入。
 - 遮罩框选、按色划分和颜色统计读取已提交文档。`current_hair` 匹配组（界面标为“已确认发色预设”）在试色、试色撤销/重做和取消时保持源色组；正式提交、文档历史恢复或色板调整后刷新。自定义匹配组不自动覆盖。
 - 自动保存服务严格仅持久化已提交文档（`doc`），未确认试色绝不写入本地存储。
 

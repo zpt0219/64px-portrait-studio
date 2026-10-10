@@ -23,51 +23,110 @@ export interface PendingRecolorDescription {
   previewName: string;
 }
 
+/** 触发确认弹窗的场景，决定标题与引导语 */
+export type PendingRecolorScene = 'exit' | 'export';
+
+/** 一个区域的换色定义。新增区域（如眼睛）只需在 ZONE_RECOLORS 中补一项。 */
+interface ZoneRecolorDef {
+  name: string;
+  icon: string;
+  /** 已提交文档中该区域当前对应的源预设；与试色目标相同且像素无变化则不算待确认 */
+  source(doc: StudioContext['doc']): HairPresetKey | null;
+  targetName(target: HairPresetKey): string;
+  recolor(
+    pixels: Uint8Array,
+    mask: Uint8Array,
+    palette: string[],
+    source: HairPresetKey | null,
+    target: HairPresetKey
+  ): Uint8Array;
+}
+
+const ZONE_RECOLORS: Partial<Record<SemanticZone, ZoneRecolorDef>> = {
+  [SemanticZone.Hair]: {
+    name: '发色',
+    icon: '💇',
+    source: (doc) => doc.currentHairPreset,
+    targetName: (target) => RAMPS_INFO[target]?.name || '',
+    recolor: recolorHair,
+  },
+};
+
+type PendingRecolors = Map<SemanticZone, HairPresetKey>;
+
 export class MaskViewModel implements SubViewModel {
-  // 试色草稿状态追踪
-  private trialHairPreset: HairPresetKey | null = null;
-  private hasHairTrial = false;
-  private trialHistory: HairPresetKey[] = [];
-  private trialRedoStack: HairPresetKey[] = [];
+  /** 本轮蒙版编辑中所有区域的待确认换色：区域 -> 目标预设。空表示没有待确认操作 */
+  private pending: PendingRecolors = new Map();
+  /** 待确认换色的撤销/重做栈，每项是一次变更后的完整集合快照（栈顶 = 当前状态） */
+  private trialHistory: PendingRecolors[] = [];
+  private trialRedoStack: PendingRecolors[] = [];
 
   constructor(private readonly ctx: StudioContext) {}
 
   // ===================== 试色状态与决策 =====================
 
-  get hasPendingHairTrial(): boolean {
-    if (!this.hasHairTrial || !this.trialHairPreset) return false;
-    if (this.trialHairPreset !== this.ctx.doc.currentHairPreset) return true;
+  /** 某个区域的试色是否对已提交文档产生实际效果 */
+  private isEntryEffective(zone: SemanticZone, target: HairPresetKey): boolean {
+    const def = ZONE_RECOLORS[zone];
+    if (!def) return false;
     const doc = this.ctx.doc;
-    const testPixels = recolorHair(doc.pixelIndices, doc.semanticMask, doc.palette, doc.currentHairPreset, this.trialHairPreset);
+    const source = def.source(doc);
+    if (target !== source) return true;
+    // 目标与源标记相同：源色阶之外的像素仍可能被改写，需看实际效果
+    const result = def.recolor(doc.pixelIndices, doc.semanticMask, doc.palette, source, target);
     for (let i = 0; i < doc.pixelIndices.length; i++) {
-      if (testPixels[i] !== doc.pixelIndices[i]) return true;
+      if (result[i] !== doc.pixelIndices[i]) return true;
     }
     return false;
   }
 
-  get hasPendingTrial(): boolean {
-    return this.hasPendingHairTrial;
+  /** 是否存在会改变画面的待确认换色（任一区域） */
+  get hasPendingRecolors(): boolean {
+    for (const [zone, target] of this.pending) {
+      if (this.isEntryEffective(zone, target)) return true;
+    }
+    return false;
   }
 
-  hasHairDraft(): boolean {
-    return this.hasPendingHairTrial;
-  }
-
-  hairDraftName(): string {
-    return this.trialHairPreset ? (RAMPS_INFO[this.trialHairPreset]?.name || '') : '';
+  /** 某区域当前试色目标的显示名；无试色返回空串 */
+  pendingTargetName(zone: SemanticZone): string {
+    const target = this.pending.get(zone);
+    const def = ZONE_RECOLORS[zone];
+    return target && def ? def.targetName(target) : '';
   }
 
   getPendingRecolorDescriptions(): PendingRecolorDescription[] {
     const list: PendingRecolorDescription[] = [];
-    if (this.hasPendingHairTrial) {
-      list.push({
-        zone: SemanticZone.Hair,
-        name: '发色',
-        icon: '💇',
-        previewName: this.hairDraftName(),
-      });
+    for (const [zone, target] of this.pending) {
+      const def = ZONE_RECOLORS[zone];
+      if (!def || !this.isEntryEffective(zone, target)) continue;
+      list.push({ zone, name: def.name, icon: def.icon, previewName: def.targetName(target) });
     }
     return list;
+  }
+
+  /** 退出蒙版模式与导出共用的确认弹窗文案 */
+  describePendingRecolors(scene: PendingRecolorScene): { icon: string; title: string; message: string; subMessage: string } {
+    const descriptions = this.getPendingRecolorDescriptions();
+    const isSingleHair = descriptions.length === 1 && descriptions[0].zone === SemanticZone.Hair;
+    const message = isSingleHair
+      ? `当前正在试色新发色【${descriptions[0].previewName}】，尚未固化到画面。`
+      : `当前正在试色新配色${descriptions.map((d) => `【${d.name}：${d.previewName}】`).join('、')}，尚未固化到画面。`;
+    const subject = isSingleHair ? '此发色替换' : '这些换色替换';
+    if (scene === 'export') {
+      return {
+        icon: '💾',
+        title: '导出前换色确认',
+        message,
+        subMessage: `导出文件前，请选择是否将${subject}应用到画面中：`,
+      };
+    }
+    return {
+      icon: isSingleHair ? '💇' : '🎭',
+      title: isSingleHair ? '切换至画板模式前发色确认' : '切换至画板模式前换色确认',
+      message,
+      subMessage: `切换到画板模式前，请选择是否将${subject}应用到画面中：`,
+    };
   }
 
   canUndoTrial(): boolean {
@@ -80,17 +139,9 @@ export class MaskViewModel implements SubViewModel {
 
   undoTrial(): boolean {
     if (this.trialHistory.length === 0) return false;
-    const current = this.trialHistory.pop()!;
-    this.trialRedoStack.push(current);
-
-    if (this.trialHistory.length > 0) {
-      const prev = this.trialHistory[this.trialHistory.length - 1];
-      this.trialHairPreset = prev;
-      this.hasHairTrial = true;
-    } else {
-      this.trialHairPreset = null;
-      this.hasHairTrial = false;
-    }
+    this.trialRedoStack.push(this.trialHistory.pop()!);
+    const prev = this.trialHistory[this.trialHistory.length - 1];
+    this.pending = prev ? new Map(prev) : new Map();
     this.ctx.notifyPreviewChanged();
     return true;
   }
@@ -99,97 +150,74 @@ export class MaskViewModel implements SubViewModel {
     if (this.trialRedoStack.length === 0) return false;
     const next = this.trialRedoStack.pop()!;
     this.trialHistory.push(next);
-    this.trialHairPreset = next;
-    this.hasHairTrial = true;
+    this.pending = new Map(next);
     this.ctx.notifyPreviewChanged();
     return true;
   }
 
-  getDisplayPixels(
-    basePixels: Uint8Array,
-    mask: Uint8Array,
-    palette: string[],
-    currentHairPreset: HairPresetKey | null
-  ): Uint8Array {
-    if (!this.hasPendingHairTrial || !this.trialHairPreset) {
-      return basePixels;
+  /** 把一组待确认换色依次合成到 basePixels 上，返回新数组（不修改输入） */
+  private composeRecolors(basePixels: Uint8Array, recolors: PendingRecolors): Uint8Array {
+    const doc = this.ctx.doc;
+    let result = basePixels;
+    for (const [zone, target] of recolors) {
+      const def = ZONE_RECOLORS[zone];
+      if (!def) continue;
+      result = def.recolor(result, doc.semanticMask, doc.palette, def.source(doc), target);
     }
-    return recolorHair(basePixels, mask, palette, currentHairPreset, this.trialHairPreset);
+    return result;
   }
 
+  /** 画布与预览使用的显示像素：无待确认换色时直接返回已提交文档数组 */
+  displayPixels(): Uint8Array {
+    const doc = this.ctx.doc;
+    if (this.pending.size === 0) return doc.pixelIndices;
+    return this.composeRecolors(doc.pixelIndices, this.pending);
+  }
+
+  private clearPending(): void {
+    this.pending = new Map();
+    this.trialHistory = [];
+    this.trialRedoStack = [];
+  }
+
+  /** 无条件作废待确认换色：用于文档替换/重新进入模式，不提示、不写入文档 */
   invalidateTrial(): void {
-    this.hasHairTrial = false;
-    this.trialHairPreset = null;
-    this.trialHistory = [];
-    this.trialRedoStack = [];
+    this.clearPending();
   }
 
-  commitHairTrial(): void {
-    if (this.hasHairTrial && this.trialHairPreset) {
-      const doc = this.ctx.doc;
-      const targetPreset = this.trialHairPreset;
-      const newPixels = recolorHair(doc.pixelIndices, doc.semanticMask, doc.palette, doc.currentHairPreset, targetPreset);
-      this.hasHairTrial = false;
-      this.trialHairPreset = null;
-      this.trialHistory = [];
-      this.trialRedoStack = [];
-      this.ctx.execute(new CommitHairRecolorCommand(newPixels, targetPreset));
-      this.ctx.notifyPreviewChanged();
-    } else {
-      this.hasHairTrial = false;
-      this.trialHairPreset = null;
-      this.trialHistory = [];
-      this.trialRedoStack = [];
-    }
-  }
-
+  /** 确认所有区域的换色：整轮合成为一条正式撤销记录，并清空待确认集合 */
   commitAllRecolors(): void {
-    this.commitHairTrial();
+    if (this.pending.size === 0) return;
+    const doc = this.ctx.doc;
+    const recolors = this.pending;
+    const newPixels = this.composeRecolors(doc.pixelIndices, recolors);
+    // 头发预设写回文档作为后续换色的源参考；其他区域接入后在此同步各自的标记
+    const hairTarget = recolors.get(SemanticZone.Hair) ?? doc.currentHairPreset;
+    this.clearPending();
+    this.ctx.execute(new CommitHairRecolorCommand(newPixels, hairTarget));
+    this.ctx.notifyPreviewChanged();
   }
 
-  private revertHairTrial(): void {
-    const wasPending = this.hasHairTrial;
-    this.hasHairTrial = false;
-    this.trialHairPreset = null;
-    this.trialHistory = [];
-    this.trialRedoStack = [];
+  /** 取消所有区域的换色：只清除试色，已提交文档与期间的其他编辑原样保留 */
+  discardAllRecolors(): void {
+    const wasPending = this.pending.size > 0;
+    this.clearPending();
     if (wasPending) {
       this.ctx.notifyPreviewChanged();
-      this.ctx.notify('已放弃发色替换，恢复原样');
+      this.ctx.notify('已放弃换色，恢复原样');
     }
-  }
-
-  discardHairRecolor(): void {
-    this.revertHairTrial();
-  }
-
-  discardAllRecolors(): void {
-    this.discardHairRecolor();
   }
 
   // ===================== 生命周期与清理 =====================
 
   canExit(callback: (allowed: boolean) => void): void {
-    if (!this.hasPendingTrial) {
+    if (!this.hasPendingRecolors) {
       callback(true);
       return;
     }
 
-    const descriptions = this.getPendingRecolorDescriptions();
-    const isSingleHair = descriptions.length === 1 && descriptions[0].zone === SemanticZone.Hair;
-    const title = isSingleHair ? '切换至画板模式前发色确认' : '切换至画板模式前换色确认';
-    const message = isSingleHair
-      ? `当前正在试色新发色【${descriptions[0].previewName}】，尚未固化到画面。`
-      : `当前正在试色新配色${descriptions.map((d) => `【${d.name}：${d.previewName}】`).join('、')}，尚未固化到画面。`;
-    const subMessage = isSingleHair
-      ? '切换到画板模式前，请选择是否将此发色替换应用到画面中：'
-      : '切换到画板模式前，请选择是否将这些换色替换应用到画面中：';
-
     this.ctx.confirm({
-      icon: isSingleHair ? '💇' : '🎭',
-      title,
-      message,
-      subMessage,
+      ...this.describePendingRecolors('exit'),
       buttons: [
         {
           label: '✓ 确认替换并切换',
@@ -525,15 +553,18 @@ export class MaskViewModel implements SubViewModel {
       return;
     }
 
-    if (this.trialHairPreset !== presetKey) {
-      this.trialHistory.push(presetKey);
+    this.setZoneTrial(SemanticZone.Hair, presetKey);
+    this.ctx.notify(`✓ 发色【${ramp.name}】(${ramp.icon})已切换！(切回绘图模式时可确认或放弃)`, 'success');
+  }
+
+  /** 更新某区域的待确认换色目标，并记入试色撤销栈；目标未变化则不重复记录 */
+  private setZoneTrial(zone: SemanticZone, target: HairPresetKey): void {
+    if (this.pending.get(zone) !== target) {
+      this.pending.set(zone, target);
+      this.trialHistory.push(new Map(this.pending));
       this.trialRedoStack = [];
     }
-    this.hasHairTrial = true;
-    this.trialHairPreset = presetKey;
-
     this.ctx.notifyPreviewChanged();
-    this.ctx.notify(`✓ 发色【${ramp.name}】(${ramp.icon})已切换！(切回绘图模式时可确认或放弃)`, 'success');
   }
 
   setHairPreset(presetKey: HairPresetKey): void {
@@ -542,7 +573,7 @@ export class MaskViewModel implements SubViewModel {
   }
 
   getHairPresetKey(): HairPresetKey {
-    return this.trialHairPreset || this.ctx.doc.currentHairPreset || (Object.keys(RAMPS_INFO)[0] as HairPresetKey);
+    return this.pending.get(SemanticZone.Hair) || this.ctx.doc.currentHairPreset || (Object.keys(RAMPS_INFO)[0] as HairPresetKey);
   }
 
   getHairRampIndices(presetKey?: HairPresetKey): number[] {

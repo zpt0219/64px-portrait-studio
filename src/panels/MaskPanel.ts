@@ -420,7 +420,7 @@ export class MaskPanel extends Panel {
 
     // 6. 原地修补 9 大发色预设卡片 (零 innerHTML 重建，状态变化才写 badge DOM)
     const currentPresetKey = this.vm.getHairPresetKey();
-    const isTrial = this.vm.hasHairDraft();
+    const isTrial = this.vm.hasPendingRecolors();
 
     this.hairPresetCardElements.forEach((cached, key) => {
       const isCurrent = currentPresetKey === key;

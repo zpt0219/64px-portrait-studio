@@ -19,7 +19,7 @@ describe('Trial Recolor Data Isolation and Transformation Invariants (F1 & F2)',
     );
     vm.setMode('mask');
     vm.applyHairPreset('06_silver_银白');
-    expect(vm.hasHairDraft()).toBe(true);
+    expect(vm.hasPendingRecolors()).toBe(true);
 
     // 2. Load Document B: non-hair pixel at index 1 = 12
     const docB = createValidDocument({
@@ -31,18 +31,18 @@ describe('Trial Recolor Data Isolation and Transformation Invariants (F1 & F2)',
     });
     vm.loadProject(documentToProjectData(docB));
     expect(vm.doc.pixelIndices[1]).toBe(12);
-    expect(vm.hasHairDraft()).toBe(false);
+    expect(vm.hasPendingRecolors()).toBe(false);
 
     // 3. Enter mask mode on B, trial silver, then discard
     vm.setMode('mask');
     vm.applyHairPreset('06_silver_银白');
-    expect(vm.hasHairDraft()).toBe(true);
-    vm.discardHairRecolor();
+    expect(vm.hasPendingRecolors()).toBe(true);
+    vm.discardAllRecolors();
 
     // 4. Verify Document B has zero data from Document A
     expect(vm.doc.pixelIndices[1]).toBe(12);
     expect(vm.doc.currentHairPreset).toBe('02_brown_棕');
-    expect(vm.hasHairDraft()).toBe(false);
+    expect(vm.hasPendingRecolors()).toBe(false);
   });
 
   it('[F2] canceling hair trial does not roll back geometric transforms (horizontal flip)', () => {
@@ -62,7 +62,7 @@ describe('Trial Recolor Data Isolation and Transformation Invariants (F1 & F2)',
     // 2. Enter mask mode and trial silver hair
     vm.setMode('mask');
     vm.applyHairPreset('06_silver_银白');
-    expect(vm.hasHairDraft()).toBe(true);
+    expect(vm.hasPendingRecolors()).toBe(true);
 
     // 3. Flip canvas horizontally (Skin pixel moves from x=1 to x=62)
     vm.flipContent('horizontal');
@@ -71,8 +71,8 @@ describe('Trial Recolor Data Isolation and Transformation Invariants (F1 & F2)',
     expect(vm.doc.semanticMask[62]).toBe(SemanticZone.Skin);
 
     // 4. Cancel / discard hair trial
-    vm.discardHairRecolor();
-    expect(vm.hasHairDraft()).toBe(false);
+    vm.discardAllRecolors();
+    expect(vm.hasPendingRecolors()).toBe(false);
 
     // 5. Verify the flip is NOT destroyed: Skin pixel remains at x=62, x=1 is NOT reverted to 5!
     expect(vm.doc.pixelIndices[62]).toBe(5);
@@ -102,7 +102,7 @@ describe('Trial Recolor Data Isolation and Transformation Invariants (F1 & F2)',
     expect(vm.canUndo()).toBe(true);
 
     // Discarding trial restores displayPixels without executing any undoable command
-    vm.discardHairRecolor();
+    vm.discardAllRecolors();
     expect(vm.displayPixels()[0]).toBe(originalPixel);
     expect(vm.doc.pixelIndices[0]).toBe(originalPixel);
     expect(vm.canUndo()).toBe(false);
@@ -131,7 +131,7 @@ describe('Export & Autosave Pending Decoupling (F3)', () => {
     // 2. With trial: prompt triggered
     vm.setMode('mask');
     vm.applyHairPreset('06_silver_银白');
-    expect(vm.hasHairDraft()).toBe(true);
+    expect(vm.hasPendingRecolors()).toBe(true);
 
     const exportPromise = vm.exportPng();
     expect(promptCaptured).not.toBeNull();
@@ -141,7 +141,7 @@ describe('Export & Autosave Pending Decoupling (F3)', () => {
     // Cancel export: keeps trial intact, does not export
     promptCaptured.buttons[2].onClick();
     await exportPromise;
-    expect(vm.hasHairDraft()).toBe(true);
+    expect(vm.hasPendingRecolors()).toBe(true);
     expect(vm.doc.currentHairPreset).toBe('01_black_黑');
     expect(exportPng).not.toHaveBeenCalled();
 
@@ -151,7 +151,7 @@ describe('Export & Autosave Pending Decoupling (F3)', () => {
     expect(promptCaptured).not.toBeNull();
     promptCaptured.buttons[0].onClick();
     await exportPromise2;
-    expect(vm.hasHairDraft()).toBe(false);
+    expect(vm.hasPendingRecolors()).toBe(false);
     expect(vm.doc.currentHairPreset).toBe('06_silver_银白');
     expect(exportPng).toHaveBeenCalledOnce();
     expect(exportPng).toHaveBeenCalledWith(expect.objectContaining({ currentHairPreset: '06_silver_银白' }));
@@ -195,7 +195,7 @@ describe('Pending Detection and Trial History Boundary (F4)', () => {
     vm.applyHairPreset('01_black_黑');
 
     // Even though preset key didn't change, actual pixels change, so pending must be TRUE!
-    expect(vm.hasHairDraft()).toBe(true);
+    expect(vm.hasPendingRecolors()).toBe(true);
 
     // Exiting mask mode prompts user
     vm.setMode('pixel');
@@ -205,7 +205,7 @@ describe('Pending Detection and Trial History Boundary (F4)', () => {
     // Confirm commits the pixel cleanup
     promptCaptured.buttons[0].onClick();
     expect(vm.doc.pixelIndices[0]).not.toBe(0);
-    expect(vm.hasHairDraft()).toBe(false);
+    expect(vm.hasPendingRecolors()).toBe(false);
   });
 
   it('[F4] undo and redo inside mask mode track trial history in sequence (A -> B -> undo -> redo)', () => {
@@ -220,45 +220,45 @@ describe('Pending Detection and Trial History Boundary (F4)', () => {
     vm.setMode('mask');
     // 1. Trial A: silver
     vm.applyHairPreset('06_silver_银白');
-    expect(vm.hairDraftName()).toBe('银白');
-    expect(vm.hasHairDraft()).toBe(true);
+    expect(vm.pendingRecolorName(SemanticZone.Hair)).toBe('银白');
+    expect(vm.hasPendingRecolors()).toBe(true);
     const silverPixel = vm.displayPixels()[0];
     expect(silverPixel).not.toBe(basePixel);
 
     // 2. Trial B: brown
     vm.applyHairPreset('02_brown_棕');
-    expect(vm.hairDraftName()).toBe('棕色');
-    expect(vm.hasHairDraft()).toBe(true);
+    expect(vm.pendingRecolorName(SemanticZone.Hair)).toBe('棕色');
+    expect(vm.hasPendingRecolors()).toBe(true);
     const brownPixel = vm.displayPixels()[0];
     expect(brownPixel).not.toBe(silverPixel);
 
     // 3. Undo: returns to silver!
     expect(vm.canUndo()).toBe(true);
     vm.undo();
-    expect(vm.hairDraftName()).toBe('银白');
+    expect(vm.pendingRecolorName(SemanticZone.Hair)).toBe('银白');
     expect(vm.displayPixels()[0]).toBe(silverPixel);
-    expect(vm.hasHairDraft()).toBe(true);
+    expect(vm.hasPendingRecolors()).toBe(true);
 
     // 4. Undo again: returns to base (no trial)!
     expect(vm.canUndo()).toBe(true);
     vm.undo();
-    expect(vm.hairDraftName()).toBe('');
+    expect(vm.pendingRecolorName(SemanticZone.Hair)).toBe('');
     expect(vm.displayPixels()[0]).toBe(basePixel);
-    expect(vm.hasHairDraft()).toBe(false);
+    expect(vm.hasPendingRecolors()).toBe(false);
 
     // 5. Redo: restores silver!
     expect(vm.canRedo()).toBe(true);
     vm.redo();
-    expect(vm.hairDraftName()).toBe('银白');
+    expect(vm.pendingRecolorName(SemanticZone.Hair)).toBe('银白');
     expect(vm.displayPixels()[0]).toBe(silverPixel);
-    expect(vm.hasHairDraft()).toBe(true);
+    expect(vm.hasPendingRecolors()).toBe(true);
 
     // 6. Redo again: restores brown!
     expect(vm.canRedo()).toBe(true);
     vm.redo();
-    expect(vm.hairDraftName()).toBe('棕色');
+    expect(vm.pendingRecolorName(SemanticZone.Hair)).toBe('棕色');
     expect(vm.displayPixels()[0]).toBe(brownPixel);
-    expect(vm.hasHairDraft()).toBe(true);
+    expect(vm.hasPendingRecolors()).toBe(true);
   });
 });
 
@@ -335,7 +335,7 @@ describe('Mode Lifecycle & Visibility Boundaries (F5 & F6)', () => {
     expect(vm.session.showMaskOverlay).toBe(true);
 
     vm.applyHairPreset('06_silver_银白');
-    expect(vm.hasHairDraft()).toBe(true);
+    expect(vm.hasPendingRecolors()).toBe(true);
 
     // Uncheck Hair (the only visible zone)
     vm.toggleZoneVisibility(SemanticZone.Hair, false);
@@ -353,7 +353,7 @@ describe('Mode Lifecycle & Visibility Boundaries (F5 & F6)', () => {
     expect(vm.session.activeMode).toBe('mask');
     expect(vm.session.visibleMaskZones).toEqual([SemanticZone.Hair]);
     expect(vm.session.showMaskOverlay).toBe(true);
-    expect(vm.hasHairDraft()).toBe(true);
+    expect(vm.hasPendingRecolors()).toBe(true);
 
     // Now try again and choose confirm (button 0)
     promptCaptured = null;
@@ -364,7 +364,7 @@ describe('Mode Lifecycle & Visibility Boundaries (F5 & F6)', () => {
     expect(vm.session.activeMode).toBe('pixel');
     expect(vm.session.visibleMaskZones).toEqual([]);
     expect(vm.session.showMaskOverlay).toBe(false);
-    expect(vm.hasHairDraft()).toBe(false);
+    expect(vm.hasPendingRecolors()).toBe(false);
     expect(vm.doc.currentHairPreset).toBe('06_silver_银白');
   });
 
@@ -380,7 +380,7 @@ describe('Mode Lifecycle & Visibility Boundaries (F5 & F6)', () => {
 
     vm.setMode('mask');
     vm.applyHairPreset('06_silver_银白');
-    expect(vm.hasHairDraft()).toBe(true);
+    expect(vm.hasPendingRecolors()).toBe(true);
     const initialZones = [...vm.session.visibleMaskZones];
 
     // Click "隐藏全部遮罩"
@@ -397,7 +397,7 @@ describe('Mode Lifecycle & Visibility Boundaries (F5 & F6)', () => {
     expect(vm.session.activeMode).toBe('mask');
     expect(vm.session.visibleMaskZones).toEqual(initialZones);
     expect(vm.session.showMaskOverlay).toBe(true);
-    expect(vm.hasHairDraft()).toBe(true);
+    expect(vm.hasPendingRecolors()).toBe(true);
 
     // Try again and click "✕ 放弃替换并切换" (button 1)
     promptCaptured = null;
@@ -407,7 +407,7 @@ describe('Mode Lifecycle & Visibility Boundaries (F5 & F6)', () => {
     expect(vm.session.activeMode).toBe('pixel');
     expect(vm.session.visibleMaskZones).toEqual([]);
     expect(vm.session.showMaskOverlay).toBe(false);
-    expect(vm.hasHairDraft()).toBe(false);
+    expect(vm.hasPendingRecolors()).toBe(false);
     expect(vm.doc.currentHairPreset).toBe('01_black_黑');
   });
 });
@@ -422,13 +422,13 @@ describe('Multi-Zone Recolor Abstraction and Interface Cleanliness (C1 & C2)', (
     vm.loadProject(documentToProjectData(doc));
 
     // Initially no pending recolor
-    expect(vm.mask.hasPendingTrial).toBe(false);
+    expect(vm.mask.hasPendingRecolors).toBe(false);
     expect(vm.mask.getPendingRecolorDescriptions()).toEqual([]);
 
     vm.setMode('mask');
     vm.applyHairPreset('06_silver_银白');
 
-    expect(vm.mask.hasPendingTrial).toBe(true);
+    expect(vm.mask.hasPendingRecolors).toBe(true);
     const descriptions = vm.mask.getPendingRecolorDescriptions();
     expect(descriptions).toHaveLength(1);
     expect(descriptions[0]).toEqual({
@@ -440,15 +440,15 @@ describe('Multi-Zone Recolor Abstraction and Interface Cleanliness (C1 & C2)', (
 
     // discardAllRecolors clears the pending trial cleanly
     vm.discardAllRecolors();
-    expect(vm.mask.hasPendingTrial).toBe(false);
+    expect(vm.mask.hasPendingRecolors).toBe(false);
     expect(vm.mask.getPendingRecolorDescriptions()).toEqual([]);
     expect(vm.doc.currentHairPreset).toBe('01_black_黑');
 
     // Trial again and commitAllRecolors
     vm.applyHairPreset('06_silver_银白');
-    expect(vm.mask.hasPendingTrial).toBe(true);
+    expect(vm.mask.hasPendingRecolors).toBe(true);
     vm.commitAllRecolors();
-    expect(vm.mask.hasPendingTrial).toBe(false);
+    expect(vm.mask.hasPendingRecolors).toBe(false);
     expect(vm.doc.currentHairPreset).toBe('06_silver_银白');
   });
 
@@ -502,10 +502,10 @@ describe('Trial recolor and committed mask matching', () => {
 
       vm.applyHairPreset('02_brown_棕');
       vm.undo();
-      expect(vm.hairDraftName()).toBe('银白');
+      expect(vm.pendingRecolorName(SemanticZone.Hair)).toBe('银白');
       expect(vm.session.maskMatchColors).toEqual(sourceColors);
       vm.redo();
-      expect(vm.hairDraftName()).toBe('棕色');
+      expect(vm.pendingRecolorName(SemanticZone.Hair)).toBe('棕色');
       expect(vm.session.maskMatchColors).toEqual(sourceColors);
       vm.discardAllRecolors();
       expect(vm.session.maskMatchColors).toEqual(sourceColors);

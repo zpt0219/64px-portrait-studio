@@ -44,7 +44,7 @@ test.describe('E2E: 语义遮罩与经典发色置换全流程', () => {
 
     // 验证试色已激活
     await expect(goldCard).toHaveClass(/active/);
-    const hasDraft = await page.evaluate(() => window.__studio?.vm.hasHairDraft());
+    const hasDraft = await page.evaluate(() => window.__studio?.vm.hasPendingRecolors());
     expect(hasDraft).toBe(true);
 
     // 5. 切换回像素模式并确认固化发色

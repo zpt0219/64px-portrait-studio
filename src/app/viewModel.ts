@@ -612,28 +612,18 @@ export class ViewModel implements StudioEvents {
     return this.mask.getHairRampIndices(presetKey);
   }
 
-  hasHairDraft(): boolean {
-    return this.mask.hasHairDraft();
+  /** 是否存在会改变画面的待确认换色（任一蒙版区域） */
+  hasPendingRecolors(): boolean {
+    return this.mask.hasPendingRecolors;
   }
 
-  hairDraftName(): string {
-    return this.mask.hairDraftName();
+  /** 某区域当前试色目标的显示名；无试色返回空串 */
+  pendingRecolorName(zone: SemanticZone): string {
+    return this.mask.pendingTargetName(zone);
   }
 
   displayPixels(): Uint8Array {
-    if (this.mask.hasPendingHairTrial) {
-      return this.mask.getDisplayPixels(
-        this.doc.pixelIndices,
-        this.doc.semanticMask,
-        this.doc.palette,
-        this.doc.currentHairPreset
-      );
-    }
-    return this.doc.pixelIndices;
-  }
-
-  discardHairRecolor(): void {
-    this.mask.discardHairRecolor();
+    return this.mask.displayPixels();
   }
 
   commitAllRecolors(): void {
@@ -761,23 +751,10 @@ export class ViewModel implements StudioEvents {
     if (this._isDisposed || !this.session.isLoaded) return;
     this.endStroke();
 
-    if (this.mask.hasPendingTrial) {
-      const descriptions = this.mask.getPendingRecolorDescriptions();
-      const isSingleHair = descriptions.length === 1 && descriptions[0].zone === SemanticZone.Hair;
-      const title = '导出前换色确认';
-      const message = isSingleHair
-        ? `当前正在试色新发色【${descriptions[0].previewName}】，尚未固化到画面。`
-        : `当前正在试色新配色${descriptions.map((d) => `【${d.name}：${d.previewName}】`).join('、')}，尚未固化到画面。`;
-      const subMessage = isSingleHair
-        ? '导出文件前，请选择是否将此发色替换应用到画面中：'
-        : '导出文件前，请选择是否将这些换色替换应用到画面中：';
-
+    if (this.mask.hasPendingRecolors) {
       return new Promise<void>((resolve) => {
         this.confirmWithGeneration({
-          icon: '💾',
-          title,
-          message,
-          subMessage,
+          ...this.mask.describePendingRecolors('export'),
           buttons: [
             {
               label: '✓ 确认换色并导出',

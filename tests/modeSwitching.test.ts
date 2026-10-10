@@ -127,7 +127,7 @@ describe('Mode Switching and Mask Visibility', () => {
 
       // Modal is open, mode has not switched yet
       expect(vm.session.activeMode).toBe('mask');
-      expect(vm.hasHairDraft()).toBe(true);
+      expect(vm.hasPendingRecolors()).toBe(true);
 
       // Click confirm: commits recolor and enters pixel mode, mask overlay is hidden
       promptOptions.buttons[0].onClick();
@@ -168,7 +168,7 @@ describe('Mode Switching and Mask Visibility', () => {
       promptOptions.buttons[2].onClick();
       expect(vm.session.activeMode).toBe('mask');
       expect(vm.session.showMaskOverlay).toBe(true);
-      expect(vm.hasHairDraft()).toBe(true);
+      expect(vm.hasPendingRecolors()).toBe(true);
     });
 
     it('prompts confirmation when clearing all mask visibility with active hair draft', () => {
