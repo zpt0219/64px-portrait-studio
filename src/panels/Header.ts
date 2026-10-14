@@ -19,7 +19,8 @@ export class Header extends Panel {
     private readonly container: HTMLElement,
     vm: ViewModel,
     private readonly onFileSelect: (file: File) => void,
-    private readonly onOpenHelp?: () => void
+    private readonly onOpenHelp?: () => void,
+    private readonly onOpenAnimation?: () => void
   ) {
     super(vm);
     this.fileInput = document.createElement('input');
@@ -103,6 +104,10 @@ export class Header extends Panel {
             <span class="btn-icon">📦</span> 导出工程 ZIP
           </button>
 
+          <button class="btn btn-outline" id="btn-header-anim" title="开启面部眨眼与张嘴动画工坊，导出游戏 Sprite Sheet 与元数据">
+            <span class="btn-icon">🎬</span> 动画
+          </button>
+
           <button class="btn btn-ghost" id="btn-header-reset" title="清空画布与本地暂存缓存">
             <span class="btn-icon">↺</span>
           </button>
@@ -122,6 +127,7 @@ export class Header extends Panel {
     this.container.querySelector('#btn-header-help')?.addEventListener('click', () => this.onOpenHelp?.());
     this.container.querySelector('#btn-header-new')?.addEventListener('click', () => this.vm.newBlankProject());
     this.container.querySelector('#btn-header-preset')?.addEventListener('click', () => this.vm.loadPresetAvatar());
+    this.container.querySelector('#btn-header-anim')?.addEventListener('click', () => this.onOpenAnimation?.());
     this.container.querySelector('#btn-import-file')?.addEventListener('click', () => this.triggerUpload());
     this.btnSave?.addEventListener('click', () => this.vm.exportPng());
     this.btnZip?.addEventListener('click', () => this.vm.exportZip());
@@ -134,6 +140,9 @@ export class Header extends Panel {
 
     if (this.btnSave) this.btnSave.disabled = !isLoaded;
     if (this.btnZip) this.btnZip.disabled = !isLoaded;
+
+    const btnAnim = this.container.querySelector('#btn-header-anim') as HTMLButtonElement | null;
+    if (btnAnim) btnAnim.disabled = !isLoaded;
 
     if (this.btnModePixel) this.btnModePixel.classList.toggle('active', !isMask);
     if (this.btnModeMask) this.btnModeMask.classList.toggle('active', isMask);

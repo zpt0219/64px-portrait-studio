@@ -17,6 +17,7 @@ import { CanvasPanel } from '../panels/canvas/CanvasPanel';
 import { ReplaceColorModal } from '../panels/modals/ReplaceColorModal';
 import { ConfirmModal } from '../panels/modals/ConfirmModal';
 import { HelpModal } from '../panels/modals/HelpModal';
+import { AnimationModal } from '../panels/modals/AnimationModal';
 import { StudioEvents } from '../command/events';
 import { EditorSession } from '../core/session';
 import { ViewModel } from './viewModel';
@@ -30,6 +31,7 @@ export class App implements StudioEvents {
   private replaceColorModal!: ReplaceColorModal;
   private confirmModal!: ConfirmModal;
   private helpModal!: HelpModal;
+  private animationModal!: AnimationModal;
   private palettePanel!: PalettePanel;
   private maskToolsPanel!: MaskToolsPanel;
   private canvasPanel!: CanvasPanel;
@@ -111,12 +113,14 @@ export class App implements StudioEvents {
       onConfirm: (fromIdx, toIdx, scope) => vm.replaceColor(fromIdx, toIdx, scope),
     });
 
+    this.animationModal = new AnimationModal(document.body, vm);
     this.helpModal = new HelpModal(document.body);
     this.header = new Header(
       byId('header-mount'),
       vm,
       (file) => this.handleIncomingFile(file),
-      () => this.helpModal.open()
+      () => this.helpModal.open(),
+      () => this.animationModal.open()
     );
     this.palettePanel = new PalettePanel(this.palettePanelWrapper, vm, this.ctx);
     this.maskToolsPanel = new MaskToolsPanel(this.maskToolsPanelWrapper, vm);
@@ -141,6 +145,7 @@ export class App implements StudioEvents {
   onDocumentReplaced(): void {
     this.confirmModal.dismiss();
     this.replaceColorModal.close();
+    this.animationModal?.close();
   }
 
   // ===================== 文件导入 =====================
@@ -286,7 +291,12 @@ export class App implements StudioEvents {
       }
     }
     // 弹窗打开期间由弹窗自己处理按键
-    if (this.replaceColorModal.getIsOpen() || this.confirmModal.getIsOpen()) return;
+    if (
+      this.replaceColorModal.getIsOpen() ||
+      this.confirmModal.getIsOpen() ||
+      this.helpModal.getIsOpen() ||
+      this.animationModal?.getIsOpen()
+    ) return;
 
     const vm = this.vm;
     const s = vm.session;
@@ -497,6 +507,7 @@ export class App implements StudioEvents {
     this.confirmModal?.dispose();
     this.replaceColorModal?.dispose();
     this.helpModal?.dispose();
+    this.animationModal?.dispose();
 
     this.vm.unregisterListener(this);
     this.vm.dispose();
