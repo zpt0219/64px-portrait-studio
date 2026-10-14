@@ -188,8 +188,9 @@ export class CanvasPanel extends Panel {
               <div class="dropzone-icon">🖼️</div>
               <div class="dropzone-title">拖入工程 ZIP 或参考图片</div>
               <div class="dropzone-sub">工程 ZIP：完整恢复历史进度与图层遮罩 · 图片 (PNG/JPG/WebP)：新建项目并量化为 36 色</div>
-              <div class="dropzone-actions" style="display: flex; gap: 10px;">
+              <div class="dropzone-actions" style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;">
                 <button class="btn btn-primary" id="btn-empty-upload">点击选择文件</button>
+                <button class="btn btn-outline" id="btn-empty-preset" title="载入预设金发女骑士头像 (含完整遮罩与发色)">🎨 载入预设头像</button>
                 <button class="btn btn-outline" id="btn-empty-blank" title="新建一张 64×64 空白画布直接绘制">📄 新建空白画布</button>
               </div>
               <div class="restore-banner" id="restore-banner" style="display: none;">
@@ -214,6 +215,7 @@ export class CanvasPanel extends Panel {
     new CanvasToolbar(q<HTMLElement>('.canvas-toolbar'), this.vm, this.ctx, this.hooks.onTogglePreview);
 
     q<HTMLElement>('#btn-empty-upload').addEventListener('click', () => this.hooks.onTriggerUpload());
+    q<HTMLElement>('#btn-empty-preset').addEventListener('click', () => this.vm.loadPresetAvatar());
     q<HTMLElement>('#btn-empty-blank').addEventListener('click', () => this.vm.newBlankProject());
     q<HTMLElement>('#btn-restore-project').addEventListener('click', () => this.vm.restoreFromStorage());
 

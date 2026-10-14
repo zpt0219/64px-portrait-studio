@@ -18,6 +18,7 @@ import { StudioEvents, ToastLevel, SaveStatus } from '../command/events';
 import { StrokeCommand } from '../command/pixelCommands';
 import { Patch } from '../core/editOps';
 import { processDecodedImage } from '../core/imageImport';
+import { PRESET_PORTRAIT_PROJECT, PRESET_AVATAR_NAME } from '../core/presetAvatar';
 import { StudioContext } from './subViewModel';
 import { PixelViewModel } from './pixelViewModel';
 import { MaskViewModel } from './maskViewModel';
@@ -385,6 +386,30 @@ export class ViewModel implements StudioEvents {
       selection: null,
     });
     this.notify('已新建 64×64 空白画布', 'info');
+  }
+
+  loadPresetAvatar(): void {
+    if (this._isDisposed) return;
+    if (this.session.isLoaded) {
+      this.confirmWithGeneration({
+        icon: '🎨',
+        title: '载入预设头像',
+        message: `确定要载入预设头像【${PRESET_AVATAR_NAME}】吗？`,
+        subMessage: '当前编辑中的未导出像素修图将被覆盖。',
+        buttons: [
+          { label: '载入预设', className: 'btn-primary', onClick: () => this.doLoadPresetAvatar() },
+          { label: '取消', className: 'btn-ghost', onClick: () => {} },
+        ],
+      });
+      return;
+    }
+    this.doLoadPresetAvatar();
+  }
+
+  private doLoadPresetAvatar(): void {
+    if (this._isDisposed) return;
+    this.loadProject(PRESET_PORTRAIT_PROJECT);
+    this.notify(`🎉 已成功载入预设头像（${PRESET_AVATAR_NAME}）！`, 'success');
   }
 
   private reset(): void {

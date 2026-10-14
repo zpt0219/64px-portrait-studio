@@ -87,6 +87,10 @@ export class Header extends Panel {
             <span class="btn-icon">📄</span> 新建
           </button>
 
+          <button class="btn btn-outline" id="btn-header-preset" title="载入预设金发女骑士头像 (含完整像素、遮罩与发色)">
+            <span class="btn-icon">🎨</span> 预设
+          </button>
+
           <button class="btn btn-outline" id="btn-import-file" title="支持导入工程 ZIP (完整恢复历史进度与遮罩) 或任意图片 PNG/JPG/WebP (作为新项目载入并量化为 36 色)">
             <span class="btn-icon">📁</span> 导入图片 / 工程
           </button>
@@ -117,6 +121,7 @@ export class Header extends Panel {
 
     this.container.querySelector('#btn-header-help')?.addEventListener('click', () => this.onOpenHelp?.());
     this.container.querySelector('#btn-header-new')?.addEventListener('click', () => this.vm.newBlankProject());
+    this.container.querySelector('#btn-header-preset')?.addEventListener('click', () => this.vm.loadPresetAvatar());
     this.container.querySelector('#btn-import-file')?.addEventListener('click', () => this.triggerUpload());
     this.btnSave?.addEventListener('click', () => this.vm.exportPng());
     this.btnZip?.addEventListener('click', () => this.vm.exportZip());
