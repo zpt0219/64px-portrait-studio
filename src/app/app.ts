@@ -18,6 +18,7 @@ import { ReplaceColorModal } from '../panels/modals/ReplaceColorModal';
 import { ConfirmModal } from '../panels/modals/ConfirmModal';
 import { HelpModal } from '../panels/modals/HelpModal';
 import { AnimationModal } from '../panels/modals/AnimationModal';
+import { TabBar } from '../panels/TabBar';
 import { StudioEvents } from '../command/events';
 import { EditorSession } from '../core/session';
 import { ViewModel } from './viewModel';
@@ -32,6 +33,7 @@ export class App implements StudioEvents {
   private confirmModal!: ConfirmModal;
   private helpModal!: HelpModal;
   private animationModal!: AnimationModal;
+  private tabBar!: TabBar;
   private palettePanel!: PalettePanel;
   private maskToolsPanel!: MaskToolsPanel;
   private canvasPanel!: CanvasPanel;
@@ -75,6 +77,7 @@ export class App implements StudioEvents {
     appEl.innerHTML = `
       <div class="studio-layout">
         <div id="header-mount"></div>
+        <div id="tabbar-mount"></div>
         <main class="studio-main-body" id="studio-main-body">
           <div id="palette-mount" class="main-sidebar-pane palette-sidebar">
             <div id="palette-panel-wrapper" style="height: 100%;"></div>
@@ -122,6 +125,7 @@ export class App implements StudioEvents {
       () => this.helpModal.open(),
       () => this.animationModal.open()
     );
+    this.tabBar = new TabBar(byId('tabbar-mount'), vm);
     this.palettePanel = new PalettePanel(this.palettePanelWrapper, vm, this.ctx);
     this.maskToolsPanel = new MaskToolsPanel(this.maskToolsPanelWrapper, vm);
     this.canvasPanel = new CanvasPanel(byId('canvas-mount'), vm, this.ctx, {
@@ -150,41 +154,23 @@ export class App implements StudioEvents {
 
   // ===================== 文件导入 =====================
 
-  /** 处理拖入或选择的文件：工程 ZIP 完整恢复，普通图片作为新项目载入 */
+  /** 处理拖入或选择的文件：一律在新标签页中打开 */
   private async handleIncomingFile(file: File): Promise<void> {
     if (this.isDisposed || !file) return;
 
-    const executeImport = async () => {
-      try {
-        const result = await importAnyFile(file);
-        if (result.kind === 'project') {
-          this.vm.loadProject(result.data);
-          this.vm.notify('🎉 成功载入工程 ZIP！已完整恢复画布、遮罩与色板', 'success');
-        } else {
-          this.vm.importImage(result.image);
-        }
-      } catch (err) {
-        console.error('File load error:', err);
-        const message = err instanceof Error ? err.message : String(err);
-        this.vm.notify(message, 'error');
+    try {
+      const result = await importAnyFile(file);
+      if (result.kind === 'project') {
+        this.vm.loadProject(result.data, file.name);
+        this.vm.notify(`🎉 成功载入工程 ZIP (${file.name})！已完整恢复画布、遮罩与色板`, 'success');
+      } else {
+        this.vm.importImage(result.image, file.name);
       }
-    };
-
-    if (this.vm.session.isLoaded) {
-      this.confirmModal.show({
-        icon: '📁',
-        title: '载入新文件确认',
-        message: '当前画布已有正在编辑的项目，是否确认载入新文件？',
-        subMessage: '未导出的像素修图与修改将被新内容覆盖。',
-        buttons: [
-          { label: '覆盖并载入', className: 'btn-danger', onClick: () => { void executeImport(); } },
-          { label: '取消', className: 'btn-ghost', onClick: () => {} },
-        ],
-      });
-      return;
+    } catch (err) {
+      console.error('File load error:', err);
+      const message = err instanceof Error ? err.message : String(err);
+      this.vm.notify(message, 'error');
     }
-
-    await executeImport();
   }
 
   // ===================== 弹窗与画中画 =====================
@@ -307,6 +293,48 @@ export class App implements StudioEvents {
     const inMask = s.activeMode === 'mask';
 
     type Action = () => void;
+
+    // Alt 系组合键：多标签页切换与关闭 (Alt+[, Alt+], Alt+1..9, Alt+W, Alt+N)
+    if (e.altKey && !ctrlOrCmd) {
+      const tabs = vm.getTabs();
+      const activeIdx = tabs.findIndex((t) => t.isActive);
+
+      if (key === '[' || is('bracketleft')) {
+        e.preventDefault();
+        if (tabs.length > 1 && activeIdx > 0) {
+          vm.switchTab(tabs[activeIdx - 1].id);
+        }
+        return;
+      }
+      if (key === ']' || is('bracketright')) {
+        e.preventDefault();
+        if (tabs.length > 1 && activeIdx < tabs.length - 1) {
+          vm.switchTab(tabs[activeIdx + 1].id);
+        }
+        return;
+      }
+      if (letter('w')) {
+        e.preventDefault();
+        const activeId = vm.getActiveTabId();
+        if (activeId) vm.closeTab(activeId);
+        return;
+      }
+      if (letter('n')) {
+        e.preventDefault();
+        vm.newBlankProject(false);
+        return;
+      }
+      for (let num = 1; num <= 9; num++) {
+        if (key === String(num) || is(`Digit${num}`)) {
+          e.preventDefault();
+          if (tabs.length >= num) {
+            vm.switchTab(tabs[num - 1].id);
+          }
+          return;
+        }
+      }
+    }
+
     // Shift+字母：画布变换
     const shiftActions: [string, Action][] = [
       ['r', () => this.openReplaceColorModal()],
@@ -499,6 +527,7 @@ export class App implements StudioEvents {
     document.body.classList.remove('is-resizing');
 
     this.header?.dispose();
+    this.tabBar?.dispose();
     this.palettePanel?.dispose();
     this.maskToolsPanel?.dispose();
     this.canvasPanel?.dispose();

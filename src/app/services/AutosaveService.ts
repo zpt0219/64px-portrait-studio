@@ -37,7 +37,25 @@ import {
 } from '../../core/projectData';
 
 export const STORAGE_KEY = 'imagegem_project_autosave_v2';
+export const WORKSPACE_STORAGE_KEY = 'imagegem_workspace_autosave_v3';
 export const DEFAULT_AUTOSAVE_DEBOUNCE_MS = 300;
+
+export interface SavedTabRecord {
+  id: string;
+  name: string;
+  project: ProjectData;
+}
+
+export interface WorkspaceData {
+  version: 3;
+  activeId: string;
+  tabs: SavedTabRecord[];
+}
+
+export interface WorkspacePayload {
+  activeId: string;
+  tabs: { id: string; name: string; doc: PortraitDocument }[];
+}
 
 export interface KeyValueStore {
   getItem(key: string): string | null;
@@ -72,14 +90,70 @@ function storageFailure(err: unknown): StorageSaveResult {
 export class AutosaveService {
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingDoc: PortraitDocument | null = null;
+  private pendingWorkspace: WorkspacePayload | null = null;
   private pendingOnComplete: ((result: StorageSaveResult) => void) | null = null;
   private _isDisposed = false;
 
   constructor(
     private readonly store: KeyValueStore = unavailableStore,
     private readonly storageKey: string = STORAGE_KEY,
-    private readonly debounceMs: number = DEFAULT_AUTOSAVE_DEBOUNCE_MS
+    private readonly debounceMs: number = DEFAULT_AUTOSAVE_DEBOUNCE_MS,
+    private readonly workspaceStorageKey: string = WORKSPACE_STORAGE_KEY
   ) {}
+
+  public saveWorkspaceImmediate(payload: WorkspacePayload): StorageSaveResult {
+    if (this._isDisposed) {
+      return { success: false, error: 'AutosaveService已销毁' };
+    }
+    try {
+      // 优先写入当前激活文档至 legacy 存储，保持对外部旧环境与自定义拦截器测试的最大兼容
+      const activeTab = payload.tabs.find((t) => t.id === payload.activeId) ?? payload.tabs[0];
+      const activeProject = activeTab ? documentToProjectData(activeTab.doc) : null;
+      if (activeProject) {
+        this.store.setItem(this.storageKey, JSON.stringify(activeProject));
+      }
+
+      const data: WorkspaceData & Partial<ProjectData> = {
+        ...(activeProject ?? {}),
+        version: 3,
+        activeId: payload.activeId,
+        tabs: payload.tabs.map((t) => ({
+          id: t.id,
+          name: t.name,
+          project: documentToProjectData(t.doc),
+        })),
+      };
+      this.store.setItem(this.workspaceStorageKey, JSON.stringify(data));
+      return { success: true };
+    } catch (err: unknown) {
+      const result = storageFailure(err);
+      console.warn('LocalStorage workspace save failed:', result.error, err);
+      return result;
+    }
+  }
+
+  public saveWorkspaceDebounced(
+    payload: WorkspacePayload,
+    onComplete?: (result: StorageSaveResult) => void
+  ): void {
+    if (this._isDisposed) return;
+    this.pendingWorkspace = payload;
+    this.pendingOnComplete = onComplete ?? null;
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+    }
+    this.debounceTimer = setTimeout(() => {
+      this.debounceTimer = null;
+      const wsToSave = this.pendingWorkspace;
+      const callback = this.pendingOnComplete;
+      this.pendingWorkspace = null;
+      this.pendingOnComplete = null;
+      if (wsToSave) {
+        const result = this.saveWorkspaceImmediate(wsToSave);
+        if (callback) callback(result);
+      }
+    }, this.debounceMs);
+  }
 
   public saveImmediate(doc: PortraitDocument): StorageSaveResult {
     if (this._isDisposed) {
@@ -125,20 +199,27 @@ export class AutosaveService {
       this.debounceTimer = null;
     }
     this.pendingDoc = null;
+    this.pendingWorkspace = null;
     this.pendingOnComplete = null;
   }
 
   public flush(): StorageSaveResult | null {
-    if (this.debounceTimer || this.pendingDoc) {
+    if (this.debounceTimer || this.pendingDoc || this.pendingWorkspace) {
       if (this.debounceTimer) {
         clearTimeout(this.debounceTimer);
         this.debounceTimer = null;
       }
       const docToSave = this.pendingDoc;
+      const wsToSave = this.pendingWorkspace;
       const callback = this.pendingOnComplete;
       this.pendingDoc = null;
+      this.pendingWorkspace = null;
       this.pendingOnComplete = null;
-      if (docToSave) {
+      if (wsToSave) {
+        const result = this.saveWorkspaceImmediate(wsToSave);
+        if (callback) callback(result);
+        return result;
+      } else if (docToSave) {
         const result = this.saveImmediate(docToSave);
         if (callback) callback(result);
         return result;
@@ -148,7 +229,51 @@ export class AutosaveService {
   }
 
   public hasSaved(): boolean {
-    return this.load() !== null;
+    return this.loadWorkspace() !== null;
+  }
+
+  public loadWorkspace(): WorkspaceData | null {
+    if (this._isDisposed) return null;
+    try {
+      const item = this.store.getItem(this.workspaceStorageKey);
+      if (item) {
+        const raw = JSON.parse(item);
+        if (raw && raw.version === 3 && Array.isArray(raw.tabs) && raw.tabs.length > 0) {
+          const validTabs: SavedTabRecord[] = [];
+          for (const tab of raw.tabs) {
+            const val = validateProjectData(tab.project);
+            if (val.valid && val.data) {
+              validTabs.push({ id: tab.id, name: tab.name, project: val.data });
+            }
+          }
+          if (validTabs.length > 0) {
+            return {
+              version: 3,
+              activeId: raw.activeId || validTabs[0].id,
+              tabs: validTabs,
+            };
+          }
+        }
+      }
+      // 降级与迁移：检查是否有 v2 单工程存储
+      const legacyData = this.load();
+      if (legacyData) {
+        return {
+          version: 3,
+          activeId: 'tab_migrated',
+          tabs: [
+            {
+              id: 'tab_migrated',
+              name: '已恢复工程',
+              project: legacyData,
+            },
+          ],
+        };
+      }
+    } catch (err) {
+      console.warn('LocalStorage workspace load failed:', err);
+    }
+    return null;
   }
 
   public load(): ProjectData | null {
@@ -173,6 +298,7 @@ export class AutosaveService {
     if (this._isDisposed) return { success: false, error: 'AutosaveService已销毁' };
     this.cancel();
     try {
+      this.store.removeItem(this.workspaceStorageKey);
       this.store.removeItem(this.storageKey);
       return { success: true };
     } catch (err) {

@@ -1,0 +1,144 @@
+/* =========================================================================
+   TabBar Component Styles (多标签页导航栏)
+   ========================================================================= */
+
+.app-tabbar {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  min-height: 32px;
+  background: #11131c;
+  border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  user-select: none;
+  position: relative;
+  z-index: 10;
+  padding: 0 8px;
+}
+
+.tabbar-scroll-area {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE 10+ */
+  flex: 1;
+}
+
+.tabbar-scroll-area::-webkit-scrollbar {
+  display: none; /* Chrome, Safari */
+}
+
+.tab-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  color: var(--text-muted, #94a3b8);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 180px;
+  min-width: 80px;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.tab-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-main, #e2e8f0);
+}
+
+.tab-item.active {
+  background: #1c2030;
+  color: #ffffff;
+  font-weight: 500;
+  border-color: rgba(168, 85, 247, 0.4);
+  box-shadow: 0 -2px 0 0 var(--accent-primary, #a855f7) inset;
+}
+
+.tab-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+  background: #0d0f17;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  image-rendering: pixelated;
+  flex-shrink: 0;
+}
+
+.tab-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  outline: none;
+  padding: 1px 2px;
+  border-radius: 2px;
+}
+
+.tab-title.editing {
+  background: #0d101d;
+  color: #38bdf8;
+  cursor: text;
+  box-shadow: 0 0 0 1px #38bdf8;
+}
+
+.tab-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted, #64748b);
+  font-size: 11px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-left: 2px;
+  padding: 0;
+}
+
+.tab-close-btn:hover {
+  background: rgba(239, 68, 68, 0.25);
+  color: #f87171;
+}
+
+.tabbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 4px;
+  flex-shrink: 0;
+}
+
+.tabbar-btn-add {
+  height: 22px;
+  width: 22px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: bold;
+  border-radius: var(--radius-sm, 4px);
+  color: var(--text-sub, #94a3b8);
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+}
+
+.tabbar-btn-add:hover {
+  color: var(--text-main, #ffffff);
+  border-color: var(--accent-primary, #a855f7);
+  background: rgba(168, 85, 247, 0.15);
+}

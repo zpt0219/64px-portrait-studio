@@ -25,6 +25,7 @@ export class Header extends Panel {
     super(vm);
     this.fileInput = document.createElement('input');
     this.fileInput.type = 'file';
+    this.fileInput.multiple = true;
     this.fileInput.accept = '.zip,.png,.jpg,.jpeg,.webp,image/*';
     this.fileInput.style.display = 'none';
     this.fileInput.addEventListener('change', this.handleFileChange.bind(this));
@@ -45,8 +46,9 @@ export class Header extends Panel {
 
   private handleFileChange(): void {
     if (this.fileInput.files && this.fileInput.files.length > 0) {
-      const file = this.fileInput.files[0];
-      this.onFileSelect(file);
+      for (let i = 0; i < this.fileInput.files.length; i++) {
+        this.onFileSelect(this.fileInput.files[i]);
+      }
     }
   }
 

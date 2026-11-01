@@ -316,8 +316,11 @@ export class CanvasPanel extends Panel {
     viewport.addEventListener('drop', (e) => {
       e.preventDefault();
       viewport.classList.remove('dragover');
-      const file = e.dataTransfer?.files?.[0];
-      if (file) this.hooks.onFileDrop(file);
+      if (e.dataTransfer?.files) {
+        for (let i = 0; i < e.dataTransfer.files.length; i++) {
+          this.hooks.onFileDrop(e.dataTransfer.files[i]);
+        }
+      }
     }, { signal: this.abortController.signal });
 
     // 阻止画布与视口默认右键菜单

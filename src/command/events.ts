@@ -22,6 +22,8 @@ export interface StudioEvents {
   onHistoryChanged?(): void;
   /** EditorContext (跨面板的纯界面状态) 变化 */
   onContextChanged?(): void;
+  /** 工作区多标签页列表或激活状态变更 */
+  onTabsChanged?(): void;
   onNotify?(message: string, level: ToastLevel): void;
   onSaveStatus?(status: SaveStatus): void;
 }

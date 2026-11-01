@@ -4,6 +4,7 @@ import { IMAGE_WIDTH, IMAGE_HEIGHT } from '../core/pixelGrid';
 import { clampToCanvas } from '../core/session';
 import { layersOf } from '../core/document';
 import { Patch, FULL_CANVAS, extractPatch, findOuterWhiteOffsets } from '../core/editOps';
+import { ClipboardPayload, remapPatch } from '../core/workspace';
 import {
   MovePatchCommand,
   PastePatchCommand,
@@ -16,7 +17,7 @@ import { SetPaletteColorCommand, ResetPaletteCommand, nextGestureId } from '../c
 import { SubViewModel, StudioContext } from './subViewModel';
 
 export class PixelViewModel implements SubViewModel {
-  private clipboard: Patch | null = null;
+  private clipboard: ClipboardPayload | null = null;
 
   constructor(private readonly ctx: StudioContext) {}
 
@@ -205,7 +206,11 @@ export class PixelViewModel implements SubViewModel {
   copySelection(): boolean {
     const selection = this.ctx.session.selection;
     if (!this.ctx.session.isLoaded || !selection) return false;
-    this.clipboard = extractPatch(layersOf(this.ctx.doc, []), selection);
+    const patch = extractPatch(layersOf(this.ctx.doc, []), selection);
+    this.clipboard = {
+      patch,
+      palette: [...this.ctx.doc.palette],
+    };
     return true;
   }
 
@@ -222,15 +227,30 @@ export class PixelViewModel implements SubViewModel {
   pasteClipboard(): boolean {
     const clip = this.clipboard;
     if (!clip || !this.ctx.session.isLoaded) return false;
+
+    // 跨 Tab / 色板自动最近色重映射与提示
+    const { patch, approximatedCount, totalColors } = remapPatch(
+      clip.patch,
+      clip.palette,
+      this.ctx.doc.palette
+    );
+
+    if (approximatedCount > 0) {
+      this.ctx.notify(
+        `已按目标色板自动映射 (${totalColors} 色，其中 ${approximatedCount} 色为近似匹配)`,
+        'info'
+      );
+    }
+
     const selection = this.ctx.session.selection;
     const x = Math.min(
-      selection ? selection.x : Math.max(0, Math.floor((IMAGE_WIDTH - clip.w) / 2)),
-      Math.max(0, IMAGE_WIDTH - clip.w)
+      selection ? selection.x : Math.max(0, Math.floor((IMAGE_WIDTH - patch.w) / 2)),
+      Math.max(0, IMAGE_WIDTH - patch.w)
     );
     const y = Math.min(
-      selection ? selection.y : Math.max(0, Math.floor((IMAGE_HEIGHT - clip.h) / 2)),
-      Math.max(0, IMAGE_HEIGHT - clip.h)
+      selection ? selection.y : Math.max(0, Math.floor((IMAGE_HEIGHT - patch.h) / 2)),
+      Math.max(0, IMAGE_HEIGHT - patch.h)
     );
-    return this.ctx.execute(new PastePatchCommand(clip, x, y));
+    return this.ctx.execute(new PastePatchCommand(patch, x, y));
   }
 }

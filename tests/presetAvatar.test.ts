@@ -47,34 +47,23 @@ describe('Preset Avatar (Blonde Knight)', () => {
     expect(clothesPixels).toBe(63);
   });
 
-  it('prompts confirmation modal before replacing an already loaded project', () => {
+  it('opens in a new tab without overwrite prompt when another project is already loaded', () => {
     const vm = createTestViewModel();
     vm.newBlankProject();
     expect(vm.session.isLoaded).toBe(true);
     vm.doc.pixelIndices[0] = 5;
 
     let promptCalled = false;
-    let promptOptions: any = null;
     vm.setPrompts({
-      confirm: (opts) => {
+      confirm: () => {
         promptCalled = true;
-        promptOptions = opts;
       },
     });
 
     vm.loadPresetAvatar();
-    expect(promptCalled).toBe(true);
-    expect(promptOptions.title).toBe('载入预设头像');
-    expect(promptOptions.message).toContain(PRESET_AVATAR_NAME);
-
-    // Click cancel button
-    promptOptions.buttons[1].onClick();
-    expect(vm.doc.pixelIndices[0]).toBe(5);
-    expect(vm.doc.currentHairPreset).toBeNull();
-
-    // Click confirm button
-    vm.loadPresetAvatar();
-    promptOptions.buttons[0].onClick();
+    expect(promptCalled).toBe(false);
+    expect(vm.getTabs()).toHaveLength(2);
+    expect(vm.getActiveTabName()).toBe(PRESET_AVATAR_NAME);
     expect(vm.doc.currentHairPreset).toBe('03_blonde_金');
   });
 });

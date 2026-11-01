@@ -156,6 +156,24 @@ export class HelpModal {
                   </tr>
 
                   <tr>
+                    <td rowspan="4" class="cat-cell">📑 多标签页</td>
+                    <td>新建空白标签页</td>
+                    <td><kbd>Alt + N</kbd></td>
+                  </tr>
+                  <tr>
+                    <td>切换至上一个 / 下一个标签页</td>
+                    <td><kbd>Alt + [</kbd> / <kbd>Alt + ]</kbd></td>
+                  </tr>
+                  <tr>
+                    <td>快速直达第 1~9 个标签页</td>
+                    <td><kbd>Alt + 1 ~ 9</kbd></td>
+                  </tr>
+                  <tr>
+                    <td>关闭当前标签页 (或鼠标中键)</td>
+                    <td><kbd>Alt + W</kbd></td>
+                  </tr>
+
+                  <tr>
                     <td rowspan="2" class="cat-cell">🎭 遮罩辅助</td>
                     <td>调整遮罩画笔尺寸 (1~10px)</td>
                     <td><kbd>[</kbd> / <kbd>]</kbd></td>

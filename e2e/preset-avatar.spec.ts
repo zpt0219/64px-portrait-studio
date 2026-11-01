@@ -30,14 +30,11 @@ test.describe('E2E: 预设头像载入全流程 (Preset Avatar Loading)', () => 
     await expect(goldCard).toBeVisible();
     await expect(goldCard).toHaveClass(/active/);
 
-    // 4. 点击顶栏「🎨 预设」按钮，应弹出防误触确认弹窗
+    // 4. 点击顶栏「🎨 预设」按钮，以多标签页模式在崭新 Tab 中打开预设
     await page.click('#btn-header-preset');
-    const confirmOverlay = page.locator('#confirm-modal-overlay');
-    await expect(confirmOverlay).toBeVisible();
-    await expect(confirmOverlay).toContainText('载入预设头像');
-
-    // 点击取消关闭弹窗
-    await page.click('#confirm-modal-actions button:has-text("取消")');
-    await expect(confirmOverlay).toBeHidden();
+    const tabItems = page.locator('.tab-item');
+    await expect(tabItems).toHaveCount(2);
+    const activeTab = page.locator('.tab-item.active .tab-title');
+    await expect(activeTab).toContainText('金发女骑士');
   });
 });

@@ -22,6 +22,8 @@ import { PRESET_PORTRAIT_PROJECT, PRESET_AVATAR_NAME } from '../core/presetAvata
 import { StudioContext } from './subViewModel';
 import { PixelViewModel } from './pixelViewModel';
 import { MaskViewModel } from './maskViewModel';
+import { TabViewModel, TabContext } from './tabViewModel';
+import { TabSummary, TabState } from '../core/workspace';
 
 export class ViewModel implements StudioEvents {
   readonly doc: PortraitDocument = createEmptyDocument();
@@ -29,6 +31,7 @@ export class ViewModel implements StudioEvents {
 
   readonly pixel: PixelViewModel;
   readonly mask: MaskViewModel;
+  readonly tabs: TabViewModel;
 
   private documentGeneration = 0;
   private strokeGeneration = 0;
@@ -36,7 +39,7 @@ export class ViewModel implements StudioEvents {
   private readonly exports: ExportBackend;
 
   private readonly ctx: CommandContext;
-  private readonly handler: CommandHandler;
+  private handler: CommandHandler;
   private listeners: StudioEvents[] = [];
   private prompts: StudioPrompts = { confirm: () => {} };
   private pendingPrompt: (() => void) | null = null;
@@ -60,6 +63,46 @@ export class ViewModel implements StudioEvents {
     const studioContext = this.createStudioContext();
     this.pixel = new PixelViewModel(studioContext);
     this.mask = new MaskViewModel(studioContext);
+
+    const tabContext = this.createTabContext();
+    this.tabs = new TabViewModel(tabContext);
+    this.tabs.initInitialTab();
+  }
+
+  private createTabContext(): TabContext {
+    const self = this;
+    return {
+      doc: this.doc,
+      session: this.session,
+      get isDisposed() {
+        return self._isDisposed;
+      },
+      getCommandHandler: () => this.handler,
+      setCommandHandler: (h) => {
+        this.handler = h;
+      },
+      createCommandHandler: () => new CommandHandler(this.ctx),
+      incrementGeneration: () => ++this.documentGeneration,
+      endStroke: () => this.endStroke(),
+      notify: (msg, lvl) => this.notify(msg, lvl),
+      confirm: (opts) => this.confirmWithGeneration(opts),
+      onTabsChanged: () => this.onTabsChanged(),
+      onDocumentReplaced: () => this.onDocumentReplaced(),
+      onHistoryChanged: () => this.onHistoryChanged(),
+      onSessionChanged: (keys) => this.onSessionChanged(keys),
+      cleanSubViewModels: () => {
+        this.pixel.cleanup();
+        this.mask.cleanup();
+        this.mask.invalidateTrial();
+      },
+      checkCanExit: (cb) => {
+        this.mask.canExit((allowed) => {
+          if (!allowed) cb(false);
+          else this.pixel.canExit(cb);
+        });
+      },
+      saveDebounced: () => this.documentChanged(() => {}),
+    };
   }
 
   private createStudioContext(): StudioContext {
@@ -210,6 +253,9 @@ export class ViewModel implements StudioEvents {
   onContextChanged(): void {
     this.fanOut((l) => l.onContextChanged?.());
   }
+  onTabsChanged(): void {
+    this.fanOut((l) => l.onTabsChanged?.());
+  }
   onNotify(message: string, level: ToastLevel): void {
     this.fanOut((l) => l.onNotify?.(message, level));
   }
@@ -222,7 +268,12 @@ export class ViewModel implements StudioEvents {
     if (this.session.isLoaded) {
       this.onSaveStatus('saving');
       const gen = this.documentGeneration;
-      this.autosave.saveDebounced(this.doc, (result) => {
+      const allTabs = this.tabs.getAllTabsForStorage();
+      const payload = {
+        activeId: this.tabs.getActiveTabId() || (allTabs[0]?.id ?? 'tab_1'),
+        tabs: allTabs.map((t) => ({ id: t.id, name: t.name, doc: t.doc })),
+      };
+      this.autosave.saveWorkspaceDebounced(payload, (result) => {
         if (this._isDisposed || this.documentGeneration !== gen) return;
         if (result.success) {
           this.onSaveStatus('saved');
@@ -287,10 +338,11 @@ export class ViewModel implements StudioEvents {
     this.onDocumentReplaced();
   }
 
-  loadProject(data: ProjectData): void {
+  loadProject(data: ProjectData, tabName?: string): void {
     if (this._isDisposed) return;
     const { document: doc, warnings } = projectDataToDocument(data);
-    this.replaceDocument(doc, {
+    const name = tabName || '工程';
+    this.tabs.openTab(name, doc, {
       visibleMaskZones: [],
       showMaskOverlay: false,
       activeMode: 'pixel',
@@ -312,68 +364,49 @@ export class ViewModel implements StudioEvents {
 
   restoreFromStorage(): void {
     if (this._isDisposed) return;
-    const data = this.autosave.load();
-    if (!data) {
+    const ws = this.autosave.loadWorkspace();
+    if (!ws || ws.tabs.length === 0) {
       this.notify('未检测到已暂存的有效工程数据', 'warning');
       return;
     }
-    this.loadProject(data);
-    this.notify('🎉 已成功从本地缓存恢复上次编辑进度！', 'success');
+
+    const tabStates: TabState[] = ws.tabs.map((tab) => {
+      const { document: doc } = projectDataToDocument(tab.project);
+      return {
+        id: tab.id,
+        name: tab.name,
+        doc,
+        session: {
+          isLoaded: true,
+          activeMode: 'pixel',
+          activeZone: SemanticZone.Hair,
+          visibleMaskZones: [],
+          lockedMaskZones: [],
+          activeMaskTool: 'pen',
+          maskBrushSize: 1,
+          maskMatchColors: [],
+          maskMatchPresetKey: 'all_colors',
+          maskMatchInitialized: false,
+          maskOpacity: 0.5,
+          showMaskOverlay: false,
+          activePaletteIndex: 0,
+          bgPaletteIndex: 255,
+          zoomLevel: 12,
+          selection: null,
+        },
+        handler: new CommandHandler(this.ctx),
+      };
+    });
+
+    this.tabs.restoreTabs(tabStates, ws.activeId);
+    this.notify(`🎉 已成功从本地缓存恢复工作区 (${tabStates.length}个标签页)！`, 'success');
   }
 
-  importImage(image: DecodedImage): void {
+  importImage(image: DecodedImage, imageName?: string): void {
     if (this._isDisposed) return;
     const result = processDecodedImage(image, this.doc.palette);
-    this.replaceDocument(result.document, {
-      visibleMaskZones: [], showMaskOverlay: false, activeMode: 'pixel',
-      activeZone: SemanticZone.Hair, lockedMaskZones: [], activeMaskTool: 'pen',
-      maskBrushSize: 1, maskMatchInitialized: false, isLoaded: true,
-      selection: null,
-    });
-    for (const warning of result.warnings) this.notify(warning, 'warning');
-    this.notify(result.importInfo.message, 'success');
-  }
-
-  requestReset(): void {
-    if (this._isDisposed) return;
-    if (!this.session.isLoaded) {
-      this.reset();
-      return;
-    }
-    this.confirmWithGeneration({
-      icon: '↺',
-      title: '清空画布',
-      message: '确定要清空画布吗？',
-      subMessage: '所有未导出的像素修图与遮罩数据将被完全重置，并清除本地自动保存记录。',
-      buttons: [
-        { label: '清空画布', className: 'btn-danger', onClick: () => this.reset() },
-        { label: '取消', className: 'btn-ghost', onClick: () => {} },
-      ],
-    });
-  }
-
-  newBlankProject(): void {
-    if (this._isDisposed) return;
-    if (this.session.isLoaded) {
-      this.confirmWithGeneration({
-        icon: '📄',
-        title: '新建空白项目',
-        message: '确定要新建空白画布吗？',
-        subMessage: '当前编辑中的未导出像素修图将被覆盖。',
-        buttons: [
-          { label: '新建画布', className: 'btn-danger', onClick: () => this.doNewBlankProject() },
-          { label: '取消', className: 'btn-ghost', onClick: () => {} },
-        ],
-      });
-      return;
-    }
-    this.doNewBlankProject();
-  }
-
-  private doNewBlankProject(): void {
-    if (this._isDisposed) return;
-    const doc = createEmptyDocument();
-    this.replaceDocument(doc, {
+    const name = imageName || '导入图片';
+    this.tabs.openTab(name, result.document, {
       visibleMaskZones: [],
       showMaskOverlay: false,
       activeMode: 'pixel',
@@ -385,39 +418,106 @@ export class ViewModel implements StudioEvents {
       isLoaded: true,
       selection: null,
     });
-    this.notify('已新建 64×64 空白画布', 'info');
+    for (const warning of result.warnings) this.notify(warning, 'warning');
+    this.notify(result.importInfo.message, 'success');
+  }
+
+  requestReset(): void {
+    if (this._isDisposed) return;
+    if (!this.session.isLoaded) {
+      this.resetCurrentTab();
+      return;
+    }
+    this.confirmWithGeneration({
+      icon: '↺',
+      title: '清空画布',
+      message: '确定要清空当前画布吗？',
+      subMessage: '当前标签页中未导出的像素修图与遮罩数据将被重置。',
+      buttons: [
+        { label: '清空画布', className: 'btn-danger', onClick: () => this.resetCurrentTab() },
+        { label: '取消', className: 'btn-ghost', onClick: () => {} },
+      ],
+    });
+  }
+
+  newBlankProject(allowReuseInitial = true): void {
+    if (this._isDisposed) return;
+    const doc = createEmptyDocument();
+    const name = this.tabs.nextDefaultName(allowReuseInitial);
+    this.tabs.openTab(
+      name,
+      doc,
+      {
+        visibleMaskZones: [],
+        showMaskOverlay: false,
+        activeMode: 'pixel',
+        activeZone: SemanticZone.Hair,
+        lockedMaskZones: [],
+        activeMaskTool: 'pen',
+        maskBrushSize: 1,
+        maskMatchInitialized: false,
+        isLoaded: true,
+        selection: null,
+      },
+      allowReuseInitial
+    );
+    this.notify(`已新建空白画布 (${name})`, 'info');
   }
 
   loadPresetAvatar(): void {
     if (this._isDisposed) return;
-    if (this.session.isLoaded) {
-      this.confirmWithGeneration({
-        icon: '🎨',
-        title: '载入预设头像',
-        message: `确定要载入预设头像【${PRESET_AVATAR_NAME}】吗？`,
-        subMessage: '当前编辑中的未导出像素修图将被覆盖。',
-        buttons: [
-          { label: '载入预设', className: 'btn-primary', onClick: () => this.doLoadPresetAvatar() },
-          { label: '取消', className: 'btn-ghost', onClick: () => {} },
-        ],
-      });
-      return;
-    }
-    this.doLoadPresetAvatar();
-  }
-
-  private doLoadPresetAvatar(): void {
-    if (this._isDisposed) return;
-    this.loadProject(PRESET_PORTRAIT_PROJECT);
+    const { document: doc } = projectDataToDocument(PRESET_PORTRAIT_PROJECT);
+    this.tabs.openTab(PRESET_AVATAR_NAME, doc, {
+      visibleMaskZones: [],
+      showMaskOverlay: false,
+      activeMode: 'pixel',
+      lockedMaskZones: [],
+      activeMaskTool: 'pen',
+      maskBrushSize: 1,
+      maskMatchInitialized: false,
+      isLoaded: true,
+      selection: null,
+    });
     this.notify(`🎉 已成功载入预设头像（${PRESET_AVATAR_NAME}）！`, 'success');
   }
 
-  private reset(): void {
+  private resetCurrentTab(): void {
     if (this._isDisposed) return;
+    const active = this.tabs.getActiveTab();
+    if (active) {
+      active.doc = createEmptyDocument();
+      active.handler.clearHistory();
+    }
     const result = this.autosave.clear();
     this.replaceDocument(createEmptyDocument(), createInitialSession());
     if (result.success) this.notify('已重置画布并清除本地暂存', 'info');
     else this.notify(`已重置画布，但未能清除本地暂存: ${result.error}`, 'warning');
+  }
+
+  // ===================== 多标签页门面 (Tabs Facade) =====================
+
+  switchTab(tabId: string): boolean {
+    return this.tabs.switchTab(tabId);
+  }
+
+  closeTab(tabId: string): void {
+    this.tabs.closeTab(tabId);
+  }
+
+  renameTab(tabId: string, newName: string): boolean {
+    return this.tabs.renameTab(tabId, newName);
+  }
+
+  getTabs(): TabSummary[] {
+    return this.tabs.getTabs();
+  }
+
+  getActiveTabId(): string | null {
+    return this.tabs.getActiveTabId();
+  }
+
+  getActiveTabName(): string {
+    return this.tabs.getActiveTabName();
   }
 
   // ===================== 核心模式切换 (严格生命周期与 Clean-up) =====================
